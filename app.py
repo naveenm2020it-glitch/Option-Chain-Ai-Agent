@@ -1,5 +1,5 @@
 from __future__ import annotations
-import math, threading, time
+import math, threading, time, logging
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -20,6 +20,8 @@ HEADERS = {
 session = requests.Session()
 lock = threading.Lock()
 cache = {"at": 0.0, "data": None}
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("niftylab.market")
 app = FastAPI(title="NIFTY Option Chain Intelligence", version="1.0.0")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -68,6 +70,7 @@ def get_market(force=False):
             cache.update(at=time.time(), data=data)
             return data
         except Exception as exc:
+            logger.exception("NSE option-chain fetch failed: %s", exc)
             if cache["data"]:
                 stale = dict(cache["data"])
                 stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
