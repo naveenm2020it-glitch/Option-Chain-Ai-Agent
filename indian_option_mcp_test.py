@@ -68,17 +68,33 @@ def test_provider() -> dict:
             result["message"] = "NSE responded successfully but returned no option-chain rows."
             return _finish(result, started)
 
+        expiry_dates = records.get("expiryDates") or []
+        normalized = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            strike = item.get("strikePrice")
+            if strike is None:
+                continue
+            normalized.append({
+                "strike": strike,
+                "expiry": item.get("expiryDate"),
+                "ce": item.get("CE") if isinstance(item.get("CE"), dict) else {},
+                "pe": item.get("PE") if isinstance(item.get("PE"), dict) else {},
+            })
         result.update({
             "status": "CONNECTED",
             "exchange_timestamp": records.get("timestamp") or payload.get("timestamp"),
             "spot": records.get("underlyingValue"),
-            "expiry_count": len(records.get("expiryDates") or []),
-            "strike_rows": len(rows),
+            "expiry_dates": expiry_dates,
+            "expiry_count": len(expiry_dates),
+            "strike_rows": len(normalized),
             "ce_rows": ce_count,
             "pe_rows": pe_count,
+            "rows": normalized,
             "message": (
-                "NSE returned option-chain JSON. This confirms endpoint connectivity only; "
-                "it does not establish an authorised data licence or guarantee continuous availability."
+                "NSE returned a genuine option-chain JSON snapshot. This is a one-time user-triggered "
+                "fetch; it does not establish an authorised data licence or guarantee availability."
             ),
         })
         return _finish(result, started)
