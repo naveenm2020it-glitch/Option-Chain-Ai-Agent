@@ -1,5 +1,5 @@
 from __future__ import annotations
-import math, threading, time, logging
+import math, threading, time, logging, os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -34,51 +34,123 @@ def clean_leg(value):
             "bidQty", "askQty")
     return {key: value.get(key) for key in keys}
 
-def get_market(force=False):
+def get_market(force=False, expiry=None):
+    """Fetch genuine NIFTY option-chain data using a free, read-only Upstox Analytics Token.
+
+    No order/trading endpoints are used. If the token is absent or the provider fails,
+    return UNAVAILABLE/STALE rather than synthesising prices or bypassing NSE controls.
+    """
+    token = os.getenv("UPSTOX_ACCESS_TOKEN", "").strip()
+    if not token:
+        return {
+            "status": "UNAVAILABLE", "source": "Upstox read-only market-data API",
+            "source_timestamp": None, "received_at": now(), "spot": None,
+            "expiry_dates": [], "rows": [],
+            "error": "UPSTOX_ACCESS_TOKEN is not configured. Add your free read-only Analytics Token in Render environment variables.",
+            "underlying": "NIFTY",
+        }
+
+    headers = {"Accept": "application/json", "Authorization": "Bearer " + token}
     with lock:
-        if not force and cache["data"] and time.time() - cache["at"] < 5:
-            return cache["data"]
         try:
-            session.get(BASE, headers=HEADERS, timeout=8)
-            response = session.get(BASE + "/api/option-chain-indices?symbol=NIFTY",
-                                   headers=HEADERS, timeout=10)
+            # Cache the contract master briefly; it contains the available expiry dates.
+            if not cache.get("contracts") or time.time() - cache.get("contracts_at", 0) > 600:
+                contract_response = session.get(
+                    "https://api.upstox.com/v2/option/contract",
+                    params={"instrument_key": "NSE_INDEX|Nifty 50"},
+                    headers=headers, timeout=12,
+                )
+                contract_response.raise_for_status()
+                contract_payload = contract_response.json()
+                contracts = contract_payload.get("data") or []
+                expiry_dates = sorted({str(item.get("expiry")) for item in contracts if item.get("expiry")})
+                if not expiry_dates:
+                    raise RuntimeError("Upstox returned no NIFTY option expiries")
+                cache["contracts"] = expiry_dates
+                cache["contracts_at"] = time.time()
+            else:
+                expiry_dates = cache["contracts"]
+
+            chosen_expiry = expiry if expiry in expiry_dates else expiry_dates[0]
+            cached = cache.get("data")
+            if (not force and cached and cached.get("expiry") == chosen_expiry
+                    and time.time() - cache.get("at", 0) < 5):
+                return cached
+
+            response = session.get(
+                "https://api.upstox.com/v2/option/chain",
+                params={"instrument_key": "NSE_INDEX|Nifty 50", "expiry_date": chosen_expiry},
+                headers=headers, timeout=15,
+            )
             response.raise_for_status()
-            raw = response.json()
-            records = raw.get("records", {})
+            payload = response.json()
+            if payload.get("status") != "success":
+                raise RuntimeError("Upstox option-chain response was not successful")
+            chain = payload.get("data") or []
             rows = []
-            for item in records.get("data", []):
-                if item.get("strikePrice") is None or not item.get("expiryDate"):
+
+            def map_leg(option):
+                option = option or {}
+                md = option.get("market_data") or {}
+                greeks = option.get("option_greeks") or {}
+                ltp = md.get("ltp")
+                close = md.get("close_price")
+                try:
+                    change = float(ltp) - float(close) if ltp is not None and close not in (None, 0) else None
+                    pchange = (change / float(close) * 100) if change is not None else None
+                except (TypeError, ValueError, ZeroDivisionError):
+                    change, pchange = None, None
+                oi, prev_oi = md.get("oi"), md.get("prev_oi")
+                try:
+                    change_oi = float(oi) - float(prev_oi) if oi is not None and prev_oi is not None else None
+                except (TypeError, ValueError):
+                    change_oi = None
+                return {
+                    "lastPrice": ltp, "change": change, "pChange": pchange,
+                    "totalTradedVolume": md.get("volume"), "openInterest": oi,
+                    "changeinOpenInterest": change_oi, "impliedVolatility": greeks.get("iv"),
+                    "bidprice": md.get("bid_price"), "askPrice": md.get("ask_price"),
+                    "bidQty": md.get("bid_qty"), "askQty": md.get("ask_qty"),
+                    "delta": greeks.get("delta"), "gamma": greeks.get("gamma"),
+                    "theta": greeks.get("theta"), "vega": greeks.get("vega"),
+                }
+
+            spot = None
+            for item in chain:
+                strike = item.get("strike_price")
+                if strike is None:
                     continue
+                if spot is None:
+                    spot = item.get("underlying_spot_price")
                 rows.append({
-                    "strike": item["strikePrice"],
-                    "expiry": item["expiryDate"],
-                    "ce": clean_leg(item.get("CE") or {}),
-                    "pe": clean_leg(item.get("PE") or {}),
+                    "strike": strike, "expiry": item.get("expiry") or chosen_expiry,
+                    "ce": map_leg(item.get("call_options")),
+                    "pe": map_leg(item.get("put_options")),
                 })
-            if not rows:
-                raise RuntimeError("NSE returned an empty option chain")
+            if not rows or spot is None:
+                raise RuntimeError("Upstox returned an empty or incomplete NIFTY option chain")
+
             data = {
-                "status": "LIVE",
-                "source": "NSE website public endpoint",
-                "source_timestamp": records.get("timestamp") or raw.get("timestamp"),
-                "received_at": now(),
-                "spot": records.get("underlyingValue"),
-                "expiry_dates": records.get("expiryDates", []),
-                "rows": rows,
+                "status": "LIVE", "source": "Upstox Analytics Token · read-only API",
+                "source_timestamp": None, "received_at": now(), "spot": spot,
+                "expiry_dates": expiry_dates, "expiry": chosen_expiry,
+                "rows": sorted(rows, key=lambda item: float(item["strike"])),
                 "underlying": "NIFTY",
+                "note": "Provider response received time is shown; exchange tick timestamp is not supplied by this endpoint.",
             }
             cache.update(at=time.time(), data=data)
             return data
         except Exception as exc:
-            logger.exception("NSE option-chain fetch failed: %s", exc)
-            if cache["data"]:
+            logger.exception("Upstox option-chain fetch failed: %s", exc)
+            if cache.get("data") and (expiry is None or cache["data"].get("expiry") == expiry):
                 stale = dict(cache["data"])
                 stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
                 return stale
             return {
-                "status": "UNAVAILABLE", "source": "NSE website public endpoint",
+                "status": "UNAVAILABLE", "source": "Upstox Analytics Token · read-only API",
                 "source_timestamp": None, "received_at": now(), "spot": None,
-                "expiry_dates": [], "rows": [], "error": str(exc), "underlying": "NIFTY",
+                "expiry_dates": cache.get("contracts", []), "rows": [],
+                "error": str(exc), "underlying": "NIFTY",
             }
 
 def number(value):
@@ -154,7 +226,7 @@ def market(force: bool = False):
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
-    market_data = get_market()
+    market_data = get_market(expiry=expiry)
     if market_data["status"] != "LIVE" or market_data.get("spot") is None:
         return {"status": "WAIT", "message": "Verified live NSE data is unavailable. Analysis is paused.",
                 "market": market_data, "signals": [], "metrics": None, "rows": []}
