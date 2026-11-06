@@ -1,19 +1,22 @@
-# Option Chain AI Agent
+# NIFTY Option Chain Intelligence
 
-Responsive NIFTY option-chain research and paper-trading web app. This repository is separate from NIFTY-Labs.
+A responsive NIFTY 50 option-chain research terminal with live NSE website endpoint integration.
 
-## Included in v0.1
-- Responsive dashboard, option-chain view, AI watchlist, paper terminal, journal and analytics.
-- NSE website public-endpoint adapter with LIVE / STALE / UNAVAILABLE states.
-- ATM ±10 strikes (50-point strike spacing), nearest available expiry.
-- Transparent heuristic ranking based on premium change, volume, open interest and bid/ask spread.
-- Paper trade API: one open position, +20 option-premium-point target, −10 point stop, automatic target/stop checks while live data is healthy.
-- SQLite trade journal; no broker integration or real orders.
+## Current features
+- Live / STALE / UNAVAILABLE source-state handling.
+- NIFTY spot, ATM and selected expiry.
+- Full selected-expiry CE/PE option chain.
+- OI concentration support and resistance levels, PCR and change in OI.
+- Max Pain calculation from current open interest and intrinsic payout.
+- Rules-based multi-strike watchlist using premium change, OI change, volume, bid/ask spread and distance from ATM.
+- Light and dark themes, mobile-responsive navigation and CSV exports.
 
-## Critical limitations
-NSE website endpoints are not a guaranteed supported market-data API. They may rate-limit, change or block cloud-hosted requests. A deployment does not guarantee live data. The app must display UNAVAILABLE/STALE and pause execution if data cannot be verified. Use an authorized market-data provider for dependable production feeds.
+## Data integrity and limitations
+NSE website public endpoints are not a guaranteed supported market-data API. Requests may be rate-limited, changed or blocked, especially from cloud hosting. The UI must show LIVE, STALE or UNAVAILABLE honestly; deployment does not guarantee live market data. For dependable production use, connect an authorized market-data provider.
 
-The current score is a rules-based screening heuristic, not a trained AI model. It does not include spot/premium candle confirmation, so candidates are labelled WATCH and automatic entries are disabled. Do not treat scores as buy recommendations.
+The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. The current adapter does not provide synchronized spot and option-premium candles, so candle-confirmed entry triggers, target/stop trigger timestamps and win-rate statistics are deliberately not fabricated. The alerts screen reports this limitation.
+
+Max Pain is calculated by testing each available strike as a settlement price and summing estimated intrinsic payouts weighted by current CE/PE open interest. It is a positioning reference, not a forecast.
 
 ## Run locally (Python 3.12)
 ```powershell
@@ -25,7 +28,6 @@ uvicorn app:app --reload
 Open http://127.0.0.1:8000
 
 ## Render
-A render.yaml Blueprint is included. In Render select New + -> Blueprint, connect this repository and Apply. Free Render filesystems are ephemeral and services may spin down; journal persistence requires a persistent disk or managed database.
+The repository includes a Render Blueprint. The existing Render web service can deploy from the connected GitHub main branch. Free Render instances may spin down; the NSE endpoint can also block cloud requests.
 
-## Accounting
-P&L excludes brokerage, exchange charges, GST, STT, stamp duty, slippage and taxes. This is a research simulator, not investment advice.
+Research tool only. Not investment advice.
