@@ -36,9 +36,9 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def get_market(force=False):
-    # NSE option-chain access is user-triggered only. No background polling,
-    # retry loops, identity rotation, or anti-bot bypass is performed.
-    if force or cache["data"] is None:
+    # Never fetch NSE implicitly from dashboard polling. Only the explicit
+    # Test connection / Fetch snapshot action may make one upstream request.
+    if force:
         result = test_indian_option_mcp_provider()
         if result.get("status") == "CONNECTED" and result.get("rows"):
             market_data = {
@@ -64,8 +64,22 @@ def get_market(force=False):
                 "received_at": result.get("received_at") or now(),
                 "spot": result.get("spot"), "expiry_dates": [], "rows": [],
                 "error": result.get("message") or "No verified NSE option-chain response.",
-                "http_status": result.get("http_status"), "underlying": "NIFTY",
+                "http_status": result.get("http_status"), "elapsed_ms": result.get("elapsed_ms"),
+                "underlying": "NIFTY",
             }
+    if cache["data"] is None:
+        return {
+            "status": "UNAVAILABLE",
+            "source": "NSE option-chain endpoint",
+            "source_timestamp": None,
+            "received_at": None,
+            "spot": None,
+            "expiry_dates": [],
+            "rows": [],
+            "error": "No snapshot fetched yet. Use Test connection / Fetch snapshot to request one.",
+            "http_status": None,
+            "underlying": "NIFTY",
+        }
     data = dict(cache["data"])
     data["snapshot_age_seconds"] = max(0, int(time.time() - cache["at"]))
     return data
