@@ -7,6 +7,7 @@ import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from indian_option_mcp_test import test_provider as test_indian_option_mcp_provider
 
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
@@ -151,6 +152,12 @@ def health():
 @app.get("/api/market")
 def market(force: bool = False):
     return get_market(force=force)
+
+@app.get("/api/providers/indian-option-mcp/test")
+def indian_option_mcp_test():
+    """Run one transparent NSE connectivity test for the upstream MCP provider."""
+    return test_indian_option_mcp_provider()
+
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
