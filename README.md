@@ -1,8 +1,30 @@
-# NIFTY Option Chain Intelligence
+# NIFTY LAB · Option Chain Intelligence
 
-A responsive NIFTY 50 option-chain research terminal with live NSE website endpoint integration.
+A responsive NIFTY 50 option-chain research terminal.
+
+## Live market-data provider
+
+The backend supports the **Upstox Analytics Token** read-only market-data API for NIFTY option-chain snapshots. Upstox documents this token as free, valid for one year, read-only, and usable for market quotes, option chains and WebSocket market data. It does not enable order placement.
+
+### Configure on Render
+
+1. Create or sign in to an Upstox account.
+2. Open the Upstox Developer Apps page and generate an **Analytics Token** (not an order/trading token).
+3. In Render, open the NIFTY LAB web service → Environment.
+4. Add `UPSTOX_ACCESS_TOKEN` and paste the token as its value.
+5. Save changes and redeploy/restart the service.
+6. Open `/api/health`, then `/api/market` and `/api/analysis` to verify the provider response.
+
+**Never commit the token to GitHub or put it in frontend JavaScript.** Store it only as a Render secret environment variable. Do not paste it into chat.
+
+The backend calls:
+- `GET https://api.upstox.com/v2/option/contract` to obtain available NIFTY expiries.
+- `GET https://api.upstox.com/v2/option/chain` to retrieve the selected expiry's CE/PE chain.
+
+The adapter normalises the provider JSON into the existing NIFTY LAB response structure. It maps OI, previous OI, volume, LTP, bid/ask, IV and provider Greeks. Change in OI and premium change are derived from the provider's current and previous values. The response-received time is shown because this option-chain endpoint does not expose a source tick timestamp in its documented schema.
 
 ## Current features
+
 - Live / STALE / UNAVAILABLE source-state handling.
 - NIFTY spot, ATM and selected expiry.
 - Full selected-expiry CE/PE option chain.
@@ -12,31 +34,26 @@ A responsive NIFTY 50 option-chain research terminal with live NSE website endpo
 - Light and dark themes, mobile-responsive navigation and CSV exports.
 
 ## Data integrity and limitations
-NSE website public endpoints are not a guaranteed supported market-data API. Requests may be rate-limited, changed or blocked, especially from cloud hosting. The UI must show LIVE, STALE or UNAVAILABLE honestly; deployment does not guarantee live market data. For dependable production use, connect an authorized market-data provider.
 
-The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. The current adapter does not provide synchronized spot and option-premium candles, so candle-confirmed entry triggers, target/stop trigger timestamps and win-rate statistics are deliberately not fabricated. The alerts screen reports this limitation.
+- No mock or synthetic prices are generated.
+- If the token is missing, invalid or the provider fails, the API returns UNAVAILABLE (or STALE only when a prior verified snapshot for that expiry exists).
+- The provider's read-only market-data token is tied to an Upstox account. This is not a broker-free public feed, but it has no separate API subscription charge according to Upstox's current Analytics Token documentation.
+- The option-chain API is rate-limited by the provider. Do not poll it more frequently than the documented limit.
+- The source-received time is not an exchange tick timestamp.
+- Signals are screening heuristics, not trained or validated predictions. Candle-confirmed entry triggers, target/stop trigger timestamps and win-rate statistics are not fabricated.
 
 Max Pain is calculated by testing each available strike as a settlement price and summing estimated intrinsic payouts weighted by current CE/PE open interest. It is a positioning reference, not a forecast.
 
 ## Run locally (Python 3.12)
+
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+$env:UPSTOX_ACCESS_TOKEN="paste-token-here"
 uvicorn app:app --reload
 ```
+
 Open http://127.0.0.1:8000
 
-## Render
-The repository includes a Render Blueprint. The existing Render web service can deploy from the connected GitHub main branch. Free Render instances may spin down; the NSE endpoint can also block cloud requests.
-
 Research tool only. Not investment advice.
-
-
-## Free upstream reference and data limitations
-
-This project references the MIT-licensed [Indian Markets Options Hub](https://github.com/yash-sarawgi/Indian-Markets-Options-Hub) for its browser-based NSE F&O analytics approach. Its MIT licence permits reuse subject to retaining required copyright and licence notices. This project does not claim ownership of upstream code.
-
-The no-subscription data path uses the public NSE website endpoint on a best-effort basis. It is not a guaranteed supported market-data API and can be rate-limited or blocked, especially from cloud hosting. The interface must show LIVE only after a successful fresh response; otherwise it shows STALE or UNAVAILABLE. Free source code does not make a paid broker feed free.
-
-Greeks & Premium Intelligence displays Black–Scholes estimates derived from the option-chain IV field (6.5% risk-free-rate assumption). These are model estimates, not exchange-published or broker-provided Greeks. No entry/exit alerts or accuracy claims are generated without synchronized option and spot candles.
