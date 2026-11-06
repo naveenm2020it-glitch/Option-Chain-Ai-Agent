@@ -36,51 +36,19 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def get_market(force=False):
-    with lock:
-        if not force and cache["data"] and time.time() - cache["at"] < 5:
-            return cache["data"]
-        try:
-            session.get(BASE, headers=HEADERS, timeout=8)
-            response = session.get(BASE + "/api/option-chain-indices?symbol=NIFTY",
-                                   headers=HEADERS, timeout=10)
-            response.raise_for_status()
-            raw = response.json()
-            records = raw.get("records", {})
-            rows = []
-            for item in records.get("data", []):
-                if item.get("strikePrice") is None or not item.get("expiryDate"):
-                    continue
-                rows.append({
-                    "strike": item["strikePrice"],
-                    "expiry": item["expiryDate"],
-                    "ce": clean_leg(item.get("CE") or {}),
-                    "pe": clean_leg(item.get("PE") or {}),
-                })
-            if not rows:
-                raise RuntimeError("NSE returned an empty option chain")
-            data = {
-                "status": "LIVE",
-                "source": "NSE website public endpoint",
-                "source_timestamp": records.get("timestamp") or raw.get("timestamp"),
-                "received_at": now(),
-                "spot": records.get("underlyingValue"),
-                "expiry_dates": records.get("expiryDates", []),
-                "rows": rows,
-                "underlying": "NIFTY",
-            }
-            cache.update(at=time.time(), data=data)
-            return data
-        except Exception as exc:
-            logger.exception("NSE option-chain fetch failed: %s", exc)
-            if cache["data"]:
-                stale = dict(cache["data"])
-                stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
-                return stale
-            return {
-                "status": "UNAVAILABLE", "source": "NSE website public endpoint",
-                "source_timestamp": None, "received_at": now(), "spot": None,
-                "expiry_dates": [], "rows": [], "error": str(exc), "underlying": "NIFTY",
-            }
+    # This preview deliberately does not run continuous NSE website scraping.
+    # The only NSE request is the user-triggered, one-shot diagnostic endpoint.
+    return {
+        "status": "UNAVAILABLE",
+        "source": "No continuous market-data feed enabled in this preview",
+        "source_timestamp": None,
+        "received_at": now(),
+        "spot": None,
+        "expiry_dates": [],
+        "rows": [],
+        "error": "Automatic NSE fetching is disabled. Use Data Source Test for one manual connectivity check.",
+        "underlying": "NIFTY",
+    }
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
