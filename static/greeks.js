@@ -1,5 +1,6 @@
 (() => {
  const $ = id => document.getElementById(id);
+ if(typeof titles!=="undefined") titles.greeks="Greeks & Premium Intelligence";
  const n = v => v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null;
  const fmt = (v,d=3) => v===null || !Number.isFinite(v) ? "—" : v.toFixed(d);
  const erf = x => { const s=x<0?-1:1; x=Math.abs(x); const t=1/(1+0.3275911*x); const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return s*y; };
