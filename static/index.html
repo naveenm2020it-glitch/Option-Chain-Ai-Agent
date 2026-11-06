@@ -22,14 +22,14 @@
     <button class="nav-item" data-page="performance"><i>▥</i>Accuracy & Records</button>
     <button class="nav-item" data-page="export"><i>⇩</i>Data Export</button>
   </nav>
-  <div class="sidebar-bottom"><span class="live-dot"></span> MARKET FEED <b id="side-status">CONNECTING</b><small>Research terminal · NSE</small></div>
+  <div class="sidebar-bottom"><span class="live-dot"></span> MARKET FEED <b id="side-status">CONNECTING</b><small>Read-only market-data terminal</small></div>
 </aside>
 <main class="main">
 <header class="topbar">
   <div class="top-left"><button class="mobile-menu" id="menuBtn" aria-label="Open menu">☰</button><div><div class="eyebrow">NSE DERIVATIVES / NIFTY 50</div><h1 id="pageTitle">Market Overview</h1></div></div>
   <div class="top-actions"><span class="market-state" id="marketState"><i></i> CONNECTING</span><button class="icon-btn" id="refreshBtn" title="Refresh data">↻</button><button class="icon-btn" id="themeBtn" title="Switch theme">◐</button></div>
 </header>
-<div class="integrity-banner"><span class="banner-icon">✓</span><div><b>DATA INTEGRITY ACTIVE</b><span>Only verified exchange responses are displayed. Stale or unavailable data is clearly marked.</span></div><small id="sourceStamp">Waiting for NSE response</small></div>
+<div class="integrity-banner"><span class="banner-icon">✓</span><div><b>DATA INTEGRITY ACTIVE</b><span>Only verified exchange responses are displayed. Stale or unavailable data is clearly marked.</span></div><small id="sourceStamp">Waiting for market-data provider</small></div>
 
 <section class="page active" id="overview">
   <div class="metric-grid">
@@ -47,7 +47,7 @@
 
 <section class="page" id="chain">
  <div class="toolbar panel"><div><span class="section-kicker">CONTRACT MATRIX</span><h2>NIFTY Live Option Chain</h2><p>Calls on the left · puts on the right · ATM highlighted</p></div><div class="toolbar-controls"><label>Expiry<select id="expirySelect"></select></label><label>Strike range<select id="rangeSelect"><option value="500">ATM ± 10</option><option value="1000">ATM ± 20</option><option value="all">All strikes</option></select></label></div></div>
- <article class="panel"><div class="table-wrap tall"><table class="chain-table"><thead><tr><th colspan="4" class="ce-head">CALL OPTIONS · CE</th><th class="strike-head">STRIKE</th><th colspan="4" class="pe-head">PUT OPTIONS · PE</th></tr><tr><th>OI</th><th>CHG OI</th><th>VOLUME</th><th>LTP</th><th>PRICE</th><th>LTP</th><th>VOLUME</th><th>CHG OI</th><th>OI</th></tr></thead><tbody id="fullChain"><tr><td colspan="9" class="empty">Waiting for live contracts…</td></tr></tbody></table></div><div class="table-note">OI and volume are as supplied by NSE. Values refresh automatically while the source is available.</div></article>
+ <article class="panel"><div class="table-wrap tall"><table class="chain-table"><thead><tr><th colspan="4" class="ce-head">CALL OPTIONS · CE</th><th class="strike-head">STRIKE</th><th colspan="4" class="pe-head">PUT OPTIONS · PE</th></tr><tr><th>OI</th><th>CHG OI</th><th>VOLUME</th><th>LTP</th><th>PRICE</th><th>LTP</th><th>VOLUME</th><th>CHG OI</th><th>OI</th></tr></thead><tbody id="fullChain"><tr><td colspan="9" class="empty">Waiting for live contracts…</td></tr></tbody></table></div><div class="table-note">OI and volume are as supplied by the connected provider. Values refresh automatically while the provider is available.</div></article>
 </section>
 
 <section class="page" id="oi">
