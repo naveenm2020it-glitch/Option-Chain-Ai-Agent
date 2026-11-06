@@ -36,19 +36,39 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def get_market(force=False):
-    # This preview deliberately does not run continuous NSE website scraping.
-    # The only NSE request is the user-triggered, one-shot diagnostic endpoint.
-    return {
-        "status": "UNAVAILABLE",
-        "source": "No continuous market-data feed enabled in this preview",
-        "source_timestamp": None,
-        "received_at": now(),
-        "spot": None,
-        "expiry_dates": [],
-        "rows": [],
-        "error": "Automatic NSE fetching is disabled. Use Data Source Test for one manual connectivity check.",
-        "underlying": "NIFTY",
-    }
+    # NSE option-chain access is user-triggered only. No background polling,
+    # retry loops, identity rotation, or anti-bot bypass is performed.
+    if force or cache["data"] is None:
+        result = test_indian_option_mcp_provider()
+        if result.get("status") == "CONNECTED" and result.get("rows"):
+            market_data = {
+                "status": "LIVE",
+                "source": "NSE website endpoint via Indian-Option-MCP-compatible adapter",
+                "source_timestamp": result.get("exchange_timestamp"),
+                "received_at": result.get("received_at") or now(),
+                "spot": result.get("spot"),
+                "expiry_dates": result.get("expiry_dates") or [],
+                "rows": result.get("rows") or [],
+                "error": None,
+                "underlying": "NIFTY",
+                "http_status": result.get("http_status"),
+                "elapsed_ms": result.get("elapsed_ms"),
+                "disclaimer": "Unofficial NSE website endpoint; availability and permission are not established. One user-triggered snapshot only."
+            }
+            cache["data"] = market_data
+            cache["at"] = time.time()
+        else:
+            return {
+                "status": "UNAVAILABLE", "source": "NSE option-chain endpoint",
+                "source_timestamp": result.get("exchange_timestamp"),
+                "received_at": result.get("received_at") or now(),
+                "spot": result.get("spot"), "expiry_dates": [], "rows": [],
+                "error": result.get("message") or "No verified NSE option-chain response.",
+                "http_status": result.get("http_status"), "underlying": "NIFTY",
+            }
+    data = dict(cache["data"])
+    data["snapshot_age_seconds"] = max(0, int(time.time() - cache["at"]))
+    return data
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
