@@ -3,7 +3,7 @@ const fmt=value=>value===null||value===undefined||value===""?"—":Number(value)
 const compact=value=>value===null||value===undefined?"—":Intl.NumberFormat("en-IN",{notation:"compact",maximumFractionDigits:1}).format(Number(value));
 const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let analysisData=null,marketData=null,activePage="overview",selectedExpiry="",lastRefresh=null;
-const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export"};
+const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export","source-test":"Data Source Test"};
 async function api(url){const response=await fetch(url,{cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.detail||"Request failed");return data}
 function setPage(name){activePage=name;document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));document.querySelectorAll("[data-page]").forEach(el=>el.classList.toggle("active",el.dataset.page===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.page)));
@@ -11,6 +11,7 @@ document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
 $("menuBtn").addEventListener("click",()=> $("sidebar").classList.toggle("open"));
 $("refreshBtn").addEventListener("click",()=>refresh(true));
+$("runProviderTest").addEventListener("click",runProviderTest);
 $("analyzeBtn").addEventListener("click",()=>refresh(true));
 $("rangeSelect").addEventListener("change",renderFullChain);
 $("expirySelect").addEventListener("change",()=>{selectedExpiry=$("expirySelect").value;refresh(true)});
@@ -33,4 +34,22 @@ function downloadCsv(filename,rows){if(!rows?.length){alert("No verified data is
 $("exportChain").addEventListener("click",()=>downloadCsv("nifty-option-chain.csv",(analysisData?.rows||[]).map(r=>({strike:r.strike,expiry:r.expiry,ce_oi:r.ce.openInterest,ce_change_oi:r.ce.changeinOpenInterest,ce_volume:r.ce.totalTradedVolume,ce_ltp:r.ce.lastPrice,ce_iv:r.ce.impliedVolatility,pe_ltp:r.pe.lastPrice,pe_volume:r.pe.totalTradedVolume,pe_change_oi:r.pe.changeinOpenInterest,pe_oi:r.pe.openInterest,pe_iv:r.pe.impliedVolatility}))));
 $("exportOI").addEventListener("click",()=>{const x=analysisData?.metrics;downloadCsv("nifty-oi-levels.csv",[...(x?.support||[]).map(r=>({type:"PUT OI SUPPORT",...r})),...(x?.resistance||[]).map(r=>({type:"CALL OI RESISTANCE",...r}))]);});
 $("exportSignals").addEventListener("click",()=>downloadCsv("nifty-ai-watchlist.csv",analysisData?.signals||[]));
+async function runProviderTest(){
+ const button=$("runProviderTest"), box=$("providerTestResult");
+ button.disabled=true;button.textContent="Testing…";
+ box.innerHTML="<b>Testing NSE connection…</b><span>One request is being made. No retry or anti-blocking workaround will be attempted.</span>";
+ try{
+  const r=await api("/api/providers/indian-option-mcp/test");
+  const state=r.status||"UNAVAILABLE";
+  const fields=[
+   ["Result",state],["HTTP status",r.http_status??"—"],["Exchange timestamp",r.exchange_timestamp||"Not supplied"],
+   ["NIFTY spot",r.spot==null?"—":fmt(r.spot)],["Expiry dates",r.expiry_count],["Strike rows",r.strike_rows],
+   ["CE rows",r.ce_rows],["PE rows",r.pe_rows],["Response time",r.elapsed_ms+" ms"],["Received at",r.received_at]
+  ];
+  box.innerHTML="<b>"+safe(state)+" · "+safe(r.message||"")+"</b><div class=\"data-quality\">"+
+   fields.map(([k,v])=>"<div><span>"+safe(k)+"</span><b>"+safe(v)+"</b></div>").join("")+
+   "</div><div class=\"table-note\">"+safe(r.endpoint)+"</div>";
+ }catch(e){box.innerHTML="<b>Test failed</b><span>"+safe(e.message)+"</span>";}
+ finally{button.disabled=false;button.textContent="Test connection";}
+}
 refresh();setInterval(()=>refresh(false),7000);
