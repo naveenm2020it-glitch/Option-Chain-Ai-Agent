@@ -166,7 +166,7 @@ def analysis(expiry: str | None = Query(default=None)):
                   key=lambda r: r["strike"])
     return {
         "status": "LIVE", "market": market_data, "expiry": chosen,
-        "metrics": metrics, "scan_count": len(near), "rows": near,
+        "metrics": metrics, "scan_count": len(near), "rows": rows, "near_rows": near,
         "signals": rank_watchlist(near, metrics["atm"]),
         "disclaimer": "Screening heuristic, not a trained or validated prediction model. No candle-confirmed entry is generated.",
     }
