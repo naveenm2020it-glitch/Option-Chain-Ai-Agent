@@ -21,6 +21,7 @@
     <button class="nav-item" data-page="alerts"><i>◉</i>Entry Alerts</button>
     <button class="nav-item" data-page="performance"><i>▥</i>Accuracy & Records</button>
     <button class="nav-item" data-page="export"><i>⇩</i>Data Export</button>
+    <button class="nav-item" data-page="source-test"><i>⌁</i>Data Source Test</button>
   </nav>
   <div class="sidebar-bottom"><span class="live-dot"></span> MARKET FEED <b id="side-status">CONNECTING</b><small>Research terminal · NSE</small></div>
 </aside>
@@ -95,6 +96,23 @@
 
 <section class="page" id="export">
  <article class="panel"><div class="panel-head"><div><span class="section-kicker">DOWNLOAD YOUR DATA</span><h2>Export Centre</h2><p>Download the current verified option-chain snapshot and analysis tables.</p></div></div><div class="export-grid"><div class="export-card"><div class="export-icon">▤</div><b>Full Option Chain</b><span>Current expiry · CE and PE fields</span><button class="outline-btn" id="exportChain">Download CSV ↧</button></div><div class="export-card"><div class="export-icon">◈</div><b>OI Support & Resistance</b><span>Top OI levels and change in OI</span><button class="outline-btn" id="exportOI">Download CSV ↧</button></div><div class="export-card"><div class="export-icon">✧</div><b>AI Watchlist</b><span>Ranked contracts and screening factors</span><button class="outline-btn" id="exportSignals">Download CSV ↧</button></div></div><div class="export-foot">Exports contain only data received from the selected live NSE response. No sample or fabricated rows are included.</div></article>
+</section>
+<section class="page" id="source-test">
+  <article class="panel">
+    <div class="panel-head">
+      <div><span class="section-kicker">EXPERIMENTAL CONNECTIVITY CHECK</span><h2>Indian Option MCP · NSE Provider</h2>
+      <p>Tests the same primary NSE option-chain endpoint used by the upstream project. This is a one-shot diagnostic, not a live feed.</p></div>
+      <button class="primary-btn" id="runProviderTest">Test connection</button>
+    </div>
+    <div class="data-quality">
+      <div><span>Provider project</span><b>devag7 / Indian-Option-MCP</b></div>
+      <div><span>Transport</span><b>Direct HTTPS diagnostic</b></div>
+      <div><span>Broker API</span><b>Not used</b></div>
+      <div><span>Retries / identity rotation</span><b>Disabled</b></div>
+    </div>
+    <div id="providerTestResult" class="notice-card"><b>Not tested yet</b><span>Tap “Test connection” to make one request and inspect the actual HTTP response, exchange timestamp and returned contract counts.</span></div>
+    <div class="table-note">A successful HTTP response proves connectivity only. It does not establish exchange permission, data licensing, or guaranteed uptime. HTTP 403 is reported as a block; the test does not try to bypass it.</div>
+  </article>
 </section>
 <footer class="app-footer"><span>NIFTY LAB · DERIVATIVES INTELLIGENCE</span><span>Market research only · Not investment advice</span></footer>
 </main>
