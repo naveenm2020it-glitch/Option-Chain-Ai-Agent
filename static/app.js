@@ -62,14 +62,19 @@ async function runProviderTest(){
  button.disabled=true;button.textContent="Testing…";
  box.innerHTML="<b>Testing NSE connection…</b><span>One request is being made. No retry or anti-blocking workaround will be attempted.</span>";
  try{
-  const r=await api("/api/providers/indian-option-mcp/test");
-  const state=r.status||"UNAVAILABLE";
+  const r=await api("/api/market?force=true");
+  if(r.status==="LIVE"){
+   await refresh(true);
+   updateExportState();
+  }
+  const state=r.status==="LIVE"?"LIVE":(r.status||"UNAVAILABLE");
   const fields=[
-   ["Result",state],["HTTP status",r.http_status??"—"],["Exchange timestamp",r.exchange_timestamp||"Not supplied"],
-   ["NIFTY spot",r.spot==null?"—":fmt(r.spot)],["Expiry dates",r.expiry_count],["Strike rows",r.strike_rows],
-   ["CE rows",r.ce_rows],["PE rows",r.pe_rows],["Response time",r.elapsed_ms+" ms"],["Received at",r.received_at]
+   ["Result",state],["HTTP status",r.http_status??"—"],["Exchange timestamp",r.source_timestamp||"Not supplied"],
+   ["NIFTY spot",r.spot==null?"—":fmt(r.spot)],["Expiry dates",(r.expiry_dates||[]).length],["Strike rows",(r.rows||[]).length],
+   ["CE rows",(r.rows||[]).filter(x=>x.ce&&Object.keys(x.ce).length).length],["PE rows",(r.rows||[]).filter(x=>x.pe&&Object.keys(x.pe).length).length],
+   ["Response time",r.elapsed_ms==null?"—":r.elapsed_ms+" ms"],["Received at",r.received_at]
   ];
-  box.innerHTML="<b>"+safe(state)+" · "+safe(r.message||"")+"</b><div class=\"data-quality\">"+
+  box.innerHTML="<b>"+safe(state)+" · "+safe(r.error||r.message||"")+"</b><div class=\"data-quality\">"+
    fields.map(([k,v])=>"<div><span>"+safe(k)+"</span><b>"+safe(v)+"</b></div>").join("")+
    "</div><div class=\"table-note\">"+safe(r.endpoint)+"</div>";
  }catch(e){box.innerHTML="<b>Test failed</b><span>"+safe(e.message)+"</span>";}
