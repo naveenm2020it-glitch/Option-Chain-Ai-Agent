@@ -16,6 +16,7 @@
     <button class="nav-item" data-page="chain"><i>▦</i>Live Option Chain</button>
     <button class="nav-item" data-page="oi"><i>◈</i>OI Intelligence</button>
     <button class="nav-item" data-page="maxpain"><i>⌁</i>Max Pain Analysis</button>
+    <button class="nav-item" data-page="greeks"><i>Δ</i>Greeks & Premium Intelligence</button>
     <button class="nav-item" data-page="analyzer"><i>✧</i>AI Strike Analyzer</button>
     <button class="nav-item" data-page="alerts"><i>◉</i>Entry Alerts</button>
     <button class="nav-item" data-page="performance"><i>▥</i>Accuracy & Records</button>
@@ -67,6 +68,21 @@
  <div class="notice-card"><b>Why no automatic entry?</b><span>The current NSE adapter supplies an option-chain snapshot, not synchronized 1-minute/5-minute spot and premium candles. Entry triggers, target/SL trigger times and win-rate claims are intentionally disabled until those data are available and validated.</span></div>
 </section>
 
+
+<section class="page" id="greeks">
+ <div class="metric-grid three">
+  <article class="metric-card"><div class="metric-top"><span>UNDERLYING SPOT</span><i>⌁</i></div><strong id="gSpot">—</strong><small>NIFTY 50 · selected expiry</small></article>
+  <article class="metric-card"><div class="metric-top"><span>ATM IMPLIED VOLATILITY</span><i>σ</i></div><strong id="gIv">—</strong><small>Exchange IV input</small></article>
+  <article class="metric-card"><div class="metric-top"><span>EXPIRY TIME</span><i>◷</i></div><strong id="gDays">—</strong><small>Calendar days remaining</small></article>
+ </div>
+ <article class="panel">
+  <div class="panel-head"><div><span class="section-kicker">MODEL-DERIVED GREEKS</span><h2>ATM Zone · CE / PE Premium Intelligence</h2><p>Black–Scholes estimates using the exchange IV field. These are theoretical estimates, not broker-published Greeks.</p></div><span class="tag warning">ESTIMATED</span></div>
+  <div class="toolbar-controls"><label>Strike window<select id="greekRange"><option value="5">ATM ± 5 strikes</option><option value="10">ATM ± 10 strikes</option><option value="all">All available strikes</option></select></label></div>
+  <div class="table-wrap tall"><table><thead><tr><th>CE LTP</th><th>CE IV</th><th>CE Δ</th><th>CE Γ</th><th>CE Θ / DAY</th><th>CE VEGA / 1%</th><th class="strike-head">STRIKE</th><th>PE LTP</th><th>PE IV</th><th>PE Δ</th><th>PE Γ</th><th>PE Θ / DAY</th><th>PE VEGA / 1%</th></tr></thead><tbody id="greekRows"><tr><td colspan="13" class="empty">Waiting for verified option-chain data…</td></tr></tbody></table></div>
+  <div class="table-note">Assumptions: 6.5% annual risk-free rate, 365-day year. IV must be present and valid. Values are not suitable as standalone trading signals.</div>
+ </article>
+</section>
+
 <section class="page" id="alerts">
  <article class="panel"><div class="panel-head"><div><span class="section-kicker">SIGNAL MONITOR</span><h2>Early Entry Alerts</h2><p>Confirmed entries require both spot and selected-option price action.</p></div><span class="tag warning" id="alertStatus">MONITORING</span></div><div class="alert-empty"><div class="alert-symbol">◉</div><h3 id="alertTitle">No confirmed entry alerts</h3><p id="alertMessage">Option-chain screening is active. This feed does not yet include the candle confirmation needed to trigger an entry.</p><div class="alert-checks"><span><i class="check">✓</i> NSE option-chain snapshot</span><span><i class="pending">•</i> Spot candle breakout / retest</span><span><i class="pending">•</i> CE/PE premium candle confirmation</span></div></div></article>
  <div class="metric-grid three"><article class="metric-card"><div class="metric-top"><span>WATCH CANDIDATES</span><i>⌕</i></div><strong id="alertCandidates">0</strong><small>Current option-chain scan</small></article><article class="metric-card"><div class="metric-top"><span>ENTRY TRIGGERS</span><i>↗</i></div><strong>0</strong><small>No candle-confirmed triggers</small></article><article class="metric-card"><div class="metric-top"><span>ALERT HISTORY</span><i>◷</i></div><strong>Not started</strong><small>No fabricated history</small></article></div>
@@ -83,4 +99,5 @@
 <footer class="app-footer"><span>NIFTY LAB · DERIVATIVES INTELLIGENCE</span><span>Market research only · Not investment advice</span></footer>
 </main>
 <script src="/static/app.js"></script>
+<script src="/static/greeks.js"></script>
 </body></html>
