@@ -1,10 +1,10 @@
 from __future__ import annotations
-import math, threading, time, logging
+import math, threading, time, logging, os, hmac
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import requests
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from indian_option_mcp_test import test_provider as test_indian_option_mcp_provider
@@ -159,6 +159,39 @@ def market(force: bool = False):
 def indian_option_mcp_test():
     """Run one transparent NSE connectivity test for the upstream MCP provider."""
     return test_indian_option_mcp_provider()
+
+
+@app.post("/api/local-market")
+def receive_local_market(payload: dict, x_niftylab_token: str | None = Header(default=None)):
+    """Accept a genuine snapshot pushed outbound by the user's local Windows connector."""
+    expected = os.getenv("NIFTYLAB_INGEST_TOKEN", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Local connector ingestion is not configured.")
+    if not x_niftylab_token or not hmac.compare_digest(x_niftylab_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid local connector token.")
+    if payload.get("status") != "CONNECTED" or not isinstance(payload.get("rows"), list) or not payload.get("rows"):
+        raise HTTPException(status_code=422, detail="Only validated CONNECTED snapshots with rows are accepted.")
+    spot = payload.get("spot")
+    if not isinstance(spot, (int, float)) or not math.isfinite(float(spot)):
+        raise HTTPException(status_code=422, detail="Snapshot is missing a valid NIFTY spot value.")
+    rows = payload["rows"]
+    if not all(isinstance(r, dict) and isinstance(r.get("strike"), (int, float))
+               and isinstance(r.get("ce"), dict) and isinstance(r.get("pe"), dict)
+               and r.get("expiry") for r in rows):
+        raise HTTPException(status_code=422, detail="Option-chain row validation failed.")
+    market_data = {
+        "status": "LIVE", "source": "Local Windows NSE connector",
+        "source_timestamp": payload.get("exchange_timestamp"),
+        "received_at": payload.get("received_at") or now(),
+        "spot": float(spot), "expiry_dates": payload.get("expiry_dates") or [],
+        "rows": rows, "error": None, "underlying": "NIFTY",
+        "http_status": payload.get("http_status"), "elapsed_ms": payload.get("elapsed_ms"),
+        "disclaimer": "Best-effort NSE website response received by the user's local connector; not an authorised market-data feed."
+    }
+    cache["data"] = market_data
+    cache["at"] = time.time()
+    logger.info("Accepted authenticated local NIFTY snapshot: %s strikes", len(rows))
+    return {"accepted": True, "status": "LIVE", "strike_rows": len(rows), "received_at": market_data["received_at"]}
 
 
 @app.get("/api/analysis")
