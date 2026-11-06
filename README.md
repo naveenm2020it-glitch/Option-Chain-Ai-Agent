@@ -31,3 +31,12 @@ Open http://127.0.0.1:8000
 The repository includes a Render Blueprint. The existing Render web service can deploy from the connected GitHub main branch. Free Render instances may spin down; the NSE endpoint can also block cloud requests.
 
 Research tool only. Not investment advice.
+
+
+## Free upstream reference and data limitations
+
+This project references the MIT-licensed [Indian Markets Options Hub](https://github.com/yash-sarawgi/Indian-Markets-Options-Hub) for its browser-based NSE F&O analytics approach. Its MIT licence permits reuse subject to retaining required copyright and licence notices. This project does not claim ownership of upstream code.
+
+The no-subscription data path uses the public NSE website endpoint on a best-effort basis. It is not a guaranteed supported market-data API and can be rate-limited or blocked, especially from cloud hosting. The interface must show LIVE only after a successful fresh response; otherwise it shows STALE or UNAVAILABLE. Free source code does not make a paid broker feed free.
+
+Greeks & Premium Intelligence displays Black–Scholes estimates derived from the option-chain IV field (6.5% risk-free-rate assumption). These are model estimates, not exchange-published or broker-provided Greeks. No entry/exit alerts or accuracy claims are generated without synchronized option and spot candles.
