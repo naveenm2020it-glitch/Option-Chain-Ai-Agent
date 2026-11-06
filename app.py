@@ -7,6 +7,7 @@ import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from indian_option_mcp_test import test_provider as test_indian_option_mcp_provider
 
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
@@ -35,51 +36,39 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def get_market(force=False):
-    with lock:
-        if not force and cache["data"] and time.time() - cache["at"] < 5:
-            return cache["data"]
-        try:
-            session.get(BASE, headers=HEADERS, timeout=8)
-            response = session.get(BASE + "/api/option-chain-indices?symbol=NIFTY",
-                                   headers=HEADERS, timeout=10)
-            response.raise_for_status()
-            raw = response.json()
-            records = raw.get("records", {})
-            rows = []
-            for item in records.get("data", []):
-                if item.get("strikePrice") is None or not item.get("expiryDate"):
-                    continue
-                rows.append({
-                    "strike": item["strikePrice"],
-                    "expiry": item["expiryDate"],
-                    "ce": clean_leg(item.get("CE") or {}),
-                    "pe": clean_leg(item.get("PE") or {}),
-                })
-            if not rows:
-                raise RuntimeError("NSE returned an empty option chain")
-            data = {
+    # NSE option-chain access is user-triggered only. No background polling,
+    # retry loops, identity rotation, or anti-bot bypass is performed.
+    if force or cache["data"] is None:
+        result = test_indian_option_mcp_provider()
+        if result.get("status") == "CONNECTED" and result.get("rows"):
+            market_data = {
                 "status": "LIVE",
-                "source": "NSE website public endpoint",
-                "source_timestamp": records.get("timestamp") or raw.get("timestamp"),
-                "received_at": now(),
-                "spot": records.get("underlyingValue"),
-                "expiry_dates": records.get("expiryDates", []),
-                "rows": rows,
+                "source": "NSE website endpoint via Indian-Option-MCP-compatible adapter",
+                "source_timestamp": result.get("exchange_timestamp"),
+                "received_at": result.get("received_at") or now(),
+                "spot": result.get("spot"),
+                "expiry_dates": result.get("expiry_dates") or [],
+                "rows": result.get("rows") or [],
+                "error": None,
                 "underlying": "NIFTY",
+                "http_status": result.get("http_status"),
+                "elapsed_ms": result.get("elapsed_ms"),
+                "disclaimer": "Unofficial NSE website endpoint; availability and permission are not established. One user-triggered snapshot only."
             }
-            cache.update(at=time.time(), data=data)
-            return data
-        except Exception as exc:
-            logger.exception("NSE option-chain fetch failed: %s", exc)
-            if cache["data"]:
-                stale = dict(cache["data"])
-                stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
-                return stale
+            cache["data"] = market_data
+            cache["at"] = time.time()
+        else:
             return {
-                "status": "UNAVAILABLE", "source": "NSE website public endpoint",
-                "source_timestamp": None, "received_at": now(), "spot": None,
-                "expiry_dates": [], "rows": [], "error": str(exc), "underlying": "NIFTY",
+                "status": "UNAVAILABLE", "source": "NSE option-chain endpoint",
+                "source_timestamp": result.get("exchange_timestamp"),
+                "received_at": result.get("received_at") or now(),
+                "spot": result.get("spot"), "expiry_dates": [], "rows": [],
+                "error": result.get("message") or "No verified NSE option-chain response.",
+                "http_status": result.get("http_status"), "underlying": "NIFTY",
             }
+    data = dict(cache["data"])
+    data["snapshot_age_seconds"] = max(0, int(time.time() - cache["at"]))
+    return data
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
@@ -151,6 +140,12 @@ def health():
 @app.get("/api/market")
 def market(force: bool = False):
     return get_market(force=force)
+
+@app.get("/api/providers/indian-option-mcp/test")
+def indian_option_mcp_test():
+    """Run one transparent NSE connectivity test for the upstream MCP provider."""
+    return test_indian_option_mcp_provider()
+
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
