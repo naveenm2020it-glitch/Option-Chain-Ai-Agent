@@ -35,7 +35,7 @@ def analyze_option_chain(rows: list[Mapping[str, Any]], *, top_n: int = 5) -> di
 
     parsed: list[dict[str, Any]] = []
     expiry_values: set[str] = set()
-    strike_values: set[float] = set()
+    seen_pairs: set[tuple[str, float]] = set()
     warnings: list[str] = []
 
     for row in rows:
@@ -47,10 +47,11 @@ def analyze_option_chain(rows: list[Mapping[str, Any]], *, top_n: int = 5) -> di
         if strike is None or strike <= 0 or not isinstance(expiry, str) or not expiry:
             warnings.append("Ignored a row with invalid strike or expiry.")
             continue
-        if strike in strike_values and expiry in expiry_values:
+        identity = (expiry, strike)
+        if identity in seen_pairs:
             warnings.append("Duplicate strike/expiry rows were found.")
             continue
-        strike_values.add(strike)
+        seen_pairs.add(identity)
         expiry_values.add(expiry)
         parsed.append({
             "strike": strike,
