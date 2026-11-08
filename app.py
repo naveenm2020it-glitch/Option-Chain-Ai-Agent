@@ -138,7 +138,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    data = get_market()
+    # Health probes must not trigger upstream market-data calls.
     try:
         cfg = mcp_configuration()
         configured = bool(cfg["enabled"] and cfg["automated_use_permitted"] and cfg["command"] and cfg["tool_name"])
@@ -147,10 +147,10 @@ def health():
     return {
         "ok": True,
         "time": now(),
-        "data_status": data["status"],
-        "provider": data.get("source") or "none",
+        "data_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
+        "provider": "MCP" if configured else "none",
         "provider_configured": configured,
-        "provider_status": data["status"],
+        "provider_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
     }
 
 @app.get("/api/market")
