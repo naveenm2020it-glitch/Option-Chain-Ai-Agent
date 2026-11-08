@@ -18,6 +18,20 @@ The strike ranking is a transparent rules-based screening heuristic, not a train
 
 Max Pain is calculated by testing each available strike as a settlement price and summing estimated intrinsic payouts weighted by current CE/PE open interest. It is a positioning reference, not a forecast.
 
+## Optional MCP provider integration
+
+A read-only stdio MCP adapter is implemented in `providers/mcp_adapter.py`. It discovers the configured server's tools, calls only the explicitly allowlisted tool, and expects a JSON normalized snapshot. The adapter is disabled by default.
+
+1. Review the exact MCP server repository, upstream data source, license and terms for automated collection, storage and display.
+2. Confirm that the selected read-only tool returns a normalized NIFTY snapshot including a genuine timezone-aware `source_timestamp`, spot, expiry list, selected expiry and CE/PE rows.
+3. Copy `.env.example` into your local environment configuration and set the server command, arguments, exact tool name and tool arguments.
+4. Only after the upstream source terms have been reviewed and automated use is permitted, explicitly set `MCP_PROVIDER_ENABLED=true` and `MCP_AUTOMATED_USE_PERMITTED=true`.
+5. Adjust `MCP_MAX_AGE_SECONDS` only to a justified source delay. A receive timestamp is never substituted for a missing source timestamp.
+
+For Render, configure the MCP server command and arguments only if the server can be installed and launched in the same service/container. The adapter currently implements local stdio transport; hosted HTTP MCP transports are not implemented. Do not enable an unofficial NSE endpoint wrapper for production without the required permission. A successful tool response alone never means LIVE; the existing quality gate must pass.
+
+The MCP adapter does not include any NSE scraper, bypass, CAPTCHA workaround or automatic order placement. It does not make an unapproved source compliant. When disabled, unapproved, stale or malformed, the app remains UNAVAILABLE/STALE and alerts remain paused.
+
 ## Run locally (Python 3.12)
 ```powershell
 py -3.12 -m venv .venv
