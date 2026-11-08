@@ -18,9 +18,9 @@ document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener
   style.textContent=`
     #sidebar{display:none!important;transform:none!important;width:0!important;min-width:0!important}
     #menuBtn{display:none!important}
-    #screenSwitcher{display:flex;align-items:center;gap:7px;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:8px 2px 10px;margin:4px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+     #screenSwitcher{display:flex;align-items:center;gap:7px;width:100%;flex-basis:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:8px 2px 10px;margin:4px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
     #screenSwitcher::-webkit-scrollbar{display:none}
-    #screenSwitcher [data-page]{flex:0 0 auto;white-space:nowrap;border:1px solid var(--border,#dce3e8);border-radius:999px;padding:8px 13px;background:var(--surface,#fff);color:var(--text,#263238);font:600 12px/1.2 inherit;cursor:pointer}
+    #screenSwitcher [data-page]{flex:0 0 auto;white-space:nowrap;border:1px solid var(--border,#dce3e8);border-radius:999px;padding:8px 13px;background:var(--surface,#fff);color:var(--text,#263238);font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;cursor:pointer}
     #screenSwitcher [data-page].active{background:var(--accent,#173f35);border-color:var(--accent,#173f35);color:#fff}
     @media(min-width:900px){#screenSwitcher{flex-wrap:wrap;overflow:visible}}
     @media(max-width:600px){#screenSwitcher{position:sticky;top:0;z-index:30;background:var(--background,#f5f7f8);margin-left:-2px;margin-right:-2px;padding:9px 2px}}
