@@ -353,3 +353,68 @@ body:not(.dark){--app-text:#172b40}
 body:not(.dark) #screenSwitcher{background:rgba(237,243,248,.97);border-color:#d7e2ec}
 body:not(.dark) #screenSwitcher .nav-item{background:#fff;border-color:#d7e2ec;color:#52677c}
 body:not(.dark) #screenSwitcher .nav-item.active{background:linear-gradient(120deg,#168ddd,#2467b9);border-color:#47b7ff;color:#fff}
+
+/* Soft porcelain + sage theme — replace every navy surface with a calm light surface */
+:root{
+ color-scheme:light;
+ --bg:#f3f5f2;--surface:#ffffff;--surface-solid:#ffffff;
+ --ink:#263746;--muted:#75838b;--line:#e1e8e3;
+ --navy:#334b4a;--navy2:#49635d;--olive:#dce8d8;
+ --accent:#568779;--blue:#6d9d9a;--cyan:#77b4b0;
+ --green:#268566;--red:#c96b70;--gold:#b38a4d;
+ --shadow:0 8px 26px rgba(48,68,60,.07);--radius:17px
+}
+html,body,body.dark,body:not(.dark){
+ color-scheme:light!important;
+ background:#f3f5f2!important;color:#263746!important
+}
+body{background:radial-gradient(ellipse at 85% -12%,rgba(189,211,194,.30),transparent 42%),#f3f5f2!important}
+.topbar{background:#fff!important;border:1px solid #e2e9e3!important;box-shadow:0 5px 20px rgba(46,68,58,.05)}
+h1,h2,h3,.metric-card strong{color:#263746!important}
+.eyebrow,.section-kicker,.metric-top,.muted{color:#7b8b8a!important}
+.metric-card,.panel{background:#fff!important;border:1px solid #e3eae5!important;box-shadow:0 8px 25px rgba(46,68,58,.07)!important;backdrop-filter:none!important}
+.metric-card:after{background:linear-gradient(145deg,#e2eee5a8,#d5e7e222)!important}
+.integrity-banner{background:linear-gradient(100deg,#edf5ed,#f5f7f1)!important;border-color:#dce8dc!important;color:#526b5e!important}
+.integrity-banner span,.integrity-banner small{color:#788d80!important}
+.banner-icon{background:#dcecdf!important;color:#4c8067!important}
+#screenSwitcher .nav-item{background:#fff!important;border-color:#dce6df!important;color:#596c69!important}
+#screenSwitcher .nav-item.active{background:linear-gradient(120deg,#668f80,#527d70)!important;border-color:#527d70!important;color:#fff!important;box-shadow:0 5px 14px rgba(76,125,107,.20)!important}
+#screenSwitcher .nav-item.active i{color:#fff!important}
+#screenSwitcher .nav-item i{color:#628d7c!important}
+.panel,.metric-card,.export-card,.rank-row,.performance-chart-row,.data-quality>div,.level-row,.guide-item,.summary-line,.explain-box,.notice-card{
+ background:#fff!important;border-color:#e1e9e3!important;color:#344a4b!important;box-shadow:0 5px 18px rgba(50,73,61,.045)!important
+}
+.export-card{min-height:170px!important}
+.export-icon,.rank-num,.explain-icon,.alert-symbol,.validation-icon{
+ background:#e8f1e9!important;color:#568779!important
+}
+.export-card b,.rank-info b,.level-row b{color:#344a4b!important}
+.export-card span,.rank-info span,.level-row small,.guide-item span{color:#7c8d88!important}
+.outline-btn{border-color:#9bb9a7!important;color:#4f806c!important;background:#f8fbf8!important}
+.outline-btn:hover{background:#edf5ee!important}
+.table-wrap{background:#fff!important;border:1px solid #dce6df!important}
+table,tbody{background:#fff!important}
+th{background:#edf3ef!important;color:#647a70!important;border-bottom-color:#dce6df!important}
+td{background:#fff!important;color:#344a4b!important;border-bottom-color:#e7ede8!important}
+td.strike,th.strike-head{background:#eaf1eb!important;color:#405b50!important}
+.atm-row td{background:#f1f6f1!important}
+.atm-row td.strike{background:#e1eee2!important}
+.ce-head{background:#f8eaea!important;color:#a85d62!important}
+.pe-head{background:#e9f4ed!important;color:#3b805e!important}
+.empty{background:#f8faf8!important;color:#9aa9a2!important}
+#pageTrack,#pageViewport{background:transparent!important}
+.gauge-ring{background:#f8fbf8!important;border-color:#dce8df!important;box-shadow:inset 0 0 0 1px #e5eee7!important}
+.gauge-ring span{color:#344a4b!important}
+.tag{background:#f3f0e5!important;color:#90764a!important}
+.tag.positive{background:#e8f4ec!important;color:#268566!important}
+.tag.negative{background:#faebec!important;color:#c96b70!important}
+.toolbar-controls select{background:#fff!important;border-color:#dce6df!important;color:#344a4b!important}
+.primary-btn{background:linear-gradient(120deg,#648f7d,#4f796c)!important;box-shadow:0 6px 15px rgba(76,125,107,.16)!important}
+.market-state{background:#edf5ee!important;border-color:#d7e7da!important;color:#4e8169!important}
+.icon-btn{background:#fff!important;border-color:#dce6df!important;color:#526b60!important}
+.app-footer{color:#8a9a92!important}
+body.dark .metric-card,body.dark .panel{border-color:#e3eae5!important}
+@media(max-width:640px){
+ #screenSwitcher{background:rgba(243,245,242,.97)!important;border-bottom-color:#dfe8e1!important}
+ .export-card{min-height:0!important}
+}
