@@ -15,7 +15,7 @@ from typing import Any
 
 from zoneinfo import ZoneInfo
 
-from providers.base import ProviderCapabilities, provider_is_eligible
+from providers.base import ProviderCapabilities
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -50,6 +50,75 @@ def mcp_configuration() -> dict[str, Any]:
     }
 
 
+def _source_timestamp(value: Any) -> str | None:
+    """Parse known NSE timestamp forms; never substitute local receive time."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=IST)
+        return parsed.isoformat(timespec="seconds")
+    except ValueError:
+        pass
+    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y, %H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=IST).isoformat(timespec="seconds")
+        except ValueError:
+            continue
+    return raw
+
+
+def _normalize_india_market_mcp(payload: dict[str, Any]) -> dict[str, Any]:
+    """Map the kcodweb India Market MCP get_option_chain result to our schema."""
+    if isinstance(payload.get("rows"), list):
+        return payload
+    chain = payload.get("chain")
+    if not isinstance(chain, list):
+        return payload
+    expiry = payload.get("expiry")
+    rows: list[dict[str, Any]] = []
+
+    def leg(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        return {
+            "lastPrice": value.get("ltp"),
+            "change": value.get("chg"),
+            "totalTradedVolume": value.get("volume"),
+            "openInterest": value.get("oi"),
+            "changeinOpenInterest": value.get("chg_oi"),
+            "impliedVolatility": value.get("iv"),
+            "bidprice": value.get("bid"),
+            "askPrice": value.get("ask"),
+            "delta": value.get("delta"),
+        }
+
+    for item in chain:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            "strike": item.get("strike"),
+            "expiry": expiry,
+            "ce": leg(item.get("call")),
+            "pe": leg(item.get("put")),
+        })
+    expiries = payload.get("expiries")
+    return {
+        "instrument": "NIFTY",
+        "source": "India Market MCP (NSE website API)",
+        "source_timestamp": _source_timestamp(payload.get("as_of")),
+        "received_at": None,
+        "spot": payload.get("underlying_price"),
+        "expiry_dates": expiries if isinstance(expiries, list) else ([expiry] if expiry else []),
+        "selected_expiry": expiry,
+        "rows": rows,
+        "mcp_analytics": payload.get("summary"),
+        "mcp_notes": payload.get("notes"),
+    }
+
+
 def _extract_snapshot(result: Any) -> dict[str, Any]:
     """Extract a JSON object from structuredContent or a text content block."""
     structured = getattr(result, "structuredContent", None)
@@ -77,7 +146,7 @@ def _extract_snapshot(result: Any) -> dict[str, Any]:
     # Accept either a direct snapshot or a single explicit snapshot wrapper.
     if isinstance(payload.get("snapshot"), dict):
         payload = payload["snapshot"]
-    return payload
+    return _normalize_india_market_mcp(payload)
 
 
 class MCPOptionChainProvider:
