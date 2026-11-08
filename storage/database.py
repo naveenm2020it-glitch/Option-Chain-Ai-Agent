@@ -313,7 +313,8 @@ class ResearchDatabase:
     def update_signal(
         self, signal_id: int, *, state: str, outcome: str | None = None,
         triggered_at: str | None = None, closed_at: str | None = None,
-        actual_entry: float | None = None, gross_points: float | None = None,
+        actual_entry: float | None = None, target_price: float | None = None,
+        stop_price: float | None = None, gross_points: float | None = None,
         net_points: float | None = None, unresolved_reason: str | None = None,
     ) -> None:
         with self._connect() as connection:
@@ -322,12 +323,14 @@ class ResearchDatabase:
                    triggered_at = COALESCE(?, triggered_at),
                    closed_at = COALESCE(?, closed_at),
                    actual_entry = COALESCE(?, actual_entry),
+                   target_price = COALESCE(?, target_price),
+                   stop_price = COALESCE(?, stop_price),
                    gross_points = COALESCE(?, gross_points),
                    net_points = COALESCE(?, net_points),
                    unresolved_reason = COALESCE(?, unresolved_reason)
                    WHERE id = ?""",
                 (state, outcome, triggered_at, closed_at, actual_entry,
-                 gross_points, net_points, unresolved_reason, signal_id),
+                 target_price, stop_price, gross_points, net_points, unresolved_reason, signal_id),
             )
 
     def performance_summary(self) -> dict[str, Any]:
