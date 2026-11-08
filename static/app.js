@@ -25,6 +25,7 @@ document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener
  const show=index=>{
   current=Math.max(0,Math.min(pages.length-1,index));
   track.style.transform='translate3d(0,-'+(current*100)+'%,0)';
+  pages.forEach((page,i)=>page.classList.toggle("active",i===current));
   buttons.forEach((button,i)=>{button.classList.toggle("active",i===current);button.setAttribute("aria-current",i===current?"page":"false")});
   $("pageTitle").textContent=titles[pages[current]?.id]||"NIFTY LAB";
   if(pages[current]?.id==="export")updateExportState();
@@ -37,7 +38,7 @@ document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener
  show(0);
 })();document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.go)));
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
-$("menuBtn").addEventListener("click",()=> $("sidebar").classList.toggle("open"));
+$("menuBtn")?.remove();
 $("refreshBtn").addEventListener("click",()=>refresh(true));
 $("analyzeBtn").addEventListener("click",()=>refresh(true));
 $("rangeSelect").addEventListener("change",renderFullChain);
