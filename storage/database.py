@@ -278,3 +278,84 @@ class ResearchDatabase:
                 (signal_id,),
             ).fetchall()
             return [dict(row) for row in rows]
+
+
+    def analysis_source_seen(self, source_timestamp: str, expiry: str | None) -> bool:
+        """Avoid persisting duplicate analyses for the same source snapshot."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM market_snapshots
+                   WHERE source_timestamp = ? AND COALESCE(expiry, '') = COALESCE(?, '')
+                   LIMIT 1""",
+                (source_timestamp, expiry),
+            ).fetchone()
+            return row is not None
+
+    def list_signals(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be 1..500.")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT s.*, a.direction, a.evidence_score, a.created_at AS analysis_created_at
+                   FROM signals s JOIN analyses a ON a.id = s.analysis_id
+                   ORDER BY s.id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_active_signals(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM signals WHERE state IN ('TRIGGERED', 'ACTIVE') ORDER BY id",
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_signal(
+        self, signal_id: int, *, state: str, outcome: str | None = None,
+        triggered_at: str | None = None, closed_at: str | None = None,
+        actual_entry: float | None = None, gross_points: float | None = None,
+        net_points: float | None = None, unresolved_reason: str | None = None,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE signals SET state = ?, outcome = COALESCE(?, outcome),
+                   triggered_at = COALESCE(?, triggered_at),
+                   closed_at = COALESCE(?, closed_at),
+                   actual_entry = COALESCE(?, actual_entry),
+                   gross_points = COALESCE(?, gross_points),
+                   net_points = COALESCE(?, net_points),
+                   unresolved_reason = COALESCE(?, unresolved_reason)
+                   WHERE id = ?""",
+                (state, outcome, triggered_at, closed_at, actual_entry,
+                 gross_points, net_points, unresolved_reason, signal_id),
+            )
+
+    def performance_summary(self) -> dict[str, Any]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT outcome, COUNT(*) AS count,
+                   SUM(COALESCE(net_points, gross_points, 0)) AS points
+                   FROM signals WHERE outcome IS NOT NULL GROUP BY outcome"""
+            ).fetchall()
+            totals = {str(row["outcome"]): {"count": int(row["count"]), "points": float(row["points"] or 0)} for row in rows}
+            closed = sum(item["count"] for item in totals.values())
+            targets = totals.get("TARGET", {}).get("count", 0)
+            stops = totals.get("STOP_LOSS", {}).get("count", 0)
+            resolved = targets + stops
+            return {
+                "total_signals": self._count_signals(connection),
+                "closed_signals": closed,
+                "targets": targets,
+                "stop_losses": stops,
+                "unresolved": totals.get("UNRESOLVED", {}).get("count", 0),
+                "time_exits": totals.get("TIME_EXIT", {}).get("count", 0),
+                "accuracy": (targets / resolved * 100.0) if resolved else None,
+                "net_points": sum(item["points"] for item in totals.values()),
+                "outcomes": totals,
+                "sample_is_statistically_validated": False,
+            }
+
+    @staticmethod
+    def _count_signals(connection: sqlite3.Connection) -> int:
+        row = connection.execute("SELECT COUNT(*) AS count FROM signals").fetchone()
+        return int(row["count"])
