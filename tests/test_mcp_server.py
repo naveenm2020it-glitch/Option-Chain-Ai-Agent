@@ -1,7 +1,7 @@
 import asyncio
 
 
-import asgi  # noqa: F401 - verify the combined website/MCP ASGI app imports cleanly
+import app as website_app  # noqa: F401 - verify website app mounts MCP
 from mcp_server import BearerTokenASGI, get_nifty_signal_policy
 
 
