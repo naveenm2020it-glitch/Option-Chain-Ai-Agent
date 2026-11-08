@@ -14,7 +14,7 @@ A responsive NIFTY 50 option-chain research terminal. Live market-data integrati
 ## Data integrity and limitations
 No permitted free, no-key, non-broker automated NIFTY option-chain source has been verified. The previous NSE website endpoint poller has been disabled because the endpoint is undocumented and the source terms do not establish permission for continuous automated collection. The app therefore returns UNAVAILABLE and pauses analysis/alerts until an authorized provider is configured. Do not interpret a successful HTTP response from an undocumented website endpoint as permission or as proof of a reliable live feed.
 
-The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. No live provider or synchronized spot/option-premium candle feed is currently connected. Candle-confirmed entry triggers, target/stop trigger timestamps and win-rate statistics are deliberately disabled and not fabricated.
+The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. No live provider is currently approved or connected. Option-chain snapshot entry triggers, target/stop timestamps and outcome tracking are still pending. Premium candles are not required and will not be a dependency.
 
 Max Pain is calculated by testing each available strike as a settlement price and summing estimated intrinsic payouts weighted by current CE/PE open interest. It is a positioning reference, not a forecast.
 
