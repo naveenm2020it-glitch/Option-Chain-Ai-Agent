@@ -155,6 +155,13 @@ def get_recent_nifty_analyses(limit: int = 20) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_nifty_greeks_matrix(expiry: str | None = None) -> dict[str, Any]:
+    """Return model-calculated Greeks for available CE/PE contracts in one NIFTY expiry."""
+    from app import greeks
+    return greeks(expiry=expiry)
+
+
+@mcp.tool()
 def get_nifty_signal_journal(limit: int = 50) -> dict[str, Any]:
     """Return the latest NIFTY signal lifecycle records and their outcomes."""
     from storage.database import ResearchDatabase
