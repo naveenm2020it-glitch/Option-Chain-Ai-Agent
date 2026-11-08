@@ -63,7 +63,7 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
                                details={'source_timestamp': stamp, 'result': result})
         if result.get('outcome'):
             entry = float(signal.get('actual_entry') or signal.get('entry_trigger') or current_ltp)
-            points = round(current_ltp - entry, 2)
+            points = None if result['outcome'] == 'UNRESOLVED' else round(current_ltp - entry, 2)
             DB.update_signal(signal['id'], state=result['state'], outcome=result['outcome'],
                              closed_at=stamp, gross_points=points, net_points=points,
                              unresolved_reason=result.get('reason') if result['outcome'] == 'UNRESOLVED' else None)
@@ -74,17 +74,17 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
 
     selected_candidate = decision.get('selected_candidate')
     if selected_candidate and not DB.get_active_signals():
-            signal_id = DB.create_signal(analysis_id, {
-                'contract_key': selected_candidate['contract_key'], 'side': selected_candidate['side'],
-                'entry_trigger': selected_candidate['ltp'], 'actual_entry': selected_candidate['entry_price'],
-                'target_price': selected_candidate['target_price'], 'stop_price': selected_candidate['stop_price'],
-                'horizon_seconds': 900, 'state': 'ACTIVE', 'created_at': stamp,
-            })
-            DB.update_signal(signal_id, state='ACTIVE', triggered_at=stamp, actual_entry=selected_candidate['entry_price'])
-            DB.append_signal_event(signal_id, 'ENTRY_TRIGGERED', stamp,
-                observed_price=selected_candidate['entry_price'],
-                details={'candidate': selected_candidate, 'engine_version': ENGINE_VERSION, 'premium_candles_required': False})
-            decision['created_signal_id'] = signal_id
+        signal_id = DB.create_signal(analysis_id, {
+            'contract_key': selected_candidate['contract_key'], 'side': selected_candidate['side'],
+            'entry_trigger': selected_candidate['ltp'], 'actual_entry': selected_candidate['entry_price'],
+            'target_price': selected_candidate['target_price'], 'stop_price': selected_candidate['stop_price'],
+            'horizon_seconds': 900, 'state': 'ACTIVE', 'created_at': stamp,
+        })
+        DB.update_signal(signal_id, state='ACTIVE', triggered_at=stamp, actual_entry=selected_candidate['entry_price'])
+        DB.append_signal_event(signal_id, 'ENTRY_TRIGGERED', stamp,
+            observed_price=selected_candidate['entry_price'],
+            details={'candidate': selected_candidate, 'engine_version': ENGINE_VERSION, 'premium_candles_required': False})
+        decision['created_signal_id'] = signal_id
 
     _PREVIOUS_VALID_SNAPSHOTS[chosen_expiry] = selected
     _PROCESSED_SNAPSHOT_KEYS.add(key)
