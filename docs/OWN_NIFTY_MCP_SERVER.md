@@ -4,7 +4,7 @@ The application exposes its own MCP server over **Streamable HTTP** at:
 
 - `https://YOUR-RENDER-DOMAIN/mcp`
 
-It is hosted by the same ASGI process as the website. The website continues to use its existing internal Python services; external MCP clients connect to the mounted MCP endpoint.
+It is mounted directly into the existing FastAPI website application, so the current Render start command remains compatible. The website continues to use its existing internal Python services; external MCP clients connect to the mounted MCP endpoint.
 
 ## Tools
 
@@ -43,7 +43,7 @@ py -3.12 -m venv .venv
 .\\.venv\\Scripts\\Activate.ps1
 python -m pip install -r requirements.txt
 $env:MCP_ACCESS_TOKEN = "replace-with-a-long-random-secret"
-uvicorn asgi:app --host 127.0.0.1 --port 8000
+uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 Website: `http://127.0.0.1:8000/`
