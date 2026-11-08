@@ -61,3 +61,42 @@ def test_analysis_pagination_bounds_are_checked(tmp_path):
         pass
     else:
         raise AssertionError("Expected invalid page size to be rejected.")
+
+
+def test_signal_journal_and_performance_summary(tmp_path):
+    db = ResearchDatabase(tmp_path / "journal.sqlite3")
+    db.initialize()
+    _, analysis_id = db.save_analysis(
+        {"instrument": "NIFTY", "status": "LIVE", "rows": []},
+        {"direction": "BULLISH", "decision": "SIGNAL_CANDIDATE"},
+    )
+    signal_id = db.create_signal(analysis_id, {
+        "contract_key": "NIFTY|2026-11-12|24000|CE",
+        "side": "CE", "entry_trigger": 100, "actual_entry": 101,
+        "target_price": 121, "stop_price": 91, "horizon_seconds": 900,
+        "state": "ACTIVE", "created_at": "2026-11-09T09:30:00+05:30",
+    })
+    db.update_signal(signal_id, state="CLOSED", outcome="TARGET",
+                      triggered_at="2026-11-09T09:30:00+05:30",
+                      closed_at="2026-11-09T09:31:00+05:30",
+                      gross_points=20, net_points=20)
+    db.append_signal_event(signal_id, "TARGET", "2026-11-09T09:31:00+05:30",
+                           observed_price=121)
+    records = db.list_signals()
+    assert len(records) == 1
+    assert records[0]["outcome"] == "TARGET"
+    summary = db.performance_summary()
+    assert summary["targets"] == 1
+    assert summary["accuracy"] == 100.0
+    assert summary["sample_is_statistically_validated"] is False
+
+
+def test_analysis_source_deduplication(tmp_path):
+    db = ResearchDatabase(tmp_path / "dedupe.sqlite3")
+    db.initialize()
+    snapshot = {
+        "instrument": "NIFTY", "status": "LIVE", "selected_expiry": "2026-11-12",
+        "source_timestamp": "2026-11-09T09:30:00+05:30", "rows": [],
+    }
+    db.save_analysis(snapshot, {"direction": "WAIT", "decision": "WARMING_UP"})
+    assert db.analysis_source_seen("2026-11-09T09:30:00+05:30", "2026-11-12") is True
