@@ -5,37 +5,20 @@ const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt
 let analysisData=null,marketData=null,activePage="overview",selectedExpiry="",lastRefresh=null;
 const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export"};
 async function api(url){const response=await fetch(url,{cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.detail||"Request failed");return data}
-function setPage(name){activePage=name;if(window.__niftySetPage){window.__niftySetPage([...document.querySelectorAll("#pageTrack .page")].findIndex(el=>el.id===name));return;}document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
+function setPage(name){const next=document.getElementById(name);if(!next)return;activePage=name;document.querySelectorAll(".page").forEach(el=>{el.classList.toggle("active",el===next);el.classList.remove("screen-enter");});document.querySelectorAll("#screenSwitcher [data-page]").forEach(el=>{const on=el.dataset.page===name;el.classList.toggle("active",on);if(on)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});next.classList.add("screen-enter");$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState();window.scrollTo({top:0,behavior:"smooth"});}
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.page)));
-/* Vertical screen navigation: one screen at a time, up/down gestures and tab controls. */
-(function setupVerticalScreens(){
+/* Responsive screen navigation: natural page scrolling with vertical switch transition. */
+(function setupResponsiveScreens(){
  const sidebar=$("sidebar"),topbar=document.querySelector(".topbar"),main=document.querySelector(".main");
  if(!sidebar||!topbar||!main)return;
- const nav=document.createElement("nav");nav.id="screenSwitcher";nav.setAttribute("aria-label","Trading screens");
- const buttons=[...sidebar.querySelectorAll("[data-page]")];
- buttons.forEach((button,i)=>{button.classList.add("screen-tab");button.innerHTML='<span class="tab-index">'+String(i+1).padStart(2,"0")+'</span><span>'+button.textContent.trim()+'</span>';nav.appendChild(button);});
- topbar.insertAdjacentElement("afterend",nav);sidebar.remove();
- const pages=[...main.querySelectorAll(":scope > section.page")];
- const viewport=document.createElement("div");viewport.id="pageViewport";
- const track=document.createElement("div");track.id="pageTrack";
- pages.forEach(page=>track.appendChild(page));viewport.appendChild(track);nav.insertAdjacentElement("afterend",viewport);
+ const nav=sidebar.querySelector("#nav");
+ if(nav){nav.id="screenSwitcher";nav.setAttribute("aria-label","Trading screens");topbar.insertAdjacentElement("afterend",nav);}
+ sidebar.remove();
  document.body.classList.add("dark");
  $("themeBtn").textContent="☀";
- let current=0,startX=0,startY=0,gesture=false;
- const show=index=>{
-  current=Math.max(0,Math.min(pages.length-1,index));
-  track.style.transform='translate3d(0,-'+(current*100)+'%,0)';
-  pages.forEach((page,i)=>page.classList.toggle("active",i===current));
-  buttons.forEach((button,i)=>{button.classList.toggle("active",i===current);button.setAttribute("aria-current",i===current?"page":"false")});
-  $("pageTitle").textContent=titles[pages[current]?.id]||"NIFTY LAB";
-  if(pages[current]?.id==="export")updateExportState();
-  viewport.setAttribute("aria-label",(titles[pages[current]?.id]||"")+" screen");
- };
- window.__niftySetPage=show;
- buttons.forEach((button,i)=>button.addEventListener("click",()=>show(i)));
- viewport.addEventListener("touchstart",event=>{if(event.touches.length!==1)return;startX=event.touches[0].clientX;startY=event.touches[0].clientY;gesture=true},{passive:true});
- viewport.addEventListener("touchend",event=>{if(!gesture)return;gesture=false;const dx=event.changedTouches[0].clientX-startX,dy=event.changedTouches[0].clientY-startY;if(Math.abs(dy)>65&&Math.abs(dy)>Math.abs(dx)*1.2)show(current+(dy<0?1:-1));},{passive:true});
- show(0);
+ const buttons=[...document.querySelectorAll("#screenSwitcher [data-page]")];
+ buttons.forEach((button,i)=>{button.innerHTML='<span class="tab-index">'+String(i+1).padStart(2,"0")+'</span><span>'+button.textContent.trim()+'</span>';});
+ window.__niftySetPage=null;
 })();document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.go)));
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
 $("menuBtn")?.remove();
