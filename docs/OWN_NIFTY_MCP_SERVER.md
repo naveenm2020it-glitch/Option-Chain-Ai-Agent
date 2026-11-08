@@ -65,3 +65,5 @@ The website now exposes `/api/signals`, `/api/signals/{id}/events`, `/api/histor
 SQLite is suitable for a single-instance research deployment only. Render free instances may lose local data on restart; configure persistent storage or managed Postgres for reliable long-term journaling.
 
 The server is mounted at `/mcp` on the same Render website and protected by a bearer token (`MCP_ACCESS_TOKEN`). Connect an MCP-compatible client using Streamable HTTP, the website's `/mcp` URL and the configured bearer token. The website's own MCP exposes read-only market/analysis/journal tools; it cannot place broker orders.
+
+The entry candidate must also pass a 15-minute target-feasibility screen: the latest two valid selected-contract LTP observations are used to extrapolate premium velocity to the actual ask-based entry +20 point target. Candidates whose simple linear extrapolation exceeds 15 minutes are rejected. This is only a feasibility filter and must not be presented as a calibrated probability or a guarantee.
