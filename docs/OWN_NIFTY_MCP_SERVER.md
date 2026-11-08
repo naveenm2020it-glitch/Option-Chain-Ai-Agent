@@ -16,6 +16,8 @@ It is mounted directly into the existing FastAPI website application, so the cur
 | `calculate_option_greeks` | Black-Scholes Greeks with explicit units |
 | `get_nifty_signal_policy` | Target/SL/horizon and snapshot-monitoring policy |
 | `get_recent_nifty_analyses` | Persisted research decisions |
+| `get_nifty_signal_journal` | Signal lifecycle and outcomes |
+| `get_nifty_performance` | Observed target/stop performance summary |
 
 The MCP server is NIFTY-only and read-only. It cannot place orders or create fabricated signals. The signal-policy tool documents the requested +20 premium-point target, -10-point stop, 15-minute horizon, no premium-candle dependency and unresolved handling for ambiguous snapshot gaps. The actual signal lifecycle engine is a separate pending implementation and is not represented as complete by this MCP server.
 
@@ -53,3 +55,9 @@ MCP endpoint: `http://127.0.0.1:8000/mcp`
 ## Data entitlement
 
 MCP is a protocol, not a market-data entitlement. The MCP server passes through the same website provider and its data-quality gate. If the provider is disabled, unapproved, stale, incomplete or unavailable, market tools return WAIT/UNAVAILABLE with no chain rows. Enabling external MCP access does not enable NSE collection or make an unofficial endpoint permitted.
+
+## Signal engine and website APIs
+
+The website now exposes `/api/signals`, `/api/signals/{id}/events`, `/api/history`, `/api/performance`, and `/api/export/signals.xlsx`. The signal engine compares distinct verified option-chain snapshots, derives directional confluence from spot, OI/change-OI and selected-contract LTP, estimates Greeks when IV and expiry inputs are valid, and creates a candidate only after its rule threshold is met. Entry uses the selected contract's ask quote; target is entry +20 premium points and stop is entry -10 points. It monitors only subsequent LTP snapshots for up to 900 seconds. Gaps over 15 seconds and ambiguous jumps are recorded as UNRESOLVED rather than guessed. No premium candles or broker orders are used. This is a transparent heuristic engine, not a trained model or validated probability forecast.
+
+SQLite is suitable for a single-instance research deployment only. Render free instances may lose local data on restart; configure persistent storage or managed Postgres for reliable long-term journaling.
