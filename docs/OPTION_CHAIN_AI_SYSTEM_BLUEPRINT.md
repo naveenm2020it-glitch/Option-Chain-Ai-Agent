@@ -43,6 +43,22 @@ The provider adapter must be independent from the UI and analytics. A provider c
 
 The previous source audit found no verified compliant free/no-key/non-broker automated NIFTY option-chain provider satisfying all constraints. The official NSE MCP does not advertise derivatives option-chain tools. Unofficial NSE website endpoint wrappers are not automatically authorized feeds. Do not use undocumented NSE website endpoints for continuous automated polling absent permission. Do not add rotating browser fingerprints, CAPTCHA bypass, cookie replay, proxy rotation or access-control evasion.
 
+### MCP integration (included; provider approval pending)
+
+MCP is an integration protocol, not a market-data source or permission grant. Include an MCP client/adapter path in the provider architecture, but keep every MCP candidate behind the same authorization and data-quality gates as any other provider.
+
+Candidates to evaluate:
+- Official NSE MCP: inspect its current tool catalogue; the reviewed tools did not expose NIFTY derivatives option-chain data.
+- Indian-Option-MCP: technically evaluate its NIFTY option-chain capability, but it relies on unofficial NSE website endpoints and is not approved by default.
+- India Market MCP: evaluate its advertised option-chain fields, source timestamp, caching/delay behaviour and permissions; treat claims as unverified until tested.
+- Custom MCP adapter: support a future permitted provider or expose this app's own normalized analytics to MCP clients. It is not itself a market-data source.
+
+A local stdio MCP server requires a managed child process and MCP client in the backend; it cannot be treated as a normal HTTP API URL on Render. A hosted candidate must use its documented supported transport. Use a read-only tool allowlist, bounded polling, timeouts, reconnect handling and one backend collector. Do not expose arbitrary MCP tool execution publicly.
+
+Before enabling any MCP candidate, inspect its exact repository, commit/version, license, upstream source and data-use terms; verify actual source timestamps, freshness progression during NSE market hours, complete/coherent NIFTY spot and CE/PE chain data, rate limits, schema stability and Render operation. No candidate becomes LIVE based only on HTTP 200, non-empty rows or recent receive time. If permissions are unclear or quality checks fail, keep it DISABLED and show UNAVAILABLE/STALE.
+
+See [MCP Provider Integration Plan](MCP_PROVIDER_INTEGRATION.md) for candidate evaluation, transport design, acceptance checks and implementation tasks.
+
 Until an approved provider is configured:
 - API status remains `UNAVAILABLE` (or `STALE` for a retained last-good snapshot).
 - Live analysis, live alerts and performance claims remain disabled.
