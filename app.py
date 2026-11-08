@@ -64,7 +64,9 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
                 continue
             trigger = number(signal.get('entry_trigger'))
             if trigger > 0 and current_ltp >= trigger:
-                DB.update_signal(signal['id'], state='TRIGGERED', triggered_at=stamp, actual_entry=current_ltp)
+                DB.update_signal(signal['id'], state='TRIGGERED', triggered_at=stamp,
+                                 actual_entry=current_ltp, target_price=round(current_ltp + 20.0, 2),
+                                 stop_price=round(current_ltp - 10.0, 2))
                 DB.append_signal_event(signal['id'], 'ENTRY_TRIGGERED', stamp, observed_price=current_ltp,
                                        details={'entry_trigger': trigger, 'actual_entry': current_ltp,
                                                 'note': 'Observed LTP crossed the suggested entry trigger; no broker order was placed.'})
