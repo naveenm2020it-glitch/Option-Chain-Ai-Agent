@@ -14,13 +14,17 @@ document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener
  const nav=sidebar.querySelector("#nav");
  if(nav){nav.id="screenSwitcher";nav.setAttribute("aria-label","Trading screens");topbar.insertAdjacentElement("afterend",nav);}
  sidebar.remove();
- document.body.classList.toggle("dark",localStorage.getItem("nifty-theme")==="dark");
- $("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";
+ const savedTheme=localStorage.getItem("nifty-theme")==="dark"?"dark":"light";
+ document.documentElement.dataset.theme=savedTheme;
+ document.body.classList.toggle("dark",savedTheme==="dark");
+ $("themeBtn").textContent=savedTheme==="dark"?"☀":"◐";
+ $("themeBtn").setAttribute("aria-pressed",String(savedTheme==="dark"));
  const buttons=[...document.querySelectorAll("#screenSwitcher [data-page]")];
  buttons.forEach((button,i)=>{button.innerHTML='<span class="tab-index">'+String(i+1).padStart(2,"0")+'</span><span>'+button.textContent.trim()+'</span>';});
  window.__niftySetPage=null;
 })();document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.go)));
-$("themeBtn").addEventListener("click",()=>{const dark=document.body.classList.toggle("dark");localStorage.setItem("nifty-theme",dark?"dark":"light");$("themeBtn").textContent=dark?"☀":"◐";const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=dark?"#101c2b":"#f3f5f2";});
+function applyTheme(theme){const dark=theme==="dark";document.documentElement.dataset.theme=dark?"dark":"light";document.body.classList.toggle("dark",dark);try{localStorage.setItem("nifty-theme",dark?"dark":"light");}catch(e){}$("themeBtn").textContent=dark?"☀":"◐";$("themeBtn").setAttribute("aria-pressed",String(dark));const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=dark?"#0b1420":"#f3f5f2";}
+$("themeBtn").addEventListener("click",()=>applyTheme(document.documentElement.dataset.theme==="dark"?"light":"dark"));
 $("menuBtn")?.remove();
 $("refreshBtn").addEventListener("click",()=>refresh(true));
 $("analyzeBtn").addEventListener("click",()=>refresh(true));
