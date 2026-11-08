@@ -1,6 +1,8 @@
 from __future__ import annotations
 import math
 import os
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,7 +27,7 @@ def clean_leg(value):
             "bidQty", "askQty")
     return {key: value.get(key) for key in keys}
 
-def get_market(force=False, expiry=None):
+def _fetch_market_uncached(force=False, expiry=None):
     """Fetch only through an explicitly configured MCP adapter; fail closed."""
     try:
         cfg = mcp_configuration()
@@ -72,6 +74,23 @@ def get_market(force=False, expiry=None):
             "quality": {"is_fresh": False, "checks": [], "warnings": []},
             "error": f"MCP provider failure: {type(exc).__name__}",
         }
+
+_MCP_MARKET_CACHE: dict[str, tuple[float, dict]] = {}
+_MCP_MARKET_CACHE_LOCK = threading.Lock()
+
+
+def get_market(force=False, expiry=None):
+    """Share one bounded backend poll across dashboard/API requests."""
+    key = expiry or "__nearest__"
+    ttl = max(1, min(30, int(os.getenv("MCP_POLL_INTERVAL_SECONDS", "5"))))
+    with _MCP_MARKET_CACHE_LOCK:
+        cached = _MCP_MARKET_CACHE.get(key)
+        if not force and cached and (time.monotonic() - cached[0]) < ttl:
+            return cached[1]
+        snapshot = _fetch_market_uncached(force=force, expiry=expiry)
+        _MCP_MARKET_CACHE[key] = (time.monotonic(), snapshot)
+        return snapshot
+
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
