@@ -205,3 +205,22 @@ def alerts():
         return {"status": "PAUSED", "items": [], "message": "Alerts paused because live market data is not verified."}
     return {"status": "MONITORING", "items": [],
             "message": "No confirmed entry alerts. The option-chain signal lifecycle engine is not yet implemented. No entry alerts are generated."}
+
+
+# Mount the owned MCP endpoint into this existing FastAPI application so the
+# current Render start command (uvicorn app:app) continues to work unchanged.
+from contextlib import asynccontextmanager as _asynccontextmanager
+from mcp_server import mcp as _nifty_mcp, protected_mcp_app as _protected_mcp_app
+
+_original_lifespan = app.router.lifespan_context
+
+
+@_asynccontextmanager
+async def _mcp_lifespan(application):
+    async with _original_lifespan(application):
+        async with _nifty_mcp.session_manager.run():
+            yield
+
+
+app.router.lifespan_context = _mcp_lifespan
+app.mount("/mcp", _protected_mcp_app(), name="mcp")
