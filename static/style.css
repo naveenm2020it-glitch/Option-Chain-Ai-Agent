@@ -17,3 +17,94 @@
 .performance-legend{display:flex;flex-direction:column;gap:8px;color:var(--text);font-weight:700}
 .performance-legend small{color:var(--muted);font-weight:400;line-height:1.5}
 @media(max-width:560px){.performance-chart-row{align-items:flex-start;gap:16px}.performance-donut{width:112px;height:112px;flex-basis:112px}}
+
+
+/* NIFTY LAB modern trading-terminal refresh */
+:root{
+ --bg:#081321;--surface:rgba(17,31,49,.94);--surface-solid:#14253a;
+ --ink:#e8f0f8;--muted:#8da0b4;--line:#2a4058;--navy:#081321;
+ --accent:#28a8f4;--blue:#299df0;--cyan:#43c6d9;--green:#2acb86;
+ --red:#ff6474;--gold:#e7b95e;--shadow:0 18px 48px rgba(0,0,0,.25);
+ --radius:14px;
+}
+body{background:radial-gradient(ellipse at 48% -18%,rgba(30,112,166,.23),transparent 45%),linear-gradient(135deg,#081321,#0b1929 58%,#0c1b2b);color:var(--ink)}
+.sidebar{display:none!important}
+.main{margin:0 auto;max-width:1920px;padding:22px clamp(12px,2.4vw,38px) 22px}
+.topbar{display:flex;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:4px 0 14px;border-bottom:1px solid rgba(99,147,187,.16)}
+.top-left{min-width:0;flex:1}
+.top-actions{flex:0 0 auto}
+h1{font-size:clamp(20px,2vw,28px);color:#f3f8ff;letter-spacing:-.7px}
+.eyebrow,.section-kicker{color:#7fa6c7}
+.market-state{background:#142a3d;border-color:#2b4b66;color:#62d6a0}
+.icon-btn{background:#14263a;border-color:#2c435b;color:#d8e9f7}
+.integrity-banner{background:linear-gradient(100deg,#182c3c,#17283a);border:1px solid #34506a;color:#dceaf5;border-radius:12px}
+.integrity-banner span{color:#a6bacd}.integrity-banner small{color:#8fa8bd}
+.banner-icon{background:#193e48;color:#55d6b0}
+#screenSwitcher{display:flex;align-items:center;gap:7px;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:11px 2px 13px;margin:0 0 16px;scrollbar-width:none;-webkit-overflow-scrolling:touch;border-bottom:1px solid rgba(99,147,187,.14)}
+#screenSwitcher::-webkit-scrollbar{display:none}
+#screenSwitcher [data-page]{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid #2a425b;border-radius:9px;background:#11243a;color:#a9bed1;font-size:11px;font-weight:700;letter-spacing:.1px;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+#screenSwitcher [data-page] i{font-style:normal;color:#74a6cb;font-size:14px}
+#screenSwitcher [data-page]:hover{background:#19334d;border-color:#3d6b8d;transform:translateY(-1px)}
+#screenSwitcher [data-page].active{background:linear-gradient(120deg,#1689dc,#2467b9);border-color:#42b6ff;color:#fff;box-shadow:0 7px 20px #0878c844}
+#screenSwitcher [data-page].active i{color:#fff}
+.metric-card,.panel{background:linear-gradient(145deg,rgba(20,39,60,.97),rgba(14,29,47,.97));border:1px solid #29425c;border-radius:var(--radius);box-shadow:0 12px 30px rgba(0,0,0,.16);backdrop-filter:blur(12px)}
+.metric-card{padding:17px 19px}
+.metric-card:after{background:linear-gradient(145deg,#2a9bd322,#39d0c711)}
+.metric-top{color:#91a8bc}.metric-top i{color:#43b5ef}
+.metric-card strong{color:#f2f7fc;font-size:clamp(22px,2vw,29px)}
+.panel{padding:19px 20px}
+.panel-head{margin-bottom:16px}
+h2{color:#e9f2fa}
+p{color:#91a7bb}
+.tag{background:#26384a;color:#e2c779}
+.tag.positive{background:#123d35;color:#60d9a4}.tag.negative{background:#482631;color:#ff8995}.tag.warning{background:#40351f;color:#edc46b}
+.bias-content{min-height:150px}
+.gauge-ring{background:linear-gradient(145deg,#1b334a,#112338);border-color:#2d506b;box-shadow:inset 0 0 0 1px #36546c}
+.gauge-ring span{color:#f2f8ff}
+.level-row,.guide-item,.data-quality>div,.summary-line{background:#142b41;border:1px solid #2b435a;color:#dce8f2}
+.level-row small,.guide-item span{color:#91a8bc}
+.table-wrap{border:1px solid #273f56}
+table{background:#102238}
+th{background:#1b3046;color:#9cb2c5;border-bottom-color:#294159}
+td{color:#dbe7f1;border-bottom-color:#263d53}
+td.strike,th.strike-head{background:#1c354b;color:#f2f7fb}
+.atm-row td{background:#17364a}
+.atm-row td.strike{background:#22516a}
+.ce-head{background:#472c38;color:#ff9ba5}.pe-head{background:#153e39;color:#70e0b0}
+.positive-text{color:#51d99b!important}.negative-text{color:#ff7786!important}
+.toolbar-controls select{background:#142a40;border-color:#304b65;color:#e4eff8}
+.rank-row{border-color:#2a435b;background:#132a40}
+.rank-num{background:#1d4053;color:#5dc7ec}
+.explain-box,.notice-card{background:#182f43;border-color:#34516a;color:#dceaf5}
+.explain-box p,.notice-card span{color:#a6bacd}
+.explain-icon,.alert-symbol,.validation-icon{background:#1b4052;color:#5dc5ec}
+.model-status{color:#58d9a0}
+.primary-btn{background:linear-gradient(120deg,#1689dc,#2467b9);box-shadow:0 7px 20px #0878c833}
+.watch-badge{background:#3d3422;color:#f0c86e}
+.data-quality>div{background:#142a40}
+.export-card{background:#142a40;border-color:#2c455e}
+.export-icon{background:#1b4052;color:#5dc5ec}
+.outline-btn{border-color:#3876a0;color:#8bd1ff}
+.outline-btn:hover{background:#193b56}
+.performance-chart-row{background:#142a40;border-color:#2a435b}
+.app-footer{color:#728ca4}
+body:not(.dark){--bg:#edf3f8;--surface:rgba(255,255,255,.94);--surface-solid:#fff;--ink:#15283d;--muted:#718398;--line:#dce5ed;--shadow:0 12px 34px rgba(25,52,78,.08);background:radial-gradient(ellipse at 48% -18%,rgba(49,142,203,.13),transparent 45%),#edf3f8}
+body:not(.dark) h1{color:#15283d}
+body:not(.dark) #screenSwitcher{border-color:#d8e2ec}
+body:not(.dark) #screenSwitcher [data-page]{background:#fff;border-color:#d7e2ec;color:#52677c}
+body:not(.dark) #screenSwitcher [data-page].active{background:linear-gradient(120deg,#1689dc,#2467b9);color:#fff;border-color:#42b6ff}
+body:not(.dark) .metric-card,body:not(.dark) .panel{background:#fff;border-color:#e0e8ef}
+body:not(.dark) th{background:#f1f5f8;color:#647a8f}
+body:not(.dark) td{color:#20354a;border-bottom-color:#e4ebf1}
+body:not(.dark) .level-row,body:not(.dark) .guide-item,body:not(.dark) .data-quality>div,body:not(.dark) .summary-line{background:#f3f7fa;border-color:#e2eaf0;color:#20354a}
+@media(max-width:760px){
+ .main{padding:12px 10px 18px}
+ .topbar{gap:8px}
+ #screenSwitcher{position:sticky;top:0;z-index:30;background:rgba(8,19,33,.96);margin-left:-10px;margin-right:-10px;padding:10px 10px 12px;backdrop-filter:blur(12px)}
+ body:not(.dark) #screenSwitcher{background:rgba(237,243,248,.96)}
+ #screenSwitcher [data-page]{padding:9px 12px;font-size:10px}
+ .integrity-banner{align-items:flex-start}
+ .integrity-banner small{display:none}
+ .metric-grid{gap:9px}
+ .panel{padding:14px}
+}
