@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import math
 import os
 import threading
@@ -19,12 +20,12 @@ from storage.database import ResearchDatabase
 
 DB = ResearchDatabase(os.getenv('NIFTY_DATABASE_PATH', 'data/nifty_research.sqlite3'))
 DB.initialize()
-_PREVIOUS_VALID_SNAPSHOT: dict | None = None
+_PREVIOUS_VALID_SNAPSHOTS: dict[str, dict] = {}
 _PROCESSED_SNAPSHOT_KEYS: set[tuple[str, str]] = set()
 _SIGNAL_LOCK = threading.Lock()
 
 def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> dict:
-    global _PREVIOUS_VALID_SNAPSHOT
+    global _PREVIOUS_VALID_SNAPSHOTS
     source_stamp = str(snapshot.get('source_timestamp') or '')
     if not source_stamp:
         return {'direction': 'WAIT', 'decision': 'NO_TRADE', 'missing_inputs': ['source timestamp'], 'engine_version': ENGINE_VERSION}
@@ -35,7 +36,7 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
     selected['selected_expiry'] = chosen_expiry
     selected['rows'] = rows
     selected['instrument'] = 'NIFTY'
-    previous = _PREVIOUS_VALID_SNAPSHOT
+    previous = _PREVIOUS_VALID_SNAPSHOTS.get(chosen_expiry)
     decision = analyze_snapshot(selected, previous)
     _, analysis_id = DB.save_analysis(selected, decision)
     stamp = source_stamp
@@ -51,6 +52,8 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
         if not isinstance(leg, dict):
             continue
         current_ltp = number(leg.get('lastPrice'))
+        if current_ltp <= 0:
+            continue
         events = DB.list_signal_events(signal['id'])
         previous_event = next((event for event in reversed(events) if event.get('observed_price') is not None), None)
         previous_price = float(previous_event['observed_price']) if previous_event else float(signal.get('actual_entry') or signal['entry_trigger'])
@@ -70,9 +73,7 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
             DB.update_signal(signal['id'], state=result.get('state', 'ACTIVE'))
 
     selected_candidate = decision.get('selected_candidate')
-    if selected_candidate:
-        active_contracts = {item['contract_key'] for item in DB.get_active_signals()}
-        if selected_candidate['contract_key'] not in active_contracts:
+    if selected_candidate and not DB.get_active_signals():
             signal_id = DB.create_signal(analysis_id, {
                 'contract_key': selected_candidate['contract_key'], 'side': selected_candidate['side'],
                 'entry_trigger': selected_candidate['ltp'], 'actual_entry': selected_candidate['entry_price'],
@@ -85,7 +86,7 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
                 details={'candidate': selected_candidate, 'engine_version': ENGINE_VERSION, 'premium_candles_required': False})
             decision['created_signal_id'] = signal_id
 
-    _PREVIOUS_VALID_SNAPSHOT = selected
+    _PREVIOUS_VALID_SNAPSHOTS[chosen_expiry] = selected
     _PROCESSED_SNAPSHOT_KEYS.add(key)
     if len(_PROCESSED_SNAPSHOT_KEYS) > 2000:
         _PROCESSED_SNAPSHOT_KEYS.clear()
@@ -257,6 +258,14 @@ def market(force: bool = False, expiry: str | None = Query(default=None)):
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
+    # Keep the selected expiry pinned while a signal is open so it cannot stop
+    # being monitored merely because the user changes the expiry dropdown.
+    active = DB.get_active_signals()
+    if active:
+        try:
+            expiry = active[0]["contract_key"].split("|")[1]
+        except (IndexError, AttributeError):
+            expiry = expiry
     market_data = get_market(expiry=expiry)
     if market_data["status"] != "LIVE" or market_data.get("spot") is None:
         return {"status": "WAIT", "message": "Verified live market data is unavailable. Analysis is paused.",
@@ -400,11 +409,48 @@ from mcp_server import mcp as _nifty_mcp, protected_mcp_app as _protected_mcp_ap
 _original_lifespan = app.router.lifespan_context
 
 
+async def _background_market_loop():
+    """Keep signal lifecycle monitoring alive even when no browser tab is open."""
+    while True:
+        try:
+            active = DB.get_active_signals()
+            expiry = None
+            if active:
+                try:
+                    expiry = active[0]["contract_key"].split("|")[1]
+                except (IndexError, AttributeError):
+                    expiry = None
+            snapshot = await asyncio.to_thread(lambda: get_market(force=True, expiry=expiry))
+            if snapshot.get("status") == "LIVE" and snapshot.get("spot") is not None:
+                chosen = expiry or snapshot.get("selected_expiry")
+                if not chosen:
+                    dates = snapshot.get("expiry_dates") or []
+                    chosen = dates[0] if dates else None
+                rows = [row for row in snapshot.get("rows", []) if row.get("expiry") == chosen]
+                if chosen and rows:
+                    with _SIGNAL_LOCK:
+                        _process_snapshot(snapshot, chosen, rows)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A temporary provider failure must not crash the web service.
+            pass
+        await asyncio.sleep(max(3, min(10, int(os.getenv("MCP_POLL_INTERVAL_SECONDS", "5")))))
+
+
 @_asynccontextmanager
 async def _mcp_lifespan(application):
     async with _original_lifespan(application):
         async with _nifty_mcp.session_manager.run():
-            yield
+            poller = asyncio.create_task(_background_market_loop())
+            try:
+                yield
+            finally:
+                poller.cancel()
+                try:
+                    await poller
+                except asyncio.CancelledError:
+                    pass
 
 
 app.router.lifespan_context = _mcp_lifespan
