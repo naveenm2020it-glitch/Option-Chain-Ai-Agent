@@ -6,6 +6,7 @@ A responsive NIFTY 50 option-chain research terminal. Live market-data integrati
 - Honest UNAVAILABLE status while no permitted live provider is configured.
 - NIFTY spot, ATM and selected expiry.
 - Full selected-expiry CE/PE option chain.
+- Per-strike CE/PE Black–Scholes Greeks matrix (Delta, Gamma, Theta, Vega and Rho) from provider IV when available.
 - OI concentration support and resistance levels, PCR and change in OI.
 - Max Pain calculation from current open interest and intrinsic payout.
 - Snapshot-confluence signal engine using successive verified option-chain snapshots, spot movement, contract LTP, OI/change-OI, liquidity and model Greeks.
