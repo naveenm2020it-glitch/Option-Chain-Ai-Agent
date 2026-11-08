@@ -37,7 +37,7 @@ The MCP adapter does not include any NSE scraper, bypass, CAPTCHA workaround or 
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn asgi:app --reload
 ```
 Open http://127.0.0.1:8000
 
@@ -45,3 +45,8 @@ Open http://127.0.0.1:8000
 The repository includes a Render Blueprint. The current research branch has not been deployed or tested on Render. Free Render instances may spin down; configure persistent storage before relying on SQLite history in production.
 
 Research tool only. Not investment advice.
+
+
+## Owned MCP server
+
+The application now exposes an authenticated, read-only Streamable HTTP MCP server at `/mcp`. See [docs/OWN_NIFTY_MCP_SERVER.md](docs/OWN_NIFTY_MCP_SERVER.md) for available tools, Render setup and client authentication. Configure `MCP_ACCESS_TOKEN` only in Render environment settings; never commit the token. The MCP server uses the same provider permission and freshness checks as the website. External MCP access remains disabled until a token is configured.
