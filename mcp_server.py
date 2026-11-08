@@ -153,6 +153,26 @@ def get_recent_nifty_analyses(limit: int = 20) -> dict[str, Any]:
     return {"instrument": "NIFTY", "count": len(records), "items": records}
 
 
+
+@mcp.tool()
+def get_nifty_signal_journal(limit: int = 50) -> dict[str, Any]:
+    """Return the latest NIFTY signal lifecycle records and their outcomes."""
+    from storage.database import ResearchDatabase
+    db = ResearchDatabase(os.getenv("NIFTY_DATABASE_PATH", "data/nifty_research.sqlite3"))
+    db.initialize()
+    items = db.list_signals(limit=max(1, min(int(limit), 200)))
+    return {"instrument": "NIFTY", "count": len(items), "items": items}
+
+
+@mcp.tool()
+def get_nifty_performance() -> dict[str, Any]:
+    """Return observed target/stop outcomes; does not claim predictive validation."""
+    from storage.database import ResearchDatabase
+    db = ResearchDatabase(os.getenv("NIFTY_DATABASE_PATH", "data/nifty_research.sqlite3"))
+    db.initialize()
+    return db.performance_summary()
+
+
 class BearerTokenASGI:
     """Protect the public MCP endpoint with a constant-time bearer-token check."""
 
