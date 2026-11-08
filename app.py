@@ -7,11 +7,89 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from io import BytesIO
 from fastapi.staticfiles import StaticFiles
 
 from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
 from services.data_quality import validate_snapshot
+from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION
+from storage.database import ResearchDatabase
+
+DB = ResearchDatabase(os.getenv('NIFTY_DATABASE_PATH', 'data/nifty_research.sqlite3'))
+DB.initialize()
+_PREVIOUS_VALID_SNAPSHOT: dict | None = None
+_PROCESSED_SNAPSHOT_KEYS: set[tuple[str, str]] = set()
+_SIGNAL_LOCK = threading.Lock()
+
+def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> dict:
+    global _PREVIOUS_VALID_SNAPSHOT
+    source_stamp = str(snapshot.get('source_timestamp') or '')
+    if not source_stamp:
+        return {'direction': 'WAIT', 'decision': 'NO_TRADE', 'missing_inputs': ['source timestamp'], 'engine_version': ENGINE_VERSION}
+    key = (source_stamp, chosen_expiry)
+    if key in _PROCESSED_SNAPSHOT_KEYS or DB.analysis_source_seen(source_stamp, chosen_expiry):
+        return {'direction': 'WAIT', 'decision': 'SNAPSHOT_ALREADY_PROCESSED', 'engine_version': ENGINE_VERSION}
+    selected = dict(snapshot)
+    selected['selected_expiry'] = chosen_expiry
+    selected['rows'] = rows
+    selected['instrument'] = 'NIFTY'
+    previous = _PREVIOUS_VALID_SNAPSHOT
+    decision = analyze_snapshot(selected, previous)
+    _, analysis_id = DB.save_analysis(selected, decision)
+    stamp = source_stamp
+
+    # Monitor existing positions before creating a new signal from this snapshot.
+    for signal in DB.get_active_signals():
+        try:
+            strike = float(signal['contract_key'].split('|')[2])
+        except (ValueError, IndexError):
+            continue
+        leg = next((row.get(signal['side'].lower()) for row in rows
+                    if row.get('expiry') == chosen_expiry and float(row.get('strike', -1)) == strike), None)
+        if not isinstance(leg, dict):
+            continue
+        current_ltp = number(leg.get('lastPrice'))
+        events = DB.list_signal_events(signal['id'])
+        previous_event = next((event for event in reversed(events) if event.get('observed_price') is not None), None)
+        previous_price = float(previous_event['observed_price']) if previous_event else float(signal.get('actual_entry') or signal['entry_trigger'])
+        previous_time = previous_event['event_timestamp'] if previous_event else (signal.get('triggered_at') or signal['created_at'])
+        result = monitor_signal(signal, previous_price, current_ltp, previous_time, stamp)
+        DB.append_signal_event(signal['id'], 'SNAPSHOT_OBSERVED', stamp, observed_price=current_ltp,
+                               details={'source_timestamp': stamp, 'result': result})
+        if result.get('outcome'):
+            entry = float(signal.get('actual_entry') or signal.get('entry_trigger') or current_ltp)
+            points = round(current_ltp - entry, 2)
+            DB.update_signal(signal['id'], state=result['state'], outcome=result['outcome'],
+                             closed_at=stamp, gross_points=points, net_points=points,
+                             unresolved_reason=result.get('reason') if result['outcome'] == 'UNRESOLVED' else None)
+            DB.append_signal_event(signal['id'], result['outcome'], stamp, observed_price=current_ltp,
+                                   details={'reason': result.get('reason'), 'points': points})
+        else:
+            DB.update_signal(signal['id'], state=result.get('state', 'ACTIVE'))
+
+    selected_candidate = decision.get('selected_candidate')
+    if selected_candidate:
+        active_contracts = {item['contract_key'] for item in DB.get_active_signals()}
+        if selected_candidate['contract_key'] not in active_contracts:
+            signal_id = DB.create_signal(analysis_id, {
+                'contract_key': selected_candidate['contract_key'], 'side': selected_candidate['side'],
+                'entry_trigger': selected_candidate['ltp'], 'actual_entry': selected_candidate['entry_price'],
+                'target_price': selected_candidate['target_price'], 'stop_price': selected_candidate['stop_price'],
+                'horizon_seconds': 900, 'state': 'ACTIVE', 'created_at': stamp,
+            })
+            DB.update_signal(signal_id, state='ACTIVE', triggered_at=stamp, actual_entry=selected_candidate['entry_price'])
+            DB.append_signal_event(signal_id, 'ENTRY_TRIGGERED', stamp,
+                observed_price=selected_candidate['entry_price'],
+                details={'candidate': selected_candidate, 'engine_version': ENGINE_VERSION, 'premium_candles_required': False})
+            decision['created_signal_id'] = signal_id
+
+    _PREVIOUS_VALID_SNAPSHOT = selected
+    _PROCESSED_SNAPSHOT_KEYS.add(key)
+    if len(_PROCESSED_SNAPSHOT_KEYS) > 2000:
+        _PROCESSED_SNAPSHOT_KEYS.clear()
+        _PROCESSED_SNAPSHOT_KEYS.add(key)
+    return decision
 
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
@@ -180,8 +258,9 @@ def market(force: bool = False, expiry: str | None = Query(default=None)):
 def analysis(expiry: str | None = Query(default=None)):
     market_data = get_market(expiry=expiry)
     if market_data["status"] != "LIVE" or market_data.get("spot") is None:
-        return {"status": "WAIT", "message": "Verified live NSE data is unavailable. Analysis is paused.",
-                "market": market_data, "signals": [], "metrics": None, "rows": []}
+        return {"status": "WAIT", "message": "Verified live market data is unavailable. Analysis is paused.",
+                "market": market_data, "signals": [], "metrics": None, "rows": [],
+                "signal_engine": {"direction": "WAIT", "decision": "NO_TRADE"}}
     available = market_data["expiry_dates"]
     chosen = expiry if expiry in available else (available[0] if available else None)
     rows = [row for row in market_data["rows"] if row["expiry"] == chosen]
@@ -191,20 +270,86 @@ def analysis(expiry: str | None = Query(default=None)):
     metrics = expiry_analysis(rows, market_data["spot"])
     near = sorted([r for r in rows if abs(float(r["strike"]) - metrics["atm"]) <= 500],
                   key=lambda r: r["strike"])
+    with _SIGNAL_LOCK:
+        engine_result = _process_snapshot(market_data, chosen, rows)
     return {
         "status": "LIVE", "market": market_data, "expiry": chosen,
         "metrics": metrics, "scan_count": len(near), "rows": rows, "near_rows": near,
         "signals": rank_watchlist(near, metrics["atm"]),
-        "disclaimer": "Screening heuristic, not a trained or validated prediction model. Premium candles are not required; the option-chain entry lifecycle engine is not yet implemented.",
+        "signal_engine": engine_result, "active_signals": DB.get_active_signals(),
+        "disclaimer": "Transparent snapshot-confluence rules, not a trained or validated prediction model. Premium candles are not required. Entries and outcomes are observed only from successive verified option-chain snapshots.",
     }
+
 
 @app.get("/api/alerts")
 def alerts():
     market_data = get_market()
     if market_data["status"] != "LIVE":
-        return {"status": "PAUSED", "items": [], "message": "Alerts paused because live market data is not verified."}
-    return {"status": "MONITORING", "items": [],
-            "message": "No confirmed entry alerts. The option-chain signal lifecycle engine is not yet implemented. No entry alerts are generated."}
+        return {"status": "PAUSED", "items": DB.get_active_signals(),
+                "message": "New entries paused because live market data is not verified."}
+    return {"status": "MONITORING", "items": DB.get_active_signals(),
+            "message": "Signals are monitored from successive verified option-chain snapshots; no premium candles are used."}
+
+
+@app.get("/api/signals")
+def signals(limit: int = Query(default=100, ge=1, le=500)):
+    items = DB.list_signals(limit=limit)
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/api/signals/{signal_id}/events")
+def signal_events(signal_id: int):
+    return {"items": DB.list_signal_events(signal_id)}
+
+
+@app.get("/api/history")
+def history(limit: int = Query(default=100, ge=1, le=500), offset: int = Query(default=0, ge=0)):
+    return {"items": DB.list_analyses(limit=limit, offset=offset)}
+
+
+@app.get("/api/performance")
+def performance():
+    return DB.performance_summary()
+
+
+@app.get("/api/export/signals.xlsx")
+def export_signals_excel():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    workbook = Workbook()
+    signal_sheet = workbook.active
+    signal_sheet.title = "Signals"
+    signal_rows = DB.list_signals(limit=500)
+    if signal_rows:
+        headers = list(signal_rows[0].keys())
+        signal_sheet.append(headers)
+        for item in signal_rows:
+            signal_sheet.append([item.get(key) for key in headers])
+    else:
+        signal_sheet.append(["No signal records yet"])
+    event_sheet = workbook.create_sheet("Signal Events")
+    event_sheet.append(["signal_id", "event_type", "event_timestamp", "observed_price", "details_json"])
+    for item in signal_rows:
+        for event in DB.list_signal_events(item["id"]):
+            event_sheet.append([item["id"], event["event_type"], event["event_timestamp"],
+                                event["observed_price"], event["details_json"]])
+    perf_sheet = workbook.create_sheet("Performance")
+    for key, value in DB.performance_summary().items():
+        perf_sheet.append([key, str(value)])
+    for sheet in workbook.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="24364B")
+        for column in sheet.columns:
+            width = min(42, max(12, max(len(str(cell.value or "")) for cell in column) + 2))
+            sheet.column_dimensions[column[0].column_letter].width = width
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=nifty-signal-journal.xlsx"})
 
 
 # Mount the owned MCP endpoint into this existing FastAPI application so the
