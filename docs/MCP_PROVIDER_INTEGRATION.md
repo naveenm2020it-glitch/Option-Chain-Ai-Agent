@@ -26,6 +26,16 @@ Candidate references:
 
 Do not hard-code unverified repository URLs, package names, tool names or MCP method names. Record the exact repository URL, commit/tag, license, upstream endpoint list and review date in the provider audit when evaluation is performed.
 
+### Reviewed candidate: kcodweb/india-market-mcp
+
+Repository: https://github.com/kcodweb/india-market-mcp  
+Read-only tool: `get_option_chain(symbol, expiry, strikes_each_side, rate_pct)`  
+Example invocation: `symbol=NIFTY`, `expiry=nearest`, `strikes_each_side=50`, `rate_pct=6.5`.
+
+The tool returns `underlying_price`, `expiry`, `expiries`, `as_of`, a compact `chain` array (call/put LTP, change, OI, change-OI, volume, IV, bid/ask and delta), and summary analytics. The app adapter maps this response to its internal CE/PE snapshot schema and preserves the source timestamp; it does not fabricate a timestamp when missing.
+
+The candidate README identifies its option-chain source as NSE website APIs, describes the endpoints as unofficial and not a licensed data feed, and documents browser-like headers, session cookies, refresh after 401/403, request spacing and a 20-second cache. It also describes the data as a few minutes delayed. A MIT license on the MCP server code does not grant rights to NSE data. These are material limitations for a 15-minute option-buying signal: the expected delay may exceed the freshness limit and make the source unsuitable for entry alerts. Therefore this candidate is wired only as an optional, disabled-by-default technical integration; it is not approved for production automation. Do not copy its upstream collection/access-handling implementation into this project.
+
 ## 3. Proposed runtime architecture
 
 ```text
