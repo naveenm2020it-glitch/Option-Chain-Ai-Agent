@@ -306,7 +306,7 @@ class ResearchDatabase:
     def get_active_signals(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM signals WHERE state IN ('TRIGGERED', 'ACTIVE') ORDER BY id",
+                "SELECT * FROM signals WHERE state IN ('CANDIDATE', 'TRIGGERED', 'ACTIVE') ORDER BY id",
             ).fetchall()
             return [dict(row) for row in rows]
 
