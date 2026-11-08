@@ -53,6 +53,9 @@ async function loadJournal(){
   if($("performanceBars")){
    const resolved=(perf.targets||0)+(perf.stop_losses||0);
    const targetPct=resolved?perf.targets/resolved*100:0;
+   if($("performanceDonut"))$("performanceDonut").style.background=resolved?"conic-gradient(#16a36a 0 "+targetPct+"%, #dc6262 "+targetPct+"% 100%)":"conic-gradient(#aab4c2 0 100%)";
+   if($("performanceDonutLabel"))$("performanceDonutLabel").textContent=resolved?fmt(targetPct)+"%":"—";
+   if($("performanceLegend"))$("performanceLegend").innerHTML="<span>Target "+(perf.targets||0)+" · Stop "+(perf.stop_losses||0)+"</span><small>"+resolved+" resolved outcomes; unresolved/time exits excluded from accuracy.</small>";
    $("performanceBars").innerHTML='<div class="guide-item"><b>Target hits · '+(perf.targets||0)+'</b><span><i style="display:block;height:10px;width:'+targetPct+'%;background:#16a36a;border-radius:8px"></i></span></div><div class="guide-item"><b>Stop losses · '+(perf.stop_losses||0)+'</b><span><i style="display:block;height:10px;width:'+(100-targetPct)+'%;background:#dc6262;border-radius:8px"></i></span></div>';
   }
  }catch(e){if($("signalJournal"))$("signalJournal").innerHTML='<tr><td colspan="10" class="empty">Journal unavailable: '+safe(e.message)+'</td></tr>';}
