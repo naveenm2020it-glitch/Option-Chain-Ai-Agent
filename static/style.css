@@ -459,3 +459,17 @@ html body.dark .market-state{background:#1b4039!important;border-color:#315f52!i
 html body.dark .icon-btn{background:#1b3044!important;border-color:#385166!important;color:#d8e6ee!important}
 html body.dark .app-footer{color:#8096a8!important}
 @media(max-width:640px){html body.dark #screenSwitcher{background:rgba(11,20,32,.97)!important;border-bottom-color:#2a4054!important}}
+
+/* Theme switch hardening: root data attribute is the canonical theme state. */
+html[data-theme="dark"] body{color-scheme:dark!important;background:#0b1420!important;color:#e7eef4!important;--bg:#0b1420;--surface:#142233;--surface-solid:#17283a;--ink:#e7eef4;--muted:#9aabba;--line:#2a3d50;--accent:#75a99a;--green:#49bd8b;--red:#e17b80;--gold:#d6b16c;--shadow:0 10px 28px rgba(0,0,0,.24)}
+html[data-theme="dark"] body .panel,html[data-theme="dark"] body .metric-card{background:linear-gradient(145deg,#172a3d,#122235)!important;border:1px solid #2c4358!important;color:#e7eef4!important;box-shadow:0 10px 26px rgba(0,0,0,.22)!important}
+html[data-theme="dark"] body h1,html[data-theme="dark"] body h2,html[data-theme="dark"] body h3,html[data-theme="dark"] body .metric-card strong{color:#edf4f8!important}
+html[data-theme="dark"] body .integrity-banner{background:linear-gradient(100deg,#1a3043,#17283a)!important;border-color:#345066!important;color:#e3edf5!important}
+html[data-theme="dark"] body #screenSwitcher{background:rgba(11,20,32,.97)!important;border-color:#2a4054!important}
+html[data-theme="dark"] body #screenSwitcher .nav-item{background:#172b3e!important;color:#b9cbd8!important;border:1px solid #30485d!important}
+html[data-theme="dark"] body #screenSwitcher .nav-item.active{background:linear-gradient(120deg,#397d78,#315e69)!important;color:#fff!important}
+html[data-theme="dark"] body th{background:#20364b!important;color:#b5c6d3!important}
+html[data-theme="dark"] body td{background:#14283b!important;color:#d9e5ed!important;border-color:#2a4054!important}
+html[data-theme="dark"] body .table-wrap{background:#132438!important;border-color:#30485c!important}
+html[data-theme="dark"] body .toolbar-controls select,html[data-theme="dark"] body .icon-btn{background:#172b3e!important;color:#e1ebf2!important;border-color:#385166!important}
+html[data-theme="dark"] body p,html[data-theme="dark"] body small,html[data-theme="dark"] body .muted{color:#9aabba!important}
