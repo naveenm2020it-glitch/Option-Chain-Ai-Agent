@@ -153,7 +153,16 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
             spread_pct = (ask - bid) / ltp * 100.0
             if spread_pct > 1.5 or ltp < 20 or ltp > 1000:
                 continue
-            premium_move = (ltp - old_ltp) / old_ltp * 100.0 if old_ltp > 0 else 0.0
+            premium_change_points = ltp - old_ltp
+            premium_move = premium_change_points / old_ltp * 100.0 if old_ltp > 0 else 0.0
+            premium_velocity_per_second = premium_change_points / gap
+            projected_move_15m_points = max(0.0, premium_velocity_per_second * MAX_HORIZON_SECONDS)
+            estimated_minutes_to_target = (TARGET_POINTS / premium_velocity_per_second / 60.0) if premium_velocity_per_second > 0 else None
+            # Only alert when the latest observed premium velocity extrapolates to
+            # at least +20 points inside the 15-minute horizon. This is a simple
+            # feasibility screen, not a calibrated probability forecast.
+            if projected_move_15m_points < TARGET_POINTS or estimated_minutes_to_target is None or estimated_minutes_to_target > 15.0:
+                continue
             tte = _tte_years(expiry, current_time)
             greeks = None
             if iv and iv > 0 and tte:
@@ -195,6 +204,8 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
                 "target_price": round(ask + TARGET_POINTS, 2),
                 "stop_price": round(ask - STOP_POINTS, 2),
                 "premium_change_pct": round(premium_move, 3),
+                "projected_move_15m_points": round(projected_move_15m_points, 2),
+                "estimated_minutes_to_target": round(estimated_minutes_to_target, 2),
                 "change_oi": change_oi, "oi": oi, "volume": volume,
                 "spread_pct": round(spread_pct, 3), "iv": iv,
                 "greeks": greeks, "score": score,
@@ -217,7 +228,7 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
     if selected:
         evidence.append(f"{selected['side']} contract passed {selected['score']}/8 option-chain + Greeks confluence checks")
     else:
-        counter.append("No CE/PE contract met the minimum Greeks, OI, direction and liquidity threshold")
+        counter.append("No CE/PE contract met the target-feasibility, Greeks, OI, direction and liquidity thresholds")
     return {
         "direction": direction,
         "decision": "SIGNAL_CANDIDATE" if selected else ("NO_TRADE" if direction == "WAIT" else "SIDEWAYS"),
@@ -237,7 +248,7 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
         "stop_points": STOP_POINTS,
         "horizon_seconds": MAX_HORIZON_SECONDS,
         "premium_candles_required": False,
-        "note": "Transparent snapshot-confluence rules; not a trained or validated prediction model.",
+        "note": "Transparent snapshot-confluence rules with a two-snapshot 15-minute premium-velocity feasibility screen; not a trained or validated prediction model.",
     }
 
 
