@@ -27,7 +27,10 @@ document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener
   `;
   document.head.appendChild(style);
   nav.append(...sidebar.querySelectorAll("[data-page]"));
-  title.insertAdjacentElement("afterend",nav);
+  const topbar=document.querySelector(".topbar");
+  if(topbar) topbar.insertAdjacentElement("afterend",nav); else title.insertAdjacentElement("afterend",nav);
+  document.body.classList.add("dark");
+  $("themeBtn").textContent="☀";
   sidebar.classList.remove("open");
 })();
 
