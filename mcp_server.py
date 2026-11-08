@@ -138,7 +138,7 @@ def get_nifty_signal_policy() -> dict[str, Any]:
         "premium_candles_required": False,
         "ambiguous_snapshot_gap": "UNRESOLVED",
         "automatic_order_placement": False,
-        "signal_engine_status": "NOT_YET_IMPLEMENTED",
+        "signal_engine_status": "SNAPSHOT_CONFLUENCE_HEURISTIC_IMPLEMENTED",\n        "entry_rule": "Requires spot direction, option premium movement, OI/change-OI, liquidity spread, model delta alignment and theta risk checks.",
         "data_policy": "Never generate a LIVE signal from stale, unavailable, incomplete or unapproved data.",
     }
 
