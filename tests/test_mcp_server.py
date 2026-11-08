@@ -1,6 +1,5 @@
-import os
+import asyncio
 
-import pytest
 
 from mcp_server import BearerTokenASGI, get_nifty_signal_policy
 
@@ -15,8 +14,7 @@ def test_signal_policy_matches_user_constraints():
     assert policy["automatic_order_placement"] is False
 
 
-@pytest.mark.asyncio
-async def test_mcp_endpoint_is_closed_when_token_missing(monkeypatch):
+def test_mcp_endpoint_is_closed_when_token_missing(monkeypatch):
     monkeypatch.delenv("MCP_ACCESS_TOKEN", raising=False)
     called = False
 
@@ -30,13 +28,12 @@ async def test_mcp_endpoint_is_closed_when_token_missing(monkeypatch):
     async def send(message):
         sent.append(message)
 
-    await middleware({"type": "http", "headers": []}, None, send)
+    asyncio.run(middleware({"type": "http", "headers": []}, None, send))
     assert called is False
     assert sent[0]["status"] == 503
 
 
-@pytest.mark.asyncio
-async def test_mcp_endpoint_rejects_wrong_token(monkeypatch):
+def test_mcp_endpoint_rejects_wrong_token(monkeypatch):
     monkeypatch.setenv("MCP_ACCESS_TOKEN", "secret-token")
     middleware = BearerTokenASGI(lambda *_: None)
     sent = []
@@ -44,9 +41,9 @@ async def test_mcp_endpoint_rejects_wrong_token(monkeypatch):
     async def send(message):
         sent.append(message)
 
-    await middleware(
+    asyncio.run(middleware(
         {"type": "http", "headers": [(b"authorization", b"Bearer wrong")]},
         None,
         send,
-    )
+    ))
     assert sent[0]["status"] == 401
