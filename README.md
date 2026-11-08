@@ -37,7 +37,7 @@ The MCP adapter does not include any NSE scraper, bypass, CAPTCHA workaround or 
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-uvicorn asgi:app --reload
+uvicorn app:app --reload
 ```
 Open http://127.0.0.1:8000
 
