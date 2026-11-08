@@ -18,6 +18,8 @@ It is mounted directly into the existing FastAPI website application, so the cur
 | `get_recent_nifty_analyses` | Persisted research decisions |
 | `get_nifty_signal_journal` | Signal lifecycle and outcomes |
 | `get_nifty_performance` | Observed target/stop performance summary |
+| `get_nifty_ai_analysis` | Current direction, candidate contract, Greeks/OI evidence and levels |
+| `get_nifty_active_alerts` | Active alerts and monitoring status |
 
 The MCP server is NIFTY-only and read-only. It cannot place orders or create fabricated signals. The signal-policy tool documents the requested +20 premium-point target, -10-point stop, 15-minute horizon, no premium-candle dependency and unresolved handling for ambiguous snapshot gaps. The actual signal lifecycle engine is a separate pending implementation and is not represented as complete by this MCP server.
 
@@ -61,3 +63,5 @@ MCP is a protocol, not a market-data entitlement. The MCP server passes through 
 The website now exposes `/api/signals`, `/api/signals/{id}/events`, `/api/history`, `/api/performance`, and `/api/export/signals.xlsx`. The signal engine compares distinct verified option-chain snapshots, derives directional confluence from spot, OI/change-OI and selected-contract LTP, estimates Greeks when IV and expiry inputs are valid, and creates a candidate only after its rule threshold is met. Entry uses the selected contract's ask quote; target is entry +20 premium points and stop is entry -10 points. It monitors only subsequent LTP snapshots for up to 900 seconds. Gaps over 15 seconds and ambiguous jumps are recorded as UNRESOLVED rather than guessed. No premium candles or broker orders are used. This is a transparent heuristic engine, not a trained model or validated probability forecast.
 
 SQLite is suitable for a single-instance research deployment only. Render free instances may lose local data on restart; configure persistent storage or managed Postgres for reliable long-term journaling.
+
+The server is mounted at `/mcp` on the same Render website and protected by a bearer token (`MCP_ACCESS_TOKEN`). Connect an MCP-compatible client using Streamable HTTP, the website's `/mcp` URL and the configured bearer token. The website's own MCP exposes read-only market/analysis/journal tools; it cannot place broker orders.
