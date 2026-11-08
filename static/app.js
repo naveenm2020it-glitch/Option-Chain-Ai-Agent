@@ -7,6 +7,30 @@ const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intell
 async function api(url){const response=await fetch(url,{cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.detail||"Request failed");return data}
 function setPage(name){activePage=name;document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));document.querySelectorAll("[data-page]").forEach(el=>el.classList.toggle("active",el.dataset.page===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.page)));
+/* Replace the permanent side drawer with a compact horizontal screen switcher. */
+(function mountScreenSwitcher(){
+  const sidebar=$("sidebar"), menu=$("menuBtn"), title=$("pageTitle");
+  if(!sidebar||!title)return;
+  const nav=document.createElement("nav");
+  nav.id="screenSwitcher";
+  nav.setAttribute("aria-label","Main screens");
+  const style=document.createElement("style");
+  style.textContent=`
+    #sidebar{display:none!important;transform:none!important;width:0!important;min-width:0!important}
+    #menuBtn{display:none!important}
+    #screenSwitcher{display:flex;align-items:center;gap:7px;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:8px 2px 10px;margin:4px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    #screenSwitcher::-webkit-scrollbar{display:none}
+    #screenSwitcher [data-page]{flex:0 0 auto;white-space:nowrap;border:1px solid var(--border,#dce3e8);border-radius:999px;padding:8px 13px;background:var(--surface,#fff);color:var(--text,#263238);font:600 12px/1.2 inherit;cursor:pointer}
+    #screenSwitcher [data-page].active{background:var(--accent,#173f35);border-color:var(--accent,#173f35);color:#fff}
+    @media(min-width:900px){#screenSwitcher{flex-wrap:wrap;overflow:visible}}
+    @media(max-width:600px){#screenSwitcher{position:sticky;top:0;z-index:30;background:var(--background,#f5f7f8);margin-left:-2px;margin-right:-2px;padding:9px 2px}}
+  `;
+  document.head.appendChild(style);
+  nav.append(...sidebar.querySelectorAll("[data-page]"));
+  title.insertAdjacentElement("afterend",nav);
+  sidebar.classList.remove("open");
+})();
+
 document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.go)));
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
 $("menuBtn").addEventListener("click",()=> $("sidebar").classList.toggle("open"));
