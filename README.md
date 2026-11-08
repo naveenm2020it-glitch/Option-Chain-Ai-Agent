@@ -45,11 +45,11 @@ uvicorn app:app --reload
 Open http://127.0.0.1:8000
 
 ## Render
-The repository includes a Render Blueprint. The current research branch has not been deployed or tested on Render. Free Render instances may spin down; configure persistent storage before relying on SQLite history in production.
+The `main` branch is connected to the Render web service and the current application build is deployed. The Python 3.12 CI suite is used for regression checks. The service uses a background 5-second polling loop while the instance is awake and an approved provider is enabled. Render's free web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history.
 
 Research tool only. Not investment advice.
 
 
 ## Owned MCP server
 
-The application now exposes an authenticated, read-only Streamable HTTP MCP server at `/mcp`. See [docs/OWN_NIFTY_MCP_SERVER.md](docs/OWN_NIFTY_MCP_SERVER.md) for available tools, Render setup and client authentication. Configure `MCP_ACCESS_TOKEN` only in Render environment settings; never commit the token. The MCP server uses the same provider permission and freshness checks as the website. External MCP access remains disabled until a token is configured.
+The application now exposes an authenticated, read-only Streamable HTTP MCP server at `/mcp`. See [docs/OWN_NIFTY_MCP_SERVER.md](docs/OWN_NIFTY_MCP_SERVER.md) for available tools, Render setup and client authentication. Configure `MCP_ACCESS_TOKEN` only in Render environment settings; never commit the token. The MCP server uses the same provider permission and freshness checks as the website. The Render service has a bearer token configured; the `/mcp` endpoint rejects requests without the matching Authorization header. The upstream market-data provider remains disabled until a permitted source is configured.
