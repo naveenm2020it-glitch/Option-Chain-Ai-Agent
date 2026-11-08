@@ -6,7 +6,7 @@ This is a transparent rules engine, not a trained or performance-validated AI mo
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
@@ -154,6 +154,25 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
             if spread_pct > 1.5 or ltp < 20 or ltp > 1000:
                 continue
             premium_move = (ltp - old_ltp) / old_ltp * 100.0 if old_ltp > 0 else 0.0
+            tte = _tte_years(expiry, current_time)
+            greeks = None
+            if iv and iv > 0 and tte:
+                try:
+                    greeks = calculate_greeks(
+                        spot=spot, strike=strike, time_to_expiry_years=tte,
+                        implied_volatility=iv / 100.0, option_type=side,
+                        risk_free_rate=0.065, dividend_yield=0.0,
+                        iv_source="option_chain_snapshot",
+                    ).as_dict()
+                except ValueError:
+                    greeks = None
+            # Missing or invalid IV/Greeks must never be silently guessed.
+            if not greeks:
+                continue
+            delta = float(greeks["delta"])
+            theta_day = abs(float(greeks["theta_per_calendar_day"]))
+            delta_aligned = (0.30 <= delta <= 0.80) if side == "CE" else (-0.80 <= delta <= -0.30)
+            theta_manageable = theta_day <= max(1.0, ltp * 0.12)
             score = 0
             if side == "CE":
                 score += 1 if spot_change_pct > 0 else 0
@@ -167,18 +186,8 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
                 score += 1 if pe_oi_delta > 0 else 0
             if abs(strike - atm) <= 50: score += 1
             score += 1 if spread_pct <= 0.75 else 0
-            tte = _tte_years(expiry, current_time)
-            greeks = None
-            if iv and iv > 0 and tte:
-                try:
-                    greeks = calculate_greeks(
-                        spot=spot, strike=strike, time_to_expiry_years=tte,
-                        implied_volatility=iv / 100.0, option_type=side,
-                        risk_free_rate=0.065, dividend_yield=0.0,
-                        iv_source="option_chain_snapshot",
-                    ).as_dict()
-                except ValueError:
-                    greeks = None
+            score += 1 if delta_aligned else 0
+            score += 1 if theta_manageable else 0
             candidates_pool.append({
                 "contract_key": _contract_key(expiry, strike, side),
                 "side": side, "strike": strike, "expiry": expiry,
@@ -189,13 +198,14 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
                 "change_oi": change_oi, "oi": oi, "volume": volume,
                 "spread_pct": round(spread_pct, 3), "iv": iv,
                 "greeks": greeks, "score": score,
+                "delta_aligned": delta_aligned, "theta_manageable": theta_manageable,
                 "observed_at": snapshot.get("source_timestamp"),
             })
     candidates_pool.sort(key=lambda x: (x["score"], -abs(x["strike"] - atm), -x["volume"]), reverse=True)
     ce_best = next((x for x in candidates_pool if x["side"] == "CE"), None)
     pe_best = next((x for x in candidates_pool if x["side"] == "PE"), None)
-    if ce_best and ce_best["score"] >= 4: bullish_score += 1
-    if pe_best and pe_best["score"] >= 4: bearish_score += 1
+    if ce_best and ce_best["score"] >= 5: bullish_score += 1
+    if pe_best and pe_best["score"] >= 5: bearish_score += 1
     direction = "WAIT"
     selected = None
     if bullish_score >= 3 and bullish_score > bearish_score and ce_best and ce_best["score"] >= 4:
@@ -205,9 +215,9 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
     elif bullish_score and bearish_score and bullish_score == bearish_score:
         direction = "SIDEWAYS"
     if selected:
-        evidence.append(f"{selected['side']} contract passed {selected['score']}/6 option-chain confluence checks")
+        evidence.append(f"{selected['side']} contract passed {selected['score']}/8 option-chain + Greeks confluence checks")
     else:
-        counter.append("No CE/PE contract met the minimum confluence and liquidity threshold")
+        counter.append("No CE/PE contract met the minimum Greeks, OI, direction and liquidity threshold")
     return {
         "direction": direction,
         "decision": "SIGNAL_CANDIDATE" if selected else ("NO_TRADE" if direction == "WAIT" else "SIDEWAYS"),
