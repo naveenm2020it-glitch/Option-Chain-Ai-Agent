@@ -1,25 +1,20 @@
 from __future__ import annotations
-import math, threading, time
+import math
+import os
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
+from services.data_quality import validate_snapshot
+
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
-BASE = "https://www.nseindia.com"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-    "Accept": "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.nseindia.com/option-chain",
-}
-session = requests.Session()
-lock = threading.Lock()
-cache = {"at": 0.0, "data": None}
 app = FastAPI(title="NIFTY Option Chain Intelligence", version="1.0.0")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -32,51 +27,70 @@ def clean_leg(value):
             "bidQty", "askQty")
     return {key: value.get(key) for key in keys}
 
-def get_market(force=False):
-    with lock:
-        if not force and cache["data"] and time.time() - cache["at"] < 5:
-            return cache["data"]
-        try:
-            session.get(BASE, headers=HEADERS, timeout=8)
-            response = session.get(BASE + "/api/option-chain-indices?symbol=NIFTY",
-                                   headers=HEADERS, timeout=10)
-            response.raise_for_status()
-            raw = response.json()
-            records = raw.get("records", {})
-            rows = []
-            for item in records.get("data", []):
-                if item.get("strikePrice") is None or not item.get("expiryDate"):
-                    continue
-                rows.append({
-                    "strike": item["strikePrice"],
-                    "expiry": item["expiryDate"],
-                    "ce": clean_leg(item.get("CE") or {}),
-                    "pe": clean_leg(item.get("PE") or {}),
-                })
-            if not rows:
-                raise RuntimeError("NSE returned an empty option chain")
-            data = {
-                "status": "LIVE",
-                "source": "NSE website public endpoint",
-                "source_timestamp": records.get("timestamp") or raw.get("timestamp"),
-                "received_at": now(),
-                "spot": records.get("underlyingValue"),
-                "expiry_dates": records.get("expiryDates", []),
-                "rows": rows,
-                "underlying": "NIFTY",
-            }
-            cache.update(at=time.time(), data=data)
-            return data
-        except Exception as exc:
-            if cache["data"]:
-                stale = dict(cache["data"])
-                stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
-                return stale
+def _fetch_market_uncached(force=False, expiry=None):
+    """Fetch only through an explicitly configured MCP adapter; fail closed."""
+    try:
+        cfg = mcp_configuration()
+        provider = MCPOptionChainProvider(cfg)
+        allowed, reason = provider.configuration_status()
+        if not allowed:
             return {
-                "status": "UNAVAILABLE", "source": "NSE website public endpoint",
-                "source_timestamp": None, "received_at": now(), "spot": None,
-                "expiry_dates": [], "rows": [], "error": str(exc), "underlying": "NIFTY",
+                "status": "UNAVAILABLE", "source": None,
+                "source_timestamp": None, "received_at": now(),
+                "spot": None, "expiry_dates": [], "selected_expiry": None,
+                "rows": [], "underlying": "NIFTY",
+                "quality": {"is_fresh": False, "checks": [], "warnings": []},
+                "error": reason,
             }
+        snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
+        quality = validate_snapshot(
+            snapshot,
+            provider_permitted=cfg["automated_use_permitted"],
+            max_age_seconds=max(1, int(os.getenv("MCP_MAX_AGE_SECONDS", "30"))),
+        )
+        snapshot["status"] = quality.status
+        snapshot["quality"] = quality.as_dict()
+        snapshot["underlying"] = "NIFTY"
+        if quality.status != "LIVE":
+            snapshot["error"] = quality.error or "MCP snapshot failed data-quality validation."
+        else:
+            snapshot.pop("error", None)
+        return snapshot
+    except (MCPProviderError, ValueError) as exc:
+        return {
+            "status": "UNAVAILABLE", "source": "MCP",
+            "source_timestamp": None, "received_at": now(),
+            "spot": None, "expiry_dates": [], "selected_expiry": None,
+            "rows": [], "underlying": "NIFTY",
+            "quality": {"is_fresh": False, "checks": [], "warnings": []},
+            "error": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "status": "UNAVAILABLE", "source": "MCP",
+            "source_timestamp": None, "received_at": now(),
+            "spot": None, "expiry_dates": [], "selected_expiry": None,
+            "rows": [], "underlying": "NIFTY",
+            "quality": {"is_fresh": False, "checks": [], "warnings": []},
+            "error": f"MCP provider failure: {type(exc).__name__}",
+        }
+
+_MCP_MARKET_CACHE: dict[str, tuple[float, dict]] = {}
+_MCP_MARKET_CACHE_LOCK = threading.Lock()
+
+
+def get_market(force=False, expiry=None):
+    """Share one bounded backend poll across dashboard/API requests."""
+    key = expiry or "__nearest__"
+    ttl = max(1, min(30, int(os.getenv("MCP_POLL_INTERVAL_SECONDS", "5"))))
+    with _MCP_MARKET_CACHE_LOCK:
+        cached = _MCP_MARKET_CACHE.get(key)
+        if not force and cached and (time.monotonic() - cached[0]) < ttl:
+            return cached[1]
+        snapshot = _fetch_market_uncached(force=force, expiry=expiry)
+        _MCP_MARKET_CACHE[key] = (time.monotonic(), snapshot)
+        return snapshot
+
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
@@ -133,7 +147,7 @@ def rank_watchlist(rows, atm):
                 "iv": number(leg.get("impliedVolatility")), "premium_change_pct": premium_change,
                 "score": round(max(0, min(100, score)), 1), "status": "WATCH",
                 "generated_at": now(),
-                "reason": "Rules-based option-chain screen only. Spot and premium candle confirmation is not connected; this is not an entry alert.",
+                "reason": "Rules-based option-chain screen only. Premium candles are not required. This is a WATCH-only screen; the option-chain signal lifecycle is still pending.",
             })
     return sorted(result, key=lambda item: item["score"], reverse=True)[:12]
 
@@ -143,15 +157,28 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "time": now(), "data_status": cache["data"].get("status", "NOT_FETCHED") if cache["data"] else "NOT_FETCHED"}
+    # Health probes must not trigger upstream market-data calls.
+    try:
+        cfg = mcp_configuration()
+        configured = bool(cfg["enabled"] and cfg["automated_use_permitted"] and cfg["command"] and cfg["tool_name"])
+    except MCPProviderError:
+        configured = False
+    return {
+        "ok": True,
+        "time": now(),
+        "data_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
+        "provider": "MCP" if configured else "none",
+        "provider_configured": configured,
+        "provider_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
+    }
 
 @app.get("/api/market")
-def market(force: bool = False):
-    return get_market(force=force)
+def market(force: bool = False, expiry: str | None = Query(default=None)):
+    return get_market(force=force, expiry=expiry)
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
-    market_data = get_market()
+    market_data = get_market(expiry=expiry)
     if market_data["status"] != "LIVE" or market_data.get("spot") is None:
         return {"status": "WAIT", "message": "Verified live NSE data is unavailable. Analysis is paused.",
                 "market": market_data, "signals": [], "metrics": None, "rows": []}
@@ -168,7 +195,7 @@ def analysis(expiry: str | None = Query(default=None)):
         "status": "LIVE", "market": market_data, "expiry": chosen,
         "metrics": metrics, "scan_count": len(near), "rows": rows, "near_rows": near,
         "signals": rank_watchlist(near, metrics["atm"]),
-        "disclaimer": "Screening heuristic, not a trained or validated prediction model. No candle-confirmed entry is generated.",
+        "disclaimer": "Screening heuristic, not a trained or validated prediction model. Premium candles are not required; the option-chain entry lifecycle engine is not yet implemented.",
     }
 
 @app.get("/api/alerts")
@@ -177,4 +204,4 @@ def alerts():
     if market_data["status"] != "LIVE":
         return {"status": "PAUSED", "items": [], "message": "Alerts paused because live market data is not verified."}
     return {"status": "MONITORING", "items": [],
-            "message": "No confirmed entry alerts. Spot and option-premium candle confirmation is not connected yet."}
+            "message": "No confirmed entry alerts. The option-chain signal lifecycle engine is not yet implemented. No entry alerts are generated."}
