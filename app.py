@@ -226,7 +226,7 @@ def rank_watchlist(rows, atm):
                 "iv": number(leg.get("impliedVolatility")), "premium_change_pct": premium_change,
                 "score": round(max(0, min(100, score)), 1), "status": "WATCH",
                 "generated_at": now(),
-                "reason": "Rules-based option-chain screen only. Premium candles are not required. This is a WATCH-only screen; the option-chain signal lifecycle is still pending.",
+                "reason": "Preliminary liquidity and premium-momentum watchlist. Entry decisions are handled separately by the snapshot-confluence engine.",
             })
     return sorted(result, key=lambda item: item["score"], reverse=True)[:12]
 
