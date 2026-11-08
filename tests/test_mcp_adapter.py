@@ -82,3 +82,27 @@ def test_extract_snapshot_accepts_snapshot_wrapper():
 def test_extract_snapshot_rejects_non_json_tool_output():
     with pytest.raises(MCPProviderError):
         _extract_snapshot(ToolResult("connected successfully"))
+
+
+def test_normalize_india_market_mcp_chain_shape():
+    from providers.mcp_adapter import _normalize_india_market_mcp
+
+    payload = {
+        "symbol": "NIFTY",
+        "underlying_price": 24100.0,
+        "expiry": "2026-11-12",
+        "expiries": ["2026-11-12", "2026-11-19"],
+        "as_of": "09-Nov-2026 10:15:00",
+        "chain": [{
+            "strike": 24100,
+            "call": {"ltp": 100.0, "oi": 1000, "chg_oi": 50, "volume": 200, "iv": 12.5, "bid": 99.5, "ask": 100.5, "delta": 0.5},
+            "put": {"ltp": 95.0, "oi": 1200, "chg_oi": 60, "volume": 220, "iv": 13.0, "bid": 94.5, "ask": 95.5, "delta": -0.5},
+        }],
+    }
+    normalized = _normalize_india_market_mcp(payload)
+    assert normalized["instrument"] == "NIFTY"
+    assert normalized["spot"] == 24100.0
+    assert normalized["selected_expiry"] == "2026-11-12"
+    assert normalized["source_timestamp"].endswith("+05:30")
+    assert normalized["rows"][0]["ce"]["lastPrice"] == 100.0
+    assert normalized["rows"][0]["pe"]["changeinOpenInterest"] == 60
