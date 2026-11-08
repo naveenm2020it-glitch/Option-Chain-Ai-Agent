@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
 from services.data_quality import validate_snapshot
-from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION
+from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION, _tte_years
+from services.greeks import calculate_greeks
 from storage.database import ResearchDatabase
 
 DB = ResearchDatabase(os.getenv('NIFTY_DATABASE_PATH', 'data/nifty_research.sqlite3'))
@@ -279,6 +280,45 @@ def analysis(expiry: str | None = Query(default=None)):
         "signal_engine": engine_result, "active_signals": DB.get_active_signals(),
         "disclaimer": "Transparent snapshot-confluence rules, not a trained or validated prediction model. Premium candles are not required. Entries and outcomes are observed only from successive verified option-chain snapshots.",
     }
+
+
+@app.get("/api/greeks")
+def greeks(expiry: str | None = Query(default=None)):
+    snapshot = get_market(expiry=expiry)
+    if snapshot.get("status") != "LIVE" or snapshot.get("spot") is None:
+        return {"status": "WAIT", "items": [], "message": "Verified live option-chain data is unavailable."}
+    available = snapshot.get("expiry_dates", [])
+    chosen = expiry if expiry in available else (available[0] if available else None)
+    rows = [row for row in snapshot.get("rows", []) if row.get("expiry") == chosen]
+    try:
+        stamp = datetime.fromisoformat(str(snapshot.get("source_timestamp")).replace("Z", "+00:00")).astimezone(IST)
+    except (ValueError, TypeError):
+        return {"status": "WAIT", "items": [], "message": "Source timestamp is invalid."}
+    tte = _tte_years(chosen, stamp) if chosen else None
+    if not tte:
+        return {"status": "WAIT", "items": [], "message": "Expiry is at or past its 15:30 IST close."}
+    items = []
+    for row in rows:
+        for side in ("CE", "PE"):
+            leg = row.get(side.lower()) or {}
+            iv = number(leg.get("impliedVolatility"))
+            if iv <= 0:
+                continue
+            try:
+                result = calculate_greeks(
+                    spot=float(snapshot["spot"]), strike=float(row["strike"]),
+                    time_to_expiry_years=tte, implied_volatility=iv / 100.0,
+                    option_type=side, risk_free_rate=float(os.getenv("RISK_FREE_RATE", "0.065")),
+                    dividend_yield=0.0, iv_source="verified_option_chain_iv",
+                ).as_dict()
+            except (ValueError, TypeError):
+                continue
+            items.append({
+                "strike": row["strike"], "expiry": chosen, "side": side,
+                "ltp": leg.get("lastPrice"), "iv_percent": iv, **result,
+            })
+    return {"status": "OK", "expiry": chosen, "spot": snapshot["spot"],
+            "source_timestamp": snapshot.get("source_timestamp"), "items": items}
 
 
 @app.get("/api/alerts")
