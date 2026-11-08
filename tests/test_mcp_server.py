@@ -1,7 +1,7 @@
 import asyncio
 
 
-from mcp_server import BearerTokenASGI, get_nifty_signal_policy
+import asgi  # noqa: F401 - verify the combined website/MCP ASGI app imports cleanly\nfrom mcp_server import BearerTokenASGI, get_nifty_signal_policy
 
 
 def test_signal_policy_matches_user_constraints():
