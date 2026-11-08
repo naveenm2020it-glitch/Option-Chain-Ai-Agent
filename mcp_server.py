@@ -163,6 +163,20 @@ def get_nifty_greeks_matrix(expiry: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_nifty_ai_analysis(expiry: str | None = None) -> dict[str, Any]:
+    """Return the website's current NIFTY direction, candidate contract, Greeks/OI evidence and risk levels."""
+    from app import analysis
+    return analysis(expiry=expiry)
+
+
+@mcp.tool()
+def get_nifty_active_alerts() -> dict[str, Any]:
+    """Return active NIFTY signal alerts and current monitoring status."""
+    from app import alerts
+    return alerts()
+
+
+@mcp.tool()
 def get_nifty_signal_journal(limit: int = 50) -> dict[str, Any]:
     """Return the latest NIFTY signal lifecycle records and their outcomes."""
     from storage.database import ResearchDatabase
