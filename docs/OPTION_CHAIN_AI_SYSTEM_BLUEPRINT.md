@@ -6,7 +6,7 @@
 
 ## 1. Product outcome
 
-Build a NIFTY-only options research and option-buying decision-support terminal. It must combine a synchronized option-chain snapshot, Greeks, OI/change-in-OI, underlying price action and option-premium candles. It must preserve every AI analysis and every signal lifecycle event so performance can be measured from actual market outcomes.
+Build a NIFTY-only options research and option-buying decision-support terminal. The decision engine must use option-chain snapshots, CE/PE LTP, Greeks, OI and change-in-OI together. Premium candles are NOT required for selecting the option, calculating the entry/target/stop levels, or deciding the market direction. It must preserve every AI analysis and every signal lifecycle event so performance can be measured from observed option-chain LTP updates.
 
 This is an analytical tool, not an order-placement system. No broker login, broker API, automated order placement, paid data feed, API-key-only data source, fabricated market values or unverified live status.
 
@@ -18,7 +18,7 @@ This is an analytical tool, not an order-placement system. No broker login, brok
 - Stop-loss: -10 option-premium points from actual entry fill/trigger price.
 - Evaluation horizon: 15 minutes from confirmed entry.
 - Risk/reward at the minimum configured levels: 2:1 before costs and slippage.
-- If evidence is mixed, data is stale, the spread is too wide, or a synchronized candle is missing: WAIT; do not alert.
+- If evidence is mixed, data is stale, the spread is too wide, or the option-chain LTP/quote is missing: WAIT; do not alert.
 
 These are signal evaluation parameters, not a promise that a target will be reached.
 
@@ -29,11 +29,11 @@ These are signal evaluation parameters, not a promise that a target will be reac
 3. Normalize and persist the raw snapshot and normalized contracts.
 4. Calculate or validate Greeks for every contract.
 5. Calculate Max Pain, PCR, OI concentration, OI build-up/unwinding and dynamic OI zones.
-6. Combine option-chain positioning with spot and option-premium candle behaviour.
+6. Combine option-chain positioning, CE/PE LTP movement, Greeks, OI and change-in-OI. Use spot value/context from the same valid snapshot where available; do not require premium candles.
 7. Determine BULLISH / BEARISH / SIDEWAYS / WAIT and explain evidence for and against the view.
 8. Rank candidate CE/PE contracts; validate liquidity, spread, IV and premium behaviour.
-9. Move a candidate through an explicit signal state machine. Only a confirmed trigger can become an entry alert.
-10. Track target, stop, time expiry, invalidation and missing-data outcomes from actual premium candles.
+9. Calculate an entry trigger from the selected option's observed LTP and the combined chain/Greek/OI evidence. Move a candidate through an explicit signal state machine. Only a confirmed option-chain snapshot trigger can become an entry alert.
+10. Track target, stop, time expiry, invalidation and missing-data outcomes using subsequent valid option-chain LTP observations for the exact selected contract.
 11. Persist every analysis, including WAIT and no-trade decisions.
 12. Display performance and export the complete history to Excel.
 
@@ -75,7 +75,7 @@ SQLite persistence (snapshots, chain rows, candles, analyses, signals)
           |
           +------> Greeks engine
           +------> OI / PCR / Max Pain engine
-          +------> Spot + premium candle engine
+          +------> CE/PE LTP + Greek/OI feature engine
                          |
                          v
                Direction + setup evaluator
@@ -102,7 +102,7 @@ SQLite persistence (snapshots, chain rows, candles, analyses, signals)
 - `services/direction.py`: transparent multi-factor directional evidence.
 - `services/setup_engine.py`: CE/PE candidate and liquidity checks.
 - `services/signal_lifecycle.py`: trigger, target, SL, timeout and invalidation.
-- `services/outcomes.py`: candle-based outcome tracking.
+- `services/outcomes.py`: outcome tracking from successive validated option-chain LTP observations for the exact contract; no premium candle dependency.
 - `storage/database.py`: SQLite schema and repository methods.
 - `services/export.py`: multi-sheet Excel export.
 - `api/...`: versioned JSON endpoints and optional SSE.
@@ -173,14 +173,14 @@ For the selected expiry calculate:
 
 Do not label a single top Put OI strike as guaranteed support or a single top Call OI strike as guaranteed resistance. Track whether zones strengthen, weaken or shift across successive valid snapshots.
 
-OI interpretation must combine underlying and option-premium changes. OI change alone does not prove writing or buying. For example, rising OI with rising premium can indicate long build-up, while rising OI with falling premium can indicate short build-up, but each is a hypothesis requiring price and market-context confirmation.
+OI interpretation must combine CE/PE option LTP changes, Greeks, spot context and OI change. OI change alone does not prove writing or buying. For example, rising OI with rising option LTP can indicate long build-up, while rising OI with falling option LTP can indicate short build-up; these remain hypotheses and must be checked across successive valid snapshots. Premium candles are not required.
 
 ## 8. Direction engine and explainability
 
 Initial release should be a transparent deterministic evidence engine, not a model marketed as trained AI. It should evaluate:
 
-- spot trend, structure and volatility regime;
-- CE/PE premium returns and candle structure;
+- spot direction/context from the same snapshot and its successive observations;
+- CE/PE option LTP changes across successive chain snapshots (not premium candles);
 - Delta/Gamma/Theta/IV context;
 - CE/PE OI and change-OI distribution;
 - OI PCR and volume PCR (separately);
@@ -201,9 +201,9 @@ Do not train XGBoost/LightGBM/LSTM or other models on a tiny or non-independent 
 ## 9. Option-buying setup and signal lifecycle
 
 A candidate must pass:
-- directional alignment between spot structure and selected option premium;
-- sufficient liquidity and acceptable spread;
-- valid, fresh chain and synchronized spot/premium candles;
+- directional alignment between spot context, selected option LTP movement, Greeks and OI/change-in-OI;
+- sufficient liquidity and acceptable bid/ask spread where supplied;
+- valid, fresh, internally consistent option-chain snapshots with an LTP for the exact selected contract;
 - strike/expiry consistency;
 - no conflicting high-severity signal;
 - enough time for the 15-minute evaluation window;
@@ -222,14 +222,14 @@ CANDIDATE -> ARMED -> TRIGGERED
 
 - `CANDIDATE`: interesting contract, no alert.
 - `ARMED`: setup conditions met; waiting for the defined premium trigger.
-- `TRIGGERED`: trigger crossed on a validated candle; persist trigger time and reference premium.
-- `TARGET_HIT`: first valid post-entry candle reaches entry + 20 points.
-- `STOP_HIT`: first valid post-entry candle reaches entry - 10 points.
+- `TRIGGERED`: entry trigger crossed by a successive validated option-chain LTP observation for the exact contract; persist trigger time and reference premium.
+- `TARGET_HIT`: first valid post-entry option-chain LTP observation reaches entry + 20 points.
+- `STOP_HIT`: first valid post-entry option-chain LTP observation reaches entry - 10 points.
 - `TIME_EXPIRED`: neither target nor stop reached within 15 minutes.
 - `INVALIDATED`: pre-defined invalidation occurs before trigger.
 - `DATA_GAP`: missing candles prevent a reliable outcome; never force a win/loss label.
 
-If target and stop are both inside the same candle range and no lower-timeframe sequence resolves which came first, label the outcome ambiguous/unresolved rather than choosing the favourable result. Include fees/slippage separately in net P&L calculations; the +20/-10 rule is gross premium points unless the user later changes it.
+If a data gap spans both target and stop levels, or the observation interval is too wide to establish which threshold was reached first, label the outcome ambiguous/unresolved rather than choosing the favourable result. Include fees/slippage separately in net P&L calculations; the +20/-10 rule is gross premium points unless the user later changes it. The quality gate must also enforce a configurable maximum age between option-chain observations; delayed snapshots can make the exact touch order unknowable.
 
 No automatic broker order placement.
 
@@ -272,7 +272,7 @@ Retain the current clean, compact, responsive light/dark terminal. Add missing a
 4. **OI Intelligence** — OI and change-OI rankings, build-up/unwinding, PCR trends, shifting zones.
 5. **Max Pain** — selected expiry, payout curve by settlement strike, max-pain history.
 6. **AI Analysis** — direction, evidence breakdown, opposing evidence, selected candidate, WAIT reason.
-7. **Premium Charts & Alerts** — spot plus selected CE/PE premium candles, trigger, entry, target, SL and 15-minute timer.
+7. **Option LTP & Alerts** — selected CE/PE live LTP trace from successive chain snapshots, trigger, entry, target, SL and 15-minute timer. No candle chart dependency.
 8. **Analysis Journal** — all AI analyses, including WAIT/no-trade, searchable/filterable by date, direction, expiry and decision.
 9. **Signal History** — full lifecycle and outcome events with replayable chart context.
 10. **Performance** — target vs SL vs expired/unresolved; win rate on resolved trades only; CE/PE and time-of-day breakdown; average gross/net points; sample count and confidence interval.
@@ -306,9 +306,9 @@ All endpoints should include snapshot IDs and timestamps. Paginate history and b
 - Greeks numerical tests and unit labels.
 - Max Pain against hand-calculated small examples.
 - PCR and OI rankings including negative change-OI.
-- Signal state transitions and exact +20/-10 boundaries.
-- Target/SL same-candle ambiguity.
-- 15-minute timeout and missing-candle handling.
+- Signal state transitions and exact +20/-10 boundaries using option-chain LTP observations.
+- Target/SL ambiguity when observations are too far apart or a data gap occurs.
+- 15-minute timeout and missing-snapshot handling.
 - Excel sheets and row counts.
 
 ### Integration tests
@@ -328,7 +328,7 @@ Do not enable LIVE or alerts until an authorized provider passes market-hours ve
 - **Phase A — Foundation:** provider interface, normalized schema, data-quality gate, SQLite migrations and honest status handling.
 - **Phase B — Analytics:** Greeks, OI/PCR, Max Pain, zones and unit tests.
 - **Phase C — AI evidence:** explainable direction engine and multi-strike candidate ranking.
-- **Phase D — Entry engine:** synchronized spot/premium candles, 15-minute state machine and outcome journal.
+- **Phase D — Entry engine:** successive option-chain snapshot LTP trigger, 15-minute state machine and outcome journal. Premium candles are not required.
 - **Phase E — Product UI:** Greeks, premium chart, analysis journal, signal history, performance and Excel workbook.
 - **Phase F — Verification:** authorized live source, Windows 3.12 and Render tests.
 
