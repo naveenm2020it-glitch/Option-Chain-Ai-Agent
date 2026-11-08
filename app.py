@@ -54,6 +54,21 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
         current_ltp = number(leg.get('lastPrice'))
         if current_ltp <= 0:
             continue
+        if signal.get('state') == 'CANDIDATE':
+            created = _parse_aware_timestamp(signal.get('created_at'))
+            current = _parse_aware_timestamp(stamp)
+            if created and current and (current - created).total_seconds() > int(signal.get('horizon_seconds') or 900):
+                DB.update_signal(signal['id'], state='EXPIRED', outcome='EXPIRED', closed_at=stamp,
+                                 unresolved_reason='Entry trigger was not reached within 15 minutes.')
+                DB.append_signal_event(signal['id'], 'ENTRY_EXPIRED', stamp, observed_price=current_ltp)
+                continue
+            trigger = number(signal.get('entry_trigger'))
+            if trigger > 0 and current_ltp >= trigger:
+                DB.update_signal(signal['id'], state='TRIGGERED', triggered_at=stamp, actual_entry=current_ltp)
+                DB.append_signal_event(signal['id'], 'ENTRY_TRIGGERED', stamp, observed_price=current_ltp,
+                                       details={'entry_trigger': trigger, 'actual_entry': current_ltp,
+                                                'note': 'Observed LTP crossed the suggested entry trigger; no broker order was placed.'})
+            continue
         events = DB.list_signal_events(signal['id'])
         previous_event = next((event for event in reversed(events) if event.get('observed_price') is not None), None)
         previous_price = float(previous_event['observed_price']) if previous_event else float(signal.get('actual_entry') or signal['entry_trigger'])
@@ -76,14 +91,16 @@ def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> d
     if selected_candidate and not DB.get_active_signals():
         signal_id = DB.create_signal(analysis_id, {
             'contract_key': selected_candidate['contract_key'], 'side': selected_candidate['side'],
-            'entry_trigger': selected_candidate['ltp'], 'actual_entry': selected_candidate['entry_price'],
-            'target_price': selected_candidate['target_price'], 'stop_price': selected_candidate['stop_price'],
-            'horizon_seconds': 900, 'state': 'ACTIVE', 'created_at': stamp,
+            'entry_trigger': selected_candidate['ask'], 'actual_entry': None,
+            'target_price': selected_candidate['target_price'],
+            'stop_price': selected_candidate['stop_price'],
+            'horizon_seconds': 900, 'state': 'CANDIDATE', 'created_at': stamp,
         })
-        DB.update_signal(signal_id, state='ACTIVE', triggered_at=stamp, actual_entry=selected_candidate['entry_price'])
-        DB.append_signal_event(signal_id, 'ENTRY_TRIGGERED', stamp,
-            observed_price=selected_candidate['entry_price'],
-            details={'candidate': selected_candidate, 'engine_version': ENGINE_VERSION, 'premium_candles_required': False})
+        DB.append_signal_event(signal_id, 'ENTRY_CANDIDATE', stamp,
+            observed_price=selected_candidate['ltp'],
+            details={'candidate': selected_candidate, 'entry_trigger': selected_candidate['ask'],
+                     'engine_version': ENGINE_VERSION, 'premium_candles_required': False,
+                     'note': 'Candidate only. Entry is not triggered until a later verified LTP reaches the trigger.'})
         decision['created_signal_id'] = signal_id
 
     _PREVIOUS_VALID_SNAPSHOTS[chosen_expiry] = selected
@@ -171,6 +188,15 @@ def get_market(force=False, expiry=None):
         _MCP_MARKET_CACHE[key] = (time.monotonic(), snapshot)
         return snapshot
 
+
+def _parse_aware_timestamp(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return parsed if parsed.tzinfo else None
+    except ValueError:
+        return None
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
