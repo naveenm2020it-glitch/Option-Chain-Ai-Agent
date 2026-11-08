@@ -5,35 +5,29 @@ const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt
 let analysisData=null,marketData=null,activePage="overview",selectedExpiry="",lastRefresh=null;
 const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export"};
 async function api(url){const response=await fetch(url,{cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.detail||"Request failed");return data}
-function setPage(name){activePage=name;document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));document.querySelectorAll("[data-page]").forEach(el=>el.classList.toggle("active",el.dataset.page===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
+function setPage(name){activePage=name;if(window.__niftySetPage){window.__niftySetPage([...document.querySelectorAll("#pageTrack .page")].findIndex(el=>el.id===name));return;}document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.page)));
-/* Replace the permanent side drawer with a compact horizontal screen switcher. */
-(function mountScreenSwitcher(){
-  const sidebar=$("sidebar"), menu=$("menuBtn"), title=$("pageTitle");
-  if(!sidebar||!title)return;
-  const nav=document.createElement("nav");
-  nav.id="screenSwitcher";
-  nav.setAttribute("aria-label","Main screens");
-  const style=document.createElement("style");
-  style.textContent=`
-    #sidebar{display:none!important;transform:none!important;width:0!important;min-width:0!important}
-    #menuBtn{display:none!important}
-     #screenSwitcher{display:flex;align-items:center;gap:7px;width:100%;flex-basis:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:8px 2px 10px;margin:4px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-    #screenSwitcher::-webkit-scrollbar{display:none}
-    #screenSwitcher [data-page]{flex:0 0 auto;white-space:nowrap;border:1px solid var(--border,#dce3e8);border-radius:999px;padding:8px 13px;background:var(--surface,#fff);color:var(--text,#263238);font-family:inherit;font-size:12px;font-weight:600;line-height:1.2;cursor:pointer}
-    #screenSwitcher [data-page].active{background:var(--accent,#173f35);border-color:var(--accent,#173f35);color:#fff}
-    @media(min-width:900px){#screenSwitcher{flex-wrap:wrap;overflow:visible}}
-    @media(max-width:600px){#screenSwitcher{position:sticky;top:0;z-index:30;background:var(--background,#f5f7f8);margin-left:-2px;margin-right:-2px;padding:9px 2px}}
-  `;
-  document.head.appendChild(style);
-  nav.append(...sidebar.querySelectorAll("[data-page]"));
-  const topbar=document.querySelector(".topbar");
-  if(topbar) topbar.insertAdjacentElement("afterend",nav); else title.insertAdjacentElement("afterend",nav);
-  document.body.classList.add("dark");
-  $("themeBtn").textContent="☀";
-  sidebar.classList.remove("open");
+/* Horizontal trading-terminal navigation + swipeable screen track. */
+(function setupHorizontalScreens(){
+ const sidebar=$("sidebar"), topbar=document.querySelector(".topbar"), main=document.querySelector(".main");
+ if(!sidebar||!topbar||!main)return;
+ const nav=document.createElement("nav");nav.id="screenSwitcher";nav.setAttribute("aria-label","Trading screens");
+ const buttons=[...sidebar.querySelectorAll("[data-page]")];
+ buttons.forEach((b,i)=>{b.classList.add("screen-tab");b.innerHTML='<span class="tab-index">'+String(i+1).padStart(2,"0")+'</span><span>'+b.textContent.trim()+'</span>';nav.appendChild(b);});
+ topbar.insertAdjacentElement("afterend",nav);sidebar.remove();
+ const pages=[...main.querySelectorAll(":scope > section.page")];
+ const viewport=document.createElement("div");viewport.id="pageViewport";
+ const track=document.createElement("div");track.id="pageTrack";
+ pages.forEach(p=>track.appendChild(p));viewport.appendChild(track);nav.insertAdjacentElement("afterend",viewport);
+ document.body.classList.add("dark");$("themeBtn").textContent="☀";
+ let current=0,startX=0,startY=0,dragging=false;
+ const show=(index)=>{current=Math.max(0,Math.min(pages.length-1,index));track.style.transform='translate3d(-'+(current*100)+'%,0,0)';buttons.forEach((b,i)=>{b.classList.toggle("active",i===current);b.setAttribute("aria-current",i===current?"page":"false")});$("pageTitle").textContent=titles[pages[current]?.id]||"NIFTY LAB";if(pages[current]?.id==="export")updateExportState();};
+ window.__niftySetPage=show;
+ buttons.forEach((b,i)=>b.addEventListener("click",()=>show(i)));
+ viewport.addEventListener("touchstart",e=>{if(e.touches.length!==1)return;startX=e.touches[0].clientX;startY=e.touches[0].clientY;dragging=true},{passive:true});
+ viewport.addEventListener("touchend",e=>{if(!dragging)return;dragging=false;const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.25)show(current+(dx<0?1:-1));},{passive:true});
+ show(0);
 })();
-
 document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.go)));
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
 $("menuBtn").addEventListener("click",()=> $("sidebar").classList.toggle("open"));
