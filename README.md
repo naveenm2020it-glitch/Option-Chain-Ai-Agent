@@ -8,13 +8,15 @@ A responsive NIFTY 50 option-chain research terminal. Live market-data integrati
 - Full selected-expiry CE/PE option chain.
 - OI concentration support and resistance levels, PCR and change in OI.
 - Max Pain calculation from current open interest and intrinsic payout.
-- Rules-based multi-strike watchlist using premium change, OI change, volume, bid/ask spread and distance from ATM.
+- Snapshot-confluence signal engine using successive verified option-chain snapshots, spot movement, contract LTP, OI/change-OI, liquidity and model Greeks.
+- Signal lifecycle with entry timestamp, +20 premium-point target, -10 point stop, 15-minute horizon and conservative UNRESOLVED handling when snapshot gaps obscure event order.
+- Persistent SQLite signal journal, event history, outcome summary and multi-sheet Excel export.
 - Light and dark themes, mobile-responsive navigation and CSV exports.
 
 ## Data integrity and limitations
-No permitted free, no-key, non-broker automated NIFTY option-chain source has been verified. The previous NSE website endpoint poller has been disabled because the endpoint is undocumented and the source terms do not establish permission for continuous automated collection. The app therefore returns UNAVAILABLE and pauses analysis/alerts until an authorized provider is configured. Do not interpret a successful HTTP response from an undocumented website endpoint as permission or as proof of a reliable live feed.
+No permitted free, no-key, non-broker automated NIFTY option-chain source has been verified. The previous NSE website endpoint poller has been disabled because the endpoint is undocumented and the source terms do not establish permission for continuous automated collection. The app therefore returns UNAVAILABLE and pauses new entries until an authorized provider is configured. Do not interpret a successful HTTP response from an undocumented website endpoint as permission or as proof of a reliable live feed.
 
-The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. No live provider is currently approved or connected. Option-chain snapshot entry triggers, target/stop timestamps and outcome tracking are still pending. Premium candles are not required and will not be a dependency.
+The strike ranking is a transparent rules-based screening heuristic, not a trained or validated AI model. It is not an entry recommendation. No live provider is currently approved or connected. The snapshot-based entry lifecycle is implemented but requires a genuinely permitted, fresh provider before it can issue entries. It does not use premium candles. The confluence rules are transparent heuristics, not a trained or validated AI model. A target hit within 15 minutes is not predicted or guaranteed; 15 minutes is the maximum monitoring horizon.
 
 Max Pain is calculated by testing each available strike as a settlement price and summing estimated intrinsic payouts weighted by current CE/PE open interest. It is a positioning reference, not a forecast.
 
