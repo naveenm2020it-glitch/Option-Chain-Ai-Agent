@@ -418,3 +418,44 @@ body.dark .metric-card,body.dark .panel{border-color:#e3eae5!important}
  #screenSwitcher{background:rgba(243,245,242,.97)!important;border-bottom-color:#dfe8e1!important}
  .export-card{min-height:0!important}
 }
+
+/* Complete dark mode paired with porcelain/sage light mode */
+html body.dark{color-scheme:dark!important;background:#0b1420!important;color:#e7eef4!important;--bg:#0b1420;--surface:#142233;--surface-solid:#17283a;--ink:#e7eef4;--muted:#9aabba;--line:#2a3d50;--accent:#75a99a;--blue:#6e9d99;--cyan:#69b8c1;--green:#49bd8b;--red:#e17b80;--gold:#d6b16c;--shadow:0 10px 28px rgba(0,0,0,.24)}
+html body.dark .topbar{background:linear-gradient(120deg,#172a3d,#132337)!important;border-color:#2c4358!important;box-shadow:0 8px 24px #0003!important}
+html body.dark h1,html body.dark h2,html body.dark h3,html body.dark .metric-card strong{color:#edf4f8!important}
+html body.dark .eyebrow,html body.dark .section-kicker,html body.dark .metric-top,html body.dark .muted{color:#9eb2c2!important}
+html body.dark .metric-card,html body.dark .panel{background:linear-gradient(145deg,#172a3d,#122235)!important;border:1px solid #2c4358!important;box-shadow:0 10px 26px rgba(0,0,0,.22)!important;backdrop-filter:blur(10px)!important}
+html body.dark .metric-card:after{background:linear-gradient(145deg,#5ca9a322,#6ab9b111)!important}
+html body.dark .integrity-banner{background:linear-gradient(100deg,#1a3043,#17283a)!important;border-color:#345066!important;color:#e3edf5!important}
+html body.dark .integrity-banner span,html body.dark .integrity-banner small{color:#a8bac9!important}
+html body.dark .banner-icon{background:#21483f!important;color:#77d5aa!important}
+html body.dark #screenSwitcher{background:rgba(11,20,32,.96)!important;border-bottom-color:#2a4054!important}
+html body.dark #screenSwitcher .nav-item{background:#172b3e!important;border-color:#30485d!important;color:#b9cbd8!important}
+html body.dark #screenSwitcher .nav-item.active{background:linear-gradient(120deg,#397d78,#315e69)!important;border-color:#5caaa3!important;color:#fff!important;box-shadow:0 5px 14px rgba(30,115,112,.22)!important}
+html body.dark #screenSwitcher .nav-item i{color:#86c4bd!important}
+html body.dark .panel,html body.dark .metric-card,html body.dark .export-card,html body.dark .rank-row,html body.dark .performance-chart-row,html body.dark .data-quality>div,html body.dark .level-row,html body.dark .guide-item,html body.dark .summary-line,html body.dark .explain-box,html body.dark .notice-card{background:#172a3d!important;border-color:#2c455b!important;color:#dce7ef!important;box-shadow:0 6px 20px rgba(0,0,0,.16)!important}
+html body.dark .export-icon,html body.dark .rank-num,html body.dark .explain-icon,html body.dark .alert-symbol,html body.dark .validation-icon{background:#214354!important;color:#8ac9ce!important}
+html body.dark .export-card b,html body.dark .rank-info b,html body.dark .level-row b{color:#e5eef4!important}
+html body.dark .export-card span,html body.dark .rank-info span,html body.dark .level-row small,html body.dark .guide-item span{color:#9fb1c0!important}
+html body.dark .outline-btn{border-color:#527c83!important;color:#a1d1d0!important;background:#1a3042!important}
+html body.dark .table-wrap{background:#132438!important;border-color:#30485c!important}
+html body.dark table,html body.dark tbody{background:#132438!important}
+html body.dark th{background:#20364b!important;color:#b5c6d3!important;border-bottom-color:#344c60!important}
+html body.dark td{background:#14283b!important;color:#d9e5ed!important;border-bottom-color:#2a4054!important}
+html body.dark td.strike,html body.dark th.strike-head{background:#20394d!important;color:#f0f5f8!important}
+html body.dark .atm-row td{background:#19394a!important}
+html body.dark .atm-row td.strike{background:#245368!important}
+html body.dark .ce-head{background:#4a3039!important;color:#ffabb0!important}
+html body.dark .pe-head{background:#1d443c!important;color:#8ce0b6!important}
+html body.dark .empty{background:#14283b!important;color:#91a5b5!important}
+html body.dark .gauge-ring{background:#1a3043!important;border-color:#38566a!important;box-shadow:inset 0 0 0 1px #304c60!important}
+html body.dark .gauge-ring span{color:#edf4f8!important}
+html body.dark .tag{background:#403a2b!important;color:#e3c783!important}
+html body.dark .tag.positive{background:#1d4439!important;color:#80dcb0!important}
+html body.dark .tag.negative{background:#4a3038!important;color:#f49aa0!important}
+html body.dark .toolbar-controls select{background:#172b3e!important;border-color:#385166!important;color:#e1ebf2!important}
+html body.dark .primary-btn{background:linear-gradient(120deg,#397d78,#315e69)!important;box-shadow:0 6px 16px rgba(0,0,0,.22)!important}
+html body.dark .market-state{background:#1b4039!important;border-color:#315f52!important;color:#8cdbb4!important}
+html body.dark .icon-btn{background:#1b3044!important;border-color:#385166!important;color:#d8e6ee!important}
+html body.dark .app-footer{color:#8096a8!important}
+@media(max-width:640px){html body.dark #screenSwitcher{background:rgba(11,20,32,.97)!important;border-bottom-color:#2a4054!important}}
