@@ -8,18 +8,17 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP(
+mcp = MCPServer(
     "NIFTY Option Chain AI",
+    version="1.0.0",
     instructions=(
         "NIFTY-only option-chain research tools. Market data is returned only "
         "when the website provider's freshness and permission checks pass. "
         "Greeks are model estimates. OI levels and Max Pain are positioning "
         "references, not predictions. No order placement is available."
     ),
-    stateless_http=True,
-    json_response=True,
 )
 
 
@@ -189,4 +188,4 @@ class BearerTokenASGI:
 
 def protected_mcp_app():
     """Build the authenticated Streamable HTTP MCP ASGI application."""
-    return BearerTokenASGI(mcp.streamable_http_app())
+    return BearerTokenASGI(mcp.streamable_http_app(json_response=True, stateless_http=True))
