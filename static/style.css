@@ -21,6 +21,7 @@
 
 /* NIFTY LAB modern trading-terminal refresh */
 :root{
+ --text:#e8f0f8;--border:#2a4058;--accent:#28a8f4;
  --bg:#081321;--surface:rgba(17,31,49,.94);--surface-solid:#14253a;
  --ink:#e8f0f8;--muted:#8da0b4;--line:#2a4058;--navy:#081321;
  --accent:#28a8f4;--blue:#299df0;--cyan:#43c6d9;--green:#2acb86;
@@ -88,7 +89,7 @@ td.strike,th.strike-head{background:#1c354b;color:#f2f7fb}
 .outline-btn:hover{background:#193b56}
 .performance-chart-row{background:#142a40;border-color:#2a435b}
 .app-footer{color:#728ca4}
-body:not(.dark){--bg:#edf3f8;--surface:rgba(255,255,255,.94);--surface-solid:#fff;--ink:#15283d;--muted:#718398;--line:#dce5ed;--shadow:0 12px 34px rgba(25,52,78,.08);background:radial-gradient(ellipse at 48% -18%,rgba(49,142,203,.13),transparent 45%),#edf3f8}
+body:not(.dark){--text:#15283d;--border:#d7e2ec;--accent:#1689dc;--bg:#edf3f8;--surface:rgba(255,255,255,.94);--surface-solid:#fff;--ink:#15283d;--muted:#718398;--line:#dce5ed;--shadow:0 12px 34px rgba(25,52,78,.08);background:radial-gradient(ellipse at 48% -18%,rgba(49,142,203,.13),transparent 45%),#edf3f8}
 body:not(.dark) h1{color:#15283d}
 body:not(.dark) #screenSwitcher{border-color:#d8e2ec}
 body:not(.dark) #screenSwitcher [data-page]{background:#fff;border-color:#d7e2ec;color:#52677c}
