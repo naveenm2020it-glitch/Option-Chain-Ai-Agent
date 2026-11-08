@@ -128,7 +128,7 @@ def rank_watchlist(rows, atm):
                 "iv": number(leg.get("impliedVolatility")), "premium_change_pct": premium_change,
                 "score": round(max(0, min(100, score)), 1), "status": "WATCH",
                 "generated_at": now(),
-                "reason": "Rules-based option-chain screen only. Spot and premium candle confirmation is not connected; this is not an entry alert.",
+                "reason": "Rules-based option-chain screen only. Premium candles are not required. This is a WATCH-only screen; the option-chain signal lifecycle is still pending.",
             })
     return sorted(result, key=lambda item: item["score"], reverse=True)[:12]
 
@@ -176,7 +176,7 @@ def analysis(expiry: str | None = Query(default=None)):
         "status": "LIVE", "market": market_data, "expiry": chosen,
         "metrics": metrics, "scan_count": len(near), "rows": rows, "near_rows": near,
         "signals": rank_watchlist(near, metrics["atm"]),
-        "disclaimer": "Screening heuristic, not a trained or validated prediction model. No candle-confirmed entry is generated.",
+        "disclaimer": "Screening heuristic, not a trained or validated prediction model. Premium candles are not required; the option-chain entry lifecycle engine is not yet implemented.",
     }
 
 @app.get("/api/alerts")
@@ -185,4 +185,4 @@ def alerts():
     if market_data["status"] != "LIVE":
         return {"status": "PAUSED", "items": [], "message": "Alerts paused because live market data is not verified."}
     return {"status": "MONITORING", "items": [],
-            "message": "No confirmed entry alerts. Spot and option-premium candle confirmation is not connected yet."}
+            "message": "No confirmed entry alerts. The option-chain signal lifecycle engine is not yet implemented. No entry alerts are generated."}
