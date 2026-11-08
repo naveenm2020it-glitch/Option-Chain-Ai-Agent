@@ -157,11 +157,12 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
             premium_move = premium_change_points / old_ltp * 100.0 if old_ltp > 0 else 0.0
             premium_velocity_per_second = premium_change_points / gap
             projected_move_15m_points = max(0.0, premium_velocity_per_second * MAX_HORIZON_SECONDS)
-            estimated_minutes_to_target = (TARGET_POINTS / premium_velocity_per_second / 60.0) if premium_velocity_per_second > 0 else None
-            # Only alert when the latest observed premium velocity extrapolates to
-            # at least +20 points inside the 15-minute horizon. This is a simple
-            # feasibility screen, not a calibrated probability forecast.
-            if projected_move_15m_points < TARGET_POINTS or estimated_minutes_to_target is None or estimated_minutes_to_target > 15.0:
+            required_target_move = TARGET_POINTS + max(0.0, ask - ltp)
+            estimated_minutes_to_target = (required_target_move / premium_velocity_per_second / 60.0) if premium_velocity_per_second > 0 else None
+            # Account for the ask-vs-LTP spread: the observed LTP momentum must
+            # project far enough to reach entry ask +20, not merely LTP +20.
+            # This is a simple feasibility screen, not a calibrated probability forecast.
+            if projected_move_15m_points < required_target_move or estimated_minutes_to_target is None or estimated_minutes_to_target > 15.0:
                 continue
             tte = _tte_years(expiry, current_time)
             greeks = None
@@ -205,7 +206,7 @@ def analyze_snapshot(snapshot: Mapping[str, Any], previous: Mapping[str, Any] | 
                 "stop_price": round(ask - STOP_POINTS, 2),
                 "premium_change_pct": round(premium_move, 3),
                 "projected_move_15m_points": round(projected_move_15m_points, 2),
-                "estimated_minutes_to_target": round(estimated_minutes_to_target, 2),
+                "estimated_minutes_to_target": round(estimated_minutes_to_target, 2),\n                "required_move_from_ltp_points": round(required_target_move, 2),
                 "change_oi": change_oi, "oi": oi, "volume": volume,
                 "spread_pct": round(spread_pct, 3), "iv": iv,
                 "greeks": greeks, "score": score,
