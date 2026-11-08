@@ -65,7 +65,7 @@ The core analytics engine must not depend on MCP-specific response shapes. Each 
 - A local MCP server using `stdio` is a child process, not an ordinary HTTP endpoint. Render web services cannot call it as if it were a REST URL; the backend must manage the process and MCP client lifecycle.
 - For a hosted MCP server, use only a documented and supported transport (for example, a supported HTTP streaming transport). Do not assume a repository's transport from its name.
 - Keep MCP credentials out of source control. The project still prefers no-key/no-paid providers; do not introduce credentials unless the user explicitly changes that requirement.
-- Use one backend collector and bounded polling. Do not let every dashboard browser tab create its own upstream MCP session or repeated exchange requests.
+- Use one backend collector and bounded polling. The current FastAPI integration serializes snapshot fetches behind a lock and shares the latest snapshot for the configured poll interval (default 5 seconds), so browser requests do not each spawn a separate MCP session.
 - Add timeouts, cancellation, reconnect backoff, health status and graceful shutdown.
 - Do not expose an arbitrary MCP tool execution endpoint to the public internet. Allowlist only the specific read-only tools required by the NIFTY provider adapter.
 
