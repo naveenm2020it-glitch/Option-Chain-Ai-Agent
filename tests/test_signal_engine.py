@@ -26,3 +26,39 @@ def test_large_snapshot_gap_is_unresolved():
 def test_crossed_outcome_zones_is_unresolved():
     result = monitor_signal(signal(), 121, 89, "2026-11-09T09:30:05+05:30", "2026-11-09T09:30:10+05:30")
     assert result["outcome"] == "UNRESOLVED"
+
+
+def test_snapshot_confluence_selects_contract_without_candles():
+    from services.signal_engine import analyze_snapshot
+
+    expiry = "2026-11-12"
+    previous = {
+        "status": "LIVE", "spot": 24000,
+        "source_timestamp": "2026-11-09T09:30:00+05:30",
+        "selected_expiry": expiry,
+        "rows": [{
+            "strike": 24000, "expiry": expiry,
+            "ce": {"lastPrice": 99, "bidprice": 98.5, "askPrice": 99.5, "openInterest": 900,
+                   "changeinOpenInterest": 20, "totalTradedVolume": 1000, "impliedVolatility": 18},
+            "pe": {"lastPrice": 100, "bidprice": 99.5, "askPrice": 100.5, "openInterest": 1100,
+                   "changeinOpenInterest": 10, "totalTradedVolume": 1000, "impliedVolatility": 19},
+        }],
+    }
+    current = {
+        "status": "LIVE", "spot": 24020,
+        "source_timestamp": "2026-11-09T09:30:05+05:30",
+        "selected_expiry": expiry,
+        "rows": [{
+            "strike": 24000, "expiry": expiry,
+            "ce": {"lastPrice": 101, "bidprice": 100.5, "askPrice": 101.5, "openInterest": 900,
+                   "changeinOpenInterest": 30, "totalTradedVolume": 1200, "impliedVolatility": 18},
+            "pe": {"lastPrice": 98, "bidprice": 97.5, "askPrice": 98.5, "openInterest": 1200,
+                   "changeinOpenInterest": 15, "totalTradedVolume": 1100, "impliedVolatility": 19},
+        }],
+    }
+    result = analyze_snapshot(current, previous)
+    assert result["direction"] == "BULLISH"
+    assert result["selected_candidate"]["side"] == "CE"
+    assert result["selected_candidate"]["target_price"] == result["selected_candidate"]["entry_price"] + 20
+    assert result["selected_candidate"]["stop_price"] == result["selected_candidate"]["entry_price"] - 10
+    assert result["premium_candles_required"] is False
