@@ -130,8 +130,8 @@ def analyze_option_chain(rows: list[Mapping[str, Any]], *, top_n: int = 5) -> di
             "max_pain": max_pain,
             "put_oi_support_candidates": ranked("pe_oi", "pe_change"),
             "call_oi_resistance_candidates": ranked("ce_oi", "ce_change"),
-            "put_oi_build_up": ranked("pe_oi", "pe_change") if pe_change is not None else [],
-            "call_oi_build_up": ranked("ce_oi", "ce_change") if ce_change is not None else [],
+            "put_oi_build_up": [item for item in ranked("pe_oi", "pe_change") if item["change_oi"] is not None and item["change_oi"] > 0],
+            "call_oi_build_up": [item for item in ranked("ce_oi", "ce_change") if item["change_oi"] is not None and item["change_oi"] > 0],
             "put_oi_unwinding": [
                 item for item in ranked("pe_oi", "pe_change", reverse=False)
                 if item["change_oi"] is not None and item["change_oi"] < 0
