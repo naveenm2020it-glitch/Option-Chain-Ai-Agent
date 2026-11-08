@@ -1,25 +1,14 @@
 from __future__ import annotations
-import math, threading, time
+import math
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
-BASE = "https://www.nseindia.com"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
-    "Accept": "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.nseindia.com/option-chain",
-}
-session = requests.Session()
-lock = threading.Lock()
-cache = {"at": 0.0, "data": None}
 app = FastAPI(title="NIFTY Option Chain Intelligence", version="1.0.0")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -33,50 +22,25 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def get_market(force=False):
-    with lock:
-        if not force and cache["data"] and time.time() - cache["at"] < 5:
-            return cache["data"]
-        try:
-            session.get(BASE, headers=HEADERS, timeout=8)
-            response = session.get(BASE + "/api/option-chain-indices?symbol=NIFTY",
-                                   headers=HEADERS, timeout=10)
-            response.raise_for_status()
-            raw = response.json()
-            records = raw.get("records", {})
-            rows = []
-            for item in records.get("data", []):
-                if item.get("strikePrice") is None or not item.get("expiryDate"):
-                    continue
-                rows.append({
-                    "strike": item["strikePrice"],
-                    "expiry": item["expiryDate"],
-                    "ce": clean_leg(item.get("CE") or {}),
-                    "pe": clean_leg(item.get("PE") or {}),
-                })
-            if not rows:
-                raise RuntimeError("NSE returned an empty option chain")
-            data = {
-                "status": "LIVE",
-                "source": "NSE website public endpoint",
-                "source_timestamp": records.get("timestamp") or raw.get("timestamp"),
-                "received_at": now(),
-                "spot": records.get("underlyingValue"),
-                "expiry_dates": records.get("expiryDates", []),
-                "rows": rows,
-                "underlying": "NIFTY",
-            }
-            cache.update(at=time.time(), data=data)
-            return data
-        except Exception as exc:
-            if cache["data"]:
-                stale = dict(cache["data"])
-                stale.update(status="STALE", age_seconds=round(time.time() - cache["at"]), error=str(exc))
-                return stale
-            return {
-                "status": "UNAVAILABLE", "source": "NSE website public endpoint",
-                "source_timestamp": None, "received_at": now(), "spot": None,
-                "expiry_dates": [], "rows": [], "error": str(exc), "underlying": "NIFTY",
-            }
+    """Fail closed until a permitted NIFTY option-chain provider is configured.
+
+    The former NSE website endpoint poller is intentionally disabled: the
+    endpoint is undocumented and the source terms do not establish permission
+    for continuous automated collection.
+    """
+    return {
+        "status": "UNAVAILABLE",
+        "source": None,
+        "source_timestamp": None,
+        "received_at": now(),
+        "spot": None,
+        "expiry_dates": [],
+        "selected_expiry": None,
+        "rows": [],
+        "underlying": "NIFTY",
+        "quality": {"is_fresh": False, "checks": [], "warnings": []},
+        "error": "No permitted free no-key NIFTY option-chain provider is configured. Live analysis and alerts are paused.",
+    }
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
@@ -143,7 +107,13 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "time": now(), "data_status": cache["data"].get("status", "NOT_FETCHED") if cache["data"] else "NOT_FETCHED"}
+    data = get_market()
+    return {
+        "ok": True,
+        "time": now(),
+        "data_status": data["status"],
+        "provider_configured": False,
+    }
 
 @app.get("/api/market")
 def market(force: bool = False):
