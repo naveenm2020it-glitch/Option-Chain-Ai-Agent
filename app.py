@@ -1,11 +1,15 @@
 from __future__ import annotations
 import math
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
+from services.data_quality import validate_snapshot
 
 ROOT = Path(__file__).parent
 IST = ZoneInfo("Asia/Kolkata")
@@ -21,26 +25,53 @@ def clean_leg(value):
             "bidQty", "askQty")
     return {key: value.get(key) for key in keys}
 
-def get_market(force=False):
-    """Fail closed until a permitted NIFTY option-chain provider is configured.
-
-    The former NSE website endpoint poller is intentionally disabled: the
-    endpoint is undocumented and the source terms do not establish permission
-    for continuous automated collection.
-    """
-    return {
-        "status": "UNAVAILABLE",
-        "source": None,
-        "source_timestamp": None,
-        "received_at": now(),
-        "spot": None,
-        "expiry_dates": [],
-        "selected_expiry": None,
-        "rows": [],
-        "underlying": "NIFTY",
-        "quality": {"is_fresh": False, "checks": [], "warnings": []},
-        "error": "No permitted free no-key NIFTY option-chain provider is configured. Live analysis and alerts are paused.",
-    }
+def get_market(force=False, expiry=None):
+    """Fetch only through an explicitly configured MCP adapter; fail closed."""
+    try:
+        cfg = mcp_configuration()
+        provider = MCPOptionChainProvider(cfg)
+        allowed, reason = provider.configuration_status()
+        if not allowed:
+            return {
+                "status": "UNAVAILABLE", "source": None,
+                "source_timestamp": None, "received_at": now(),
+                "spot": None, "expiry_dates": [], "selected_expiry": None,
+                "rows": [], "underlying": "NIFTY",
+                "quality": {"is_fresh": False, "checks": [], "warnings": []},
+                "error": reason,
+            }
+        snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
+        quality = validate_snapshot(
+            snapshot,
+            provider_permitted=cfg["automated_use_permitted"],
+            max_age_seconds=max(1, int(os.getenv("MCP_MAX_AGE_SECONDS", "30"))),
+        )
+        snapshot["status"] = quality.status
+        snapshot["quality"] = quality.as_dict()
+        snapshot["underlying"] = "NIFTY"
+        if quality.status != "LIVE":
+            snapshot["error"] = quality.error or "MCP snapshot failed data-quality validation."
+        else:
+            snapshot.pop("error", None)
+        return snapshot
+    except (MCPProviderError, ValueError) as exc:
+        return {
+            "status": "UNAVAILABLE", "source": "MCP",
+            "source_timestamp": None, "received_at": now(),
+            "spot": None, "expiry_dates": [], "selected_expiry": None,
+            "rows": [], "underlying": "NIFTY",
+            "quality": {"is_fresh": False, "checks": [], "warnings": []},
+            "error": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "status": "UNAVAILABLE", "source": "MCP",
+            "source_timestamp": None, "received_at": now(),
+            "spot": None, "expiry_dates": [], "selected_expiry": None,
+            "rows": [], "underlying": "NIFTY",
+            "quality": {"is_fresh": False, "checks": [], "warnings": []},
+            "error": f"MCP provider failure: {type(exc).__name__}",
+        }
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else 0.0
@@ -108,20 +139,27 @@ def home():
 @app.get("/api/health")
 def health():
     data = get_market()
+    try:
+        cfg = mcp_configuration()
+        configured = bool(cfg["enabled"] and cfg["automated_use_permitted"] and cfg["command"] and cfg["tool_name"])
+    except MCPProviderError:
+        configured = False
     return {
         "ok": True,
         "time": now(),
         "data_status": data["status"],
-        "provider_configured": False,
+        "provider": data.get("source") or "none",
+        "provider_configured": configured,
+        "provider_status": data["status"],
     }
 
 @app.get("/api/market")
-def market(force: bool = False):
-    return get_market(force=force)
+def market(force: bool = False, expiry: str | None = Query(default=None)):
+    return get_market(force=force, expiry=expiry)
 
 @app.get("/api/analysis")
 def analysis(expiry: str | None = Query(default=None)):
-    market_data = get_market()
+    market_data = get_market(expiry=expiry)
     if market_data["status"] != "LIVE" or market_data.get("spot") is None:
         return {"status": "WAIT", "message": "Verified live NSE data is unavailable. Analysis is paused.",
                 "market": market_data, "signals": [], "metrics": None, "rows": []}
