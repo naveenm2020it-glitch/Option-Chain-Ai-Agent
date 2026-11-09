@@ -37,9 +37,9 @@ The MCP adapter does not include any NSE scraper, bypass, CAPTCHA workaround or 
 
 ## Production backend update architecture
 
-The dashboard now uses a backend WebSocket at `/ws/market` for push notifications. The backend sends a 3-second connection heartbeat; this heartbeat is **not** a market tick and never changes market values. Provider status and source-timestamp changes are pushed separately. The browser uses a low-frequency REST fallback only when the WebSocket is disconnected.
+The dashboard now uses a backend WebSocket at `/ws/market` for push notifications. The backend sends a 3-second connection heartbeat (`DASHBOARD_HEARTBEAT_SECONDS`); this heartbeat is **not** a market tick and never changes market values. Provider status and source-timestamp changes are pushed separately. The browser uses a low-frequency REST fallback only when the WebSocket is disconnected.
 
-The 3-second setting is an analytics/UI responsiveness target, not a promise that NSE publishes new data every three seconds. Analytics and signal lifecycle processing run only when a new, unique, fresh, permitted source snapshot arrives. Provider polling/cache cadence is separately configured with `PROVIDER_POLL_INTERVAL_SECONDS` and `PROVIDER_CACHE_TTL_SECONDS`; do not set these to three seconds merely to make the screen look live.
+`ANALYTICS_UPDATE_INTERVAL_SECONDS=3` is the analytics responsiveness target when a new source update is available; `DASHBOARD_HEARTBEAT_SECONDS=3` only keeps the browser connection responsive. Neither setting is a promise that NSE publishes new data every three seconds. Analytics and signal lifecycle processing run only when a new, unique, fresh, permitted source snapshot arrives. Provider polling/cache cadence is separately configured with `PROVIDER_POLL_INTERVAL_SECONDS` and `PROVIDER_CACHE_TTL_SECONDS`; do not set these to three seconds merely to make the screen look live.
 
 The Render deployment profile is fail-closed: `NSE_AUTOMATED_COLLECTION_ENABLED=false`, `MCP_PROVIDER_ENABLED=false`, `JUGAAD_PROVIDER_ENABLED=false`, `FYERS_PROVIDER_ENABLED=false`, and `ORDER_EXECUTION_ENABLED=false`. NSE data can be imported manually from a user-downloaded CSV for research, but imported snapshots are never labelled LIVE and cannot trigger entry signals. No NSE website JSON polling, browser scraping, CAPTCHA/session bypass, or automated collection is implemented.
 
@@ -55,7 +55,7 @@ uvicorn app:app --reload
 Open http://127.0.0.1:8000
 
 ## Render
-The `main` branch is connected to the Render web service and the current application build is deployed. The Python 3.12 CI suite is used for regression checks. The service uses a provider polling loop only for an explicitly enabled and permitted provider. The dashboard WebSocket sends a 3-second heartbeat and market-update notifications when a new provider snapshot arrives. The free Render web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history. Render's free web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history.
+The `main` branch is connected to the Render web service and the current application build is deployed. The Python 3.12 CI suite is used for regression checks. The service uses a provider polling loop only for an explicitly enabled and permitted provider. The dashboard WebSocket sends a 3-second heartbeat and market-update notifications when a new provider snapshot arrives. Render's free web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history.
 
 Research tool only. Not investment advice.
 
