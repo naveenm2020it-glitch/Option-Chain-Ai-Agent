@@ -50,7 +50,39 @@ function downloadCsv(filename,rows){if(!rows?.length){alert("No verified data is
 $("exportChain").addEventListener("click",()=>downloadCsv("nifty-option-chain.csv",(analysisData?.rows||[]).map(r=>({strike:r.strike,expiry:r.expiry,ce_oi:r.ce.openInterest,ce_change_oi:r.ce.changeinOpenInterest,ce_volume:r.ce.totalTradedVolume,ce_ltp:r.ce.lastPrice,ce_iv:r.ce.impliedVolatility,pe_ltp:r.pe.lastPrice,pe_volume:r.pe.totalTradedVolume,pe_change_oi:r.pe.changeinOpenInterest,pe_oi:r.pe.openInterest,pe_iv:r.pe.impliedVolatility}))));
 $("exportOI").addEventListener("click",()=>{const x=analysisData?.metrics;downloadCsv("nifty-oi-levels.csv",[...(x?.support||[]).map(r=>({type:"PUT OI SUPPORT",...r})),...(x?.resistance||[]).map(r=>({type:"CALL OI RESISTANCE",...r}))]);});
 $("exportSignals").addEventListener("click",()=>downloadCsv("nifty-ai-watchlist.csv",analysisData?.signals||[]));
-refresh();setInterval(()=>refresh(false),7000);
+let marketSocket=null;
+let lastSocketSourceTimestamp=null;
+let lastSocketStatus=null;
+function connectMarketSocket(){
+ const scheme=location.protocol==="https:"?"wss":"ws";
+ const socket=new WebSocket(scheme+"://"+location.host+"/ws/market");
+ marketSocket=socket;
+ socket.addEventListener("open",()=>{lastSocketStatus="CONNECTED";});
+ socket.addEventListener("message",event=>{
+  let message;
+  try{message=JSON.parse(event.data);}catch(e){return;}
+  if(message.type!=="market_update")return;
+  const status=message.status||"UNAVAILABLE";
+  const stamp=message.source_timestamp||null;
+  const changed=status!==lastSocketStatus||stamp!==lastSocketSourceTimestamp;
+  lastSocketStatus=status;
+  lastSocketSourceTimestamp=stamp;
+  if(changed){
+   if(status!=="LIVE")setStatus(status,message.received_at||"No verified source timestamp");
+   refresh(false);
+  }
+ });
+ socket.addEventListener("close",()=>{
+  if(marketSocket===socket)marketSocket=null;
+  setStatus("DISCONNECTED","Dashboard push reconnecting");
+  window.setTimeout(connectMarketSocket,3000);
+ });
+ socket.addEventListener("error",()=>socket.close());
+}
+refresh();
+connectMarketSocket();
+// Low-frequency REST fallback only; market updates normally arrive through backend push.
+setInterval(()=>{if(!marketSocket||marketSocket.readyState!==WebSocket.OPEN)refresh(false);},15000);
 
 async function loadJournal(){
  try{
