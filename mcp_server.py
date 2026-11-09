@@ -231,3 +231,25 @@ class BearerTokenASGI:
 def protected_mcp_app():
     """Build the authenticated Streamable HTTP MCP ASGI application."""
     return BearerTokenASGI(mcp.streamable_http_app(json_response=True, stateless_http=True))
+
+
+@mcp.tool()
+def get_nifty_imported_option_chain() -> dict[str, Any]:
+    """Return the most recently manually imported NSE CSV snapshot. Never represents live streaming."""
+    from app import _IMPORTED_NSE_SNAPSHOT, _IMPORTED_NSE_LOCK
+    from services.oi_analytics import analyze_option_chain
+    with _IMPORTED_NSE_LOCK:
+        snapshot = dict(_IMPORTED_NSE_SNAPSHOT) if _IMPORTED_NSE_SNAPSHOT else None
+    if not snapshot:
+        return {"instrument": "NIFTY", "status": "EMPTY",
+                "message": "No NSE CSV has been uploaded yet."}
+    chosen = snapshot.get("selected_expiry")
+    rows = [r for r in snapshot.get("rows", []) if not chosen or r.get("expiry") == chosen]
+    metrics = analyze_option_chain(rows, top_n=5) if rows else None
+    return {
+        "instrument": "NIFTY", "status": "IMPORTED", "source": snapshot.get("source"),
+        "source_timestamp": None, "received_at": snapshot.get("received_at"),
+        "spot": snapshot.get("spot"), "expiry": chosen, "rows": rows,
+        "metrics": metrics, "quality": snapshot.get("quality", {}),
+        "warning": "Manual CSV snapshot only. Not live streaming; do not use for automatic entry alerts.",
+    }
