@@ -53,3 +53,29 @@ Research tool only. Not investment advice.
 ## Owned MCP server
 
 The application now exposes an authenticated, read-only Streamable HTTP MCP server at `/mcp`. See [docs/OWN_NIFTY_MCP_SERVER.md](docs/OWN_NIFTY_MCP_SERVER.md) for available tools, Render setup and client authentication. Configure `MCP_ACCESS_TOKEN` only in Render environment settings; never commit the token. The MCP server uses the same provider permission and freshness checks as the website. The Render service has a bearer token configured; the `/mcp` endpoint rejects requests without the matching Authorization header. The upstream market-data provider remains disabled until a permitted source is configured.
+
+
+## FYERS read-only market data (optional)
+
+A documented FYERS provider is implemented in `providers/fyers_provider.py`. It imports only the FYERS market-data REST client and Data Socket; it does not import or call any order-placement, modification, cancellation or trading methods.
+
+### Standard-plan design and limitations
+
+- Initial/periodic REST Option Chain request: NIFTY index, 24 strikes on either side of ATM, with Greeks enabled.
+- Data Socket: NIFTY index plus 49 CE and 49 PE contracts (99 symbols total), staying within the documented 100-symbol Standard-plan cap.
+- WebSocket updates: LTP, daily OHLC, change/percentage change, traded volume, bid/ask prices and sizes. Index updates provide LTP and daily OHLC/change fields.
+- REST snapshot fields: OI, change in OI, previous OI, volume, bid/ask, IV, and Delta/Gamma/Theta/Vega. OI/change-OI/IV/Greeks are **not** included in the documented SymbolUpdate WebSocket payload; they refresh on the configured REST interval (default 60 seconds).
+- At a 60-second REST refresh, the app makes about 375 option-chain requests in a 6h15m session, rather than 7,500 requests from polling every 3 seconds. Actual limits are governed by FYERS' current Standard plan (5 requests/second, 50/minute, 5,000/day for Data APIs).
+- This is a selected 49-strike window, not the entire listed expiry universe. Standard WebSocket subscriptions are capped at 100 symbols per user across all data-socket connections.
+
+### Configure on Render
+
+1. Create a FYERS API app and obtain your App ID and access token through FYERS' official authentication flow.
+2. In Render → service → Environment, set `FYERS_PROVIDER_ENABLED=true`, `FYERS_APP_ID` and `FYERS_ACCESS_TOKEN`. Keep the token server-side only; never put it in HTML, JavaScript, browser storage, GitHub, or a public MCP response.
+3. Keep `FYERS_REST_REFRESH_SECONDS=60` initially. The provider will subscribe to 99 symbols at most on Standard.
+4. Redeploy. Check `/api/providers/fyers` for configuration/stream status and `/api/health` for service status.
+5. The first valid LIVE state requires a timestamped NIFTY index WebSocket update. No live feed can be claimed until a real authenticated connection is observed.
+
+### Important
+
+FYERS API access requires a FYERS account and valid authentication. FYERS documentation describes the Standard plan as the default and states free market-data access; the API rate limits and socket symbol limits are plan-specific and may change. This integration does not guarantee 24/7 uptime, does not bypass authentication, and does not place orders. The current dashboard's existing signal engine remains data-quality gated.
