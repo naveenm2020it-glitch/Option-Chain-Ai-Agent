@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
 from providers.jugaad_provider import JugaadOptionChainProvider, JugaadProviderError, jugaad_configuration
+from providers.fyers_provider import FyersOptionChainProvider, FyersProviderError, fyers_configuration
 from services.data_quality import validate_snapshot
 from services.nse_csv_import import parse_nse_option_csv
 from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION, _tte_years
@@ -131,10 +132,28 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def _fetch_market_uncached(force=False, expiry=None):
-    """Fetch through the selected provider; unofficial sources fail closed by default."""
-    source_name = "jugaad-data" if os.getenv("JUGAAD_PROVIDER_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "MCP"
+    """Fetch through the selected provider; FYERS is read-only and order-free."""
+    fyers_on = os.getenv("FYERS_PROVIDER_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+    jugaad_on = os.getenv("JUGAAD_PROVIDER_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+    source_name = "FYERS" if fyers_on else ("jugaad-data" if jugaad_on else "MCP")
     try:
-        if source_name == "jugaad-data":
+        if source_name == "FYERS":
+            cfg = fyers_configuration()
+            provider = _FYERS_PROVIDER
+            allowed, reason = provider.configuration_status()
+            if not allowed:
+                return {
+                    "status": "UNAVAILABLE", "source": "FYERS (not configured)",
+                    "source_timestamp": None, "received_at": now(),
+                    "spot": None, "expiry_dates": [], "selected_expiry": None,
+                    "rows": [], "underlying": "NIFTY",
+                    "quality": {"is_fresh": False, "checks": [], "warnings": []},
+                    "error": reason,
+                }
+            snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
+            permitted = True
+            max_age = max(1, int(os.getenv("FYERS_MAX_AGE_SECONDS", "30")))
+        elif source_name == "jugaad-data":
             cfg = jugaad_configuration()
             provider = JugaadOptionChainProvider()
             allowed, reason = provider.configuration_status()
@@ -175,7 +194,7 @@ def _fetch_market_uncached(force=False, expiry=None):
         else:
             snapshot.pop("error", None)
         return snapshot
-    except (MCPProviderError, JugaadProviderError, ValueError) as exc:
+    except (MCPProviderError, JugaadProviderError, FyersProviderError, ValueError) as exc:
         return {
             "status": "UNAVAILABLE", "source": source_name,
             "source_timestamp": None, "received_at": now(),
@@ -193,6 +212,8 @@ def _fetch_market_uncached(force=False, expiry=None):
             "quality": {"is_fresh": False, "checks": [], "warnings": []},
             "error": f"{source_name} provider failure: {type(exc).__name__}",
         }
+
+_FYERS_PROVIDER = FyersOptionChainProvider()
 
 _MCP_MARKET_CACHE: dict[str, tuple[float, dict]] = {}
 _MCP_MARKET_CACHE_LOCK = threading.Lock()
@@ -287,13 +308,15 @@ def home():
 def health():
     # Health probes must not trigger upstream market-data calls.
     jugaad_cfg = jugaad_configuration()
+    fyers_cfg = fyers_configuration()
+    fyers_status_data = _FYERS_PROVIDER.status()
     try:
         mcp_cfg = mcp_configuration()
         mcp_configured = bool(mcp_cfg["enabled"] and mcp_cfg["automated_use_permitted"] and mcp_cfg["command"] and mcp_cfg["tool_name"])
     except MCPProviderError:
         mcp_configured = False
-    selected = "jugaad-data" if jugaad_cfg["enabled"] else ("MCP" if mcp_configured else "none")
-    configured = bool((jugaad_cfg["enabled"] and jugaad_cfg["automated_use_permitted"]) or mcp_configured)
+    selected = "FYERS" if fyers_cfg["enabled"] else ("jugaad-data" if jugaad_cfg["enabled"] else ("MCP" if mcp_configured else "none"))
+    configured = bool((fyers_cfg["enabled"] and fyers_cfg["app_id"] and fyers_cfg["access_token"]) or (jugaad_cfg["enabled"] and jugaad_cfg["automated_use_permitted"]) or mcp_configured)
     return {
         "ok": True, "time": now(),
         "data_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
@@ -302,6 +325,10 @@ def health():
         "jugaad_installed": True,
         "jugaad_enabled": jugaad_cfg["enabled"],
         "jugaad_automated_use_permitted": jugaad_cfg["automated_use_permitted"],
+        "fyers_enabled": fyers_cfg["enabled"],
+        "fyers_credentials_configured": bool(fyers_cfg["app_id"] and fyers_cfg["access_token"]),
+        "fyers_status": fyers_status_data,
+        "order_execution_enabled": False,
     }
 
 
@@ -316,6 +343,12 @@ def jugaad_status():
         "message": reason or "Provider is enabled. Data has not been fetched by this status endpoint.",
         "network_test_performed": False,
     }
+
+@app.get("/api/providers/fyers")
+def fyers_status():
+    """Return FYERS connection configuration without exposing credentials or making a market request."""
+    return _FYERS_PROVIDER.status()
+
 
 @app.post("/api/import/nse-csv")
 async def import_nse_csv(request: Request, spot: float = Query(..., gt=0), expiry: str | None = Query(default=None)):
