@@ -23,7 +23,8 @@
 
 ## Timing contract
 
-- `ANALYTICS_UPDATE_INTERVAL_SECONDS=3`: WebSocket heartbeat / dashboard responsiveness target.
+- `ANALYTICS_UPDATE_INTERVAL_SECONDS=3`: target responsiveness for analytics when new valid source updates arrive; it does not manufacture new ticks.
+- `DASHBOARD_HEARTBEAT_SECONDS=3`: WebSocket connection heartbeat only.
 - `PROVIDER_POLL_INTERVAL_SECONDS=5`: separate backend provider polling cadence for a provider that explicitly requires polling.
 - `PROVIDER_CACHE_TTL_SECONDS=5`: shares provider snapshots across API requests.
 - A provider with its own WebSocket should push ticks into the provider adapter; it should not be polled every three seconds just to satisfy the UI target.
