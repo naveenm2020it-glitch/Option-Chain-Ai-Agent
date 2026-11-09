@@ -70,11 +70,11 @@ A documented FYERS provider is implemented in `providers/fyers_provider.py`. It 
 
 ### Configure on Render
 
-1. Create a FYERS API app and obtain your App ID and access token through FYERS' official authentication flow.
+1. Create a FYERS **Individual Non-Trading App** (data-only) in the FYERS API Dashboard. It provides market-data access without order-placement permission. Obtain its App ID and access token through FYERS' official authentication flow.
 2. In Render → service → Environment, set `FYERS_PROVIDER_ENABLED=true`, `FYERS_APP_ID` and `FYERS_ACCESS_TOKEN`. Keep the token server-side only; never put it in HTML, JavaScript, browser storage, GitHub, or a public MCP response.
 3. Keep `FYERS_REST_REFRESH_SECONDS=60` initially. The provider will subscribe to 99 symbols at most on Standard.
 4. Redeploy. Check `/api/providers/fyers` for configuration/stream status and `/api/health` for service status.
-5. The first valid LIVE state requires a timestamped NIFTY index WebSocket update. No live feed can be claimed until a real authenticated connection is observed.
+5. FYERS access tokens expire daily at 6:30 AM IST; generate a fresh token after expiry and update the Render environment value. The first valid LIVE state requires a timestamped exchange WebSocket update. No live feed can be claimed until a real authenticated connection is observed.
 
 ### Important
 
