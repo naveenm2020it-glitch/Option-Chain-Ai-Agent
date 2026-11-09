@@ -7,13 +7,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from io import BytesIO
 from fastapi.staticfiles import StaticFiles
 
 from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
 from services.data_quality import validate_snapshot
+from services.nse_csv_import import parse_nse_option_csv
 from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION, _tte_years
 from services.greeks import calculate_greeks
 from storage.database import ResearchDatabase
@@ -23,6 +24,8 @@ DB.initialize()
 _PREVIOUS_VALID_SNAPSHOTS: dict[str, dict] = {}
 _PROCESSED_SNAPSHOT_KEYS: set[tuple[str, str]] = set()
 _SIGNAL_LOCK = threading.Lock()
+_IMPORTED_NSE_SNAPSHOT: dict | None = None
+_IMPORTED_NSE_LOCK = threading.Lock()
 
 def _process_snapshot(snapshot: dict, chosen_expiry: str, rows: list[dict]) -> dict:
     global _PREVIOUS_VALID_SNAPSHOTS
@@ -279,6 +282,34 @@ def health():
         "provider_configured": configured,
         "provider_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
     }
+
+@app.post("/api/import/nse-csv")
+async def import_nse_csv(request: Request, spot: float = Query(..., gt=0), expiry: str | None = Query(default=None)):
+    """Import a user-downloaded NSE option-chain CSV. This is never labelled LIVE."""
+    global _IMPORTED_NSE_SNAPSHOT
+    raw = await request.body()
+    if len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="CSV exceeds the 8 MB upload limit.")
+    try:
+        content = raw.decode("utf-8-sig")
+        snapshot = parse_nse_option_csv(content, spot=spot, expiry=expiry)
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    with _IMPORTED_NSE_LOCK:
+        _IMPORTED_NSE_SNAPSHOT = snapshot
+    return {"status": "IMPORTED", "source": snapshot["source"], "received_at": snapshot["received_at"],
+            "spot": snapshot["spot"], "expiry_dates": snapshot["expiry_dates"],
+            "contract_count": len(snapshot["rows"]), "quality": snapshot["quality"],
+            "message": "CSV imported for snapshot analysis only. This is not live streaming; entry alerts remain disabled."}
+
+
+@app.get("/api/import/nse-csv")
+def imported_nse_csv():
+    with _IMPORTED_NSE_LOCK:
+        if _IMPORTED_NSE_SNAPSHOT is None:
+            return {"status": "EMPTY", "message": "Upload an NSE option-chain CSV first."}
+        return _IMPORTED_NSE_SNAPSHOT
+
 
 @app.get("/api/market")
 def market(force: bool = False, expiry: str | None = Query(default=None)):
