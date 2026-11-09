@@ -87,3 +87,28 @@ async function loadGreeks(){
   if($("greeksMatrix"))$("greeksMatrix").innerHTML=items.length?items.map(x=>'<tr><td>'+fmt(x.strike)+'</td><td><b>'+safe(x.side)+'</b></td><td>'+fmt(x.ltp)+'</td><td>'+fmt(x.iv_percent)+'</td><td>'+fmt(x.delta)+'</td><td>'+fmt(x.gamma)+'</td><td>'+fmt(x.theta_per_calendar_day)+'</td><td>'+fmt(x.vega_per_1_vol_point)+'</td><td>'+fmt(x.rho_per_1_rate_point)+'</td></tr>').join(""):'<tr><td colspan="9" class="empty">'+safe(data.message||"No valid IV values for Greeks.")+'</td></tr>';
  }catch(e){if($("greeksMatrix"))$("greeksMatrix").innerHTML='<tr><td colspan="9" class="empty">'+safe(e.message)+'</td></tr>';}
 }
+
+
+// Manual NSE CSV import: imported snapshots are explicitly not live and never trigger signals.
+(function setupNseCsvImport(){
+ const button=$("importCsvBtn");
+ if(!button)return;
+ button.addEventListener("click",async()=>{
+  const file=$("nseCsvFile")?.files?.[0];
+  const spot=Number($("importSpot")?.value);
+  const expiry=$("importExpiry")?.value||"";
+  const status=$("importCsvStatus");
+  if(!file){status.textContent="Choose the NSE option-chain CSV file first.";return;}
+  if(!(spot>0)){status.textContent="Enter the NIFTY spot value shown when you downloaded the CSV.";return;}
+  button.disabled=true;status.textContent="Parsing NSE CSV…";
+  try{
+   const query=new URLSearchParams({spot:String(spot)});
+   if(expiry)query.set("expiry",expiry);
+   const response=await fetch("/api/import/nse-csv?"+query.toString(),{method:"POST",headers:{"Content-Type":"text/csv"},body:await file.text(),cache:"no-store"});
+   const data=await response.json();
+   if(!response.ok)throw new Error(data.detail||"CSV import failed.");
+   status.textContent="IMPORTED · "+data.contract_count+" CE/PE strike rows · received "+data.received_at+". This is a manual snapshot, not live streaming. MCP tool: get_nifty_imported_option_chain.";
+  }catch(error){status.textContent="Import failed: "+error.message;}
+  finally{button.disabled=false;}
+ });
+})();
