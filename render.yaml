@@ -17,6 +17,8 @@ services:
         value: "false"
       - key: ANALYTICS_UPDATE_INTERVAL_SECONDS
         value: "3"
+      - key: DASHBOARD_HEARTBEAT_SECONDS
+        value: "3"
       - key: PROVIDER_POLL_INTERVAL_SECONDS
         value: "5"
       - key: PROVIDER_CACHE_TTL_SECONDS
