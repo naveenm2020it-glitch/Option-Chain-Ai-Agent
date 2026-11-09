@@ -164,7 +164,7 @@ async def market_websocket(websocket: WebSocket):
             "server_time": now(),
             "market_data_status": "UNAVAILABLE",
         })
-        heartbeat_seconds = max(1, min(10, int(os.getenv("ANALYTICS_UPDATE_INTERVAL_SECONDS", "3"))))
+        heartbeat_seconds = max(1, min(10, int(os.getenv("DASHBOARD_HEARTBEAT_SECONDS", "3"))))
         while True:
             await asyncio.sleep(heartbeat_seconds)
             await websocket.send_json({
