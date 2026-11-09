@@ -13,6 +13,7 @@ from io import BytesIO
 from fastapi.staticfiles import StaticFiles
 
 from providers.mcp_adapter import MCPOptionChainProvider, MCPProviderError, mcp_configuration
+from providers.jugaad_provider import JugaadOptionChainProvider, JugaadProviderError, jugaad_configuration
 from services.data_quality import validate_snapshot
 from services.nse_csv_import import parse_nse_option_csv
 from services.signal_engine import analyze_snapshot, monitor_signal, ENGINE_VERSION, _tte_years
@@ -130,37 +131,53 @@ def clean_leg(value):
     return {key: value.get(key) for key in keys}
 
 def _fetch_market_uncached(force=False, expiry=None):
-    """Fetch only through an explicitly configured MCP adapter; fail closed."""
+    """Fetch through the selected provider; unofficial sources fail closed by default."""
+    source_name = "jugaad-data" if os.getenv("JUGAAD_PROVIDER_ENABLED", "").lower() in {"1", "true", "yes", "on"} else "MCP"
     try:
-        cfg = mcp_configuration()
-        provider = MCPOptionChainProvider(cfg)
-        allowed, reason = provider.configuration_status()
-        if not allowed:
-            return {
-                "status": "UNAVAILABLE", "source": None,
-                "source_timestamp": None, "received_at": now(),
-                "spot": None, "expiry_dates": [], "selected_expiry": None,
-                "rows": [], "underlying": "NIFTY",
-                "quality": {"is_fresh": False, "checks": [], "warnings": []},
-                "error": reason,
-            }
-        snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
-        quality = validate_snapshot(
-            snapshot,
-            provider_permitted=cfg["automated_use_permitted"],
-            max_age_seconds=max(1, int(os.getenv("MCP_MAX_AGE_SECONDS", "30"))),
-        )
+        if source_name == "jugaad-data":
+            cfg = jugaad_configuration()
+            provider = JugaadOptionChainProvider()
+            allowed, reason = provider.configuration_status()
+            if not allowed:
+                return {
+                    "status": "UNAVAILABLE", "source": "jugaad-data (disabled)",
+                    "source_timestamp": None, "received_at": now(),
+                    "spot": None, "expiry_dates": [], "selected_expiry": None,
+                    "rows": [], "underlying": "NIFTY",
+                    "quality": {"is_fresh": False, "checks": [], "warnings": []},
+                    "error": reason,
+                }
+            snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
+            permitted = cfg["automated_use_permitted"]
+            max_age = max(1, int(os.getenv("JUGAAD_MAX_AGE_SECONDS", "30")))
+        else:
+            cfg = mcp_configuration()
+            provider = MCPOptionChainProvider(cfg)
+            allowed, reason = provider.configuration_status()
+            if not allowed:
+                return {
+                    "status": "UNAVAILABLE", "source": None,
+                    "source_timestamp": None, "received_at": now(),
+                    "spot": None, "expiry_dates": [], "selected_expiry": None,
+                    "rows": [], "underlying": "NIFTY",
+                    "quality": {"is_fresh": False, "checks": [], "warnings": []},
+                    "error": reason,
+                }
+            snapshot = provider.fetch_snapshot("NIFTY", expiry=expiry)
+            permitted = cfg["automated_use_permitted"]
+            max_age = max(1, int(os.getenv("MCP_MAX_AGE_SECONDS", "30")))
+        quality = validate_snapshot(snapshot, provider_permitted=permitted, max_age_seconds=max_age)
         snapshot["status"] = quality.status
         snapshot["quality"] = quality.as_dict()
         snapshot["underlying"] = "NIFTY"
         if quality.status != "LIVE":
-            snapshot["error"] = quality.error or "MCP snapshot failed data-quality validation."
+            snapshot["error"] = quality.error or f"{source_name} snapshot failed data-quality validation."
         else:
             snapshot.pop("error", None)
         return snapshot
-    except (MCPProviderError, ValueError) as exc:
+    except (MCPProviderError, JugaadProviderError, ValueError) as exc:
         return {
-            "status": "UNAVAILABLE", "source": "MCP",
+            "status": "UNAVAILABLE", "source": source_name,
             "source_timestamp": None, "received_at": now(),
             "spot": None, "expiry_dates": [], "selected_expiry": None,
             "rows": [], "underlying": "NIFTY",
@@ -169,12 +186,12 @@ def _fetch_market_uncached(force=False, expiry=None):
         }
     except Exception as exc:
         return {
-            "status": "UNAVAILABLE", "source": "MCP",
+            "status": "UNAVAILABLE", "source": source_name,
             "source_timestamp": None, "received_at": now(),
             "spot": None, "expiry_dates": [], "selected_expiry": None,
             "rows": [], "underlying": "NIFTY",
             "quality": {"is_fresh": False, "checks": [], "warnings": []},
-            "error": f"MCP provider failure: {type(exc).__name__}",
+            "error": f"{source_name} provider failure: {type(exc).__name__}",
         }
 
 _MCP_MARKET_CACHE: dict[str, tuple[float, dict]] = {}
@@ -269,18 +286,35 @@ def home():
 @app.get("/api/health")
 def health():
     # Health probes must not trigger upstream market-data calls.
+    jugaad_cfg = jugaad_configuration()
     try:
-        cfg = mcp_configuration()
-        configured = bool(cfg["enabled"] and cfg["automated_use_permitted"] and cfg["command"] and cfg["tool_name"])
+        mcp_cfg = mcp_configuration()
+        mcp_configured = bool(mcp_cfg["enabled"] and mcp_cfg["automated_use_permitted"] and mcp_cfg["command"] and mcp_cfg["tool_name"])
     except MCPProviderError:
-        configured = False
+        mcp_configured = False
+    selected = "jugaad-data" if jugaad_cfg["enabled"] else ("MCP" if mcp_configured else "none")
+    configured = bool((jugaad_cfg["enabled"] and jugaad_cfg["automated_use_permitted"]) or mcp_configured)
     return {
-        "ok": True,
-        "time": now(),
+        "ok": True, "time": now(),
         "data_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
-        "provider": "MCP" if configured else "none",
-        "provider_configured": configured,
+        "provider": selected, "provider_configured": configured,
         "provider_status": "CONFIGURED_NOT_CHECKED" if configured else "UNAVAILABLE",
+        "jugaad_installed": True,
+        "jugaad_enabled": jugaad_cfg["enabled"],
+        "jugaad_automated_use_permitted": jugaad_cfg["automated_use_permitted"],
+    }
+
+
+@app.get("/api/providers/jugaad")
+def jugaad_status():
+    cfg = jugaad_configuration()
+    allowed, reason = JugaadOptionChainProvider().configuration_status()
+    return {
+        "provider": "jugaad-data", "installed_dependency": "jugaad-data==0.37.0",
+        "enabled": cfg["enabled"], "automated_use_permitted": cfg["automated_use_permitted"],
+        "ready": allowed, "status": "READY" if allowed else "DISABLED",
+        "message": reason or "Provider is enabled. Data has not been fetched by this status endpoint.",
+        "network_test_performed": False,
     }
 
 @app.post("/api/import/nse-csv")
