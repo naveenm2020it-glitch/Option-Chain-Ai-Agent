@@ -15,3 +15,15 @@ services:
         value: "false"
       - key: JUGAAD_AUTOMATED_USE_PERMITTED
         value: "false"
+      - key: FYERS_PROVIDER_ENABLED
+        value: "false"
+      - key: FYERS_APP_ID
+        sync: false
+      - key: FYERS_ACCESS_TOKEN
+        sync: false
+      - key: FYERS_REST_REFRESH_SECONDS
+        value: "60"
+      - key: FYERS_STANDARD_STRIKE_COUNT
+        value: "24"
+      - key: FYERS_MAX_AGE_SECONDS
+        value: "30"
