@@ -30,6 +30,17 @@
 </header>
 <div class="integrity-banner"><span class="banner-icon">✓</span><div><b>DATA INTEGRITY ACTIVE</b><span>No permitted live provider is configured. Market analysis and entry alerts remain paused until a source is verified.</span></div><small id="sourceStamp">Waiting for NSE response</small></div>
 
+<section class="panel" id="nseImportPanel" style="margin:14px 0;padding:16px">
+ <div class="panel-head"><div><span class="section-kicker">MANUAL NSE DATA IMPORT</span><h2>Import official option-chain CSV</h2><p>Download the CSV from NSE, then upload it here. Imported snapshots are not live streaming and cannot trigger alerts.</p></div></div>
+ <div class="toolbar-controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:end">
+  <label>NIFTY spot at download <input id="importSpot" type="number" min="1" step="0.05" placeholder="Enter spot" style="padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-solid);color:var(--ink)"></label>
+  <label>Expiry date <input id="importExpiry" type="date" style="padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-solid);color:var(--ink)"></label>
+  <label>NSE CSV file <input id="nseCsvFile" type="file" accept=".csv,text/csv" style="max-width:230px"></label>
+  <button class="primary-btn" id="importCsvBtn" type="button">Import CSV</button>
+ </div>
+ <p id="importCsvStatus" role="status" style="margin-top:10px;font-size:12px;color:var(--muted)">No file imported. Live market feed status is unchanged.</p>
+</section>
+
 <section class="page active" id="overview">
   <div class="metric-grid">
     <article class="metric-card"><div class="metric-top"><span>NIFTY SPOT</span><i>⌁</i></div><strong id="spot">—</strong><small id="spotTime">Awaiting exchange feed</small></article>
