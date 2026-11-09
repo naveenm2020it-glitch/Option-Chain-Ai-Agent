@@ -11,3 +11,7 @@ services:
         value: 3.12.8
       - key: NSE_ENABLED
         value: "false"
+      - key: JUGAAD_PROVIDER_ENABLED
+        value: "false"
+      - key: JUGAAD_AUTOMATED_USE_PERMITTED
+        value: "false"
