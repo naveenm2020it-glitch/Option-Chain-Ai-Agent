@@ -5,3 +5,4 @@ mcp>=2.2,<3
 
 openpyxl>=3.1,<4
 jugaad-data==0.37.0
+fyers-apiv3>=3.1.0,<4
