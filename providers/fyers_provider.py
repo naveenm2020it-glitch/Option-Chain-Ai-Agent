@@ -188,7 +188,12 @@ class FyersOptionChainProvider:
             row["ce" if option_type == "CE" else "pe"] = leg
             symbols.append(str(symbol))
             symbol_to_leg[str(symbol)] = (strike, option_type)
-        rows = [r for _, r in sorted(rows_by_strike.items()) if r.get("ce") and r.get("pe")]
+        rows = [
+            r for _, r in sorted(rows_by_strike.items())
+            if r.get("ce") and r.get("pe")
+            and _num(r["ce"].get("lastPrice")) is not None and _num(r["ce"].get("lastPrice")) > 0
+            and _num(r["pe"].get("lastPrice")) is not None and _num(r["pe"].get("lastPrice")) > 0
+        ]
         if not rows:
             raise FyersProviderError("FYERS returned no paired CE/PE contracts for the selected expiry.")
         # 49 strikes * 2 legs + index = 99 symbols on the Standard plan.
@@ -225,13 +230,18 @@ class FyersOptionChainProvider:
                 symbol = update.get("symbol")
                 if symbol == INDEX_SYMBOL:
                     spot = _num(update.get("ltp"))
-                    if spot and update.get("exch_feed_time"):
+                    if spot:
                         self._last_index_spot = spot
-                        self._last_index_time = _iso_epoch(update.get("exch_feed_time")) or _iso_epoch(update.get("last_traded_time"))
                         self._snapshot["spot"] = spot
-                        if self._last_index_time:
-                            self._snapshot["source_timestamp"] = self._last_index_time
+                        tick_stamp = _iso_epoch(update.get("exch_feed_time")) or _iso_epoch(update.get("last_traded_time"))
+                        if tick_stamp and (self._last_index_time is None or tick_stamp > self._last_index_time):
+                            self._last_index_time = tick_stamp
+                            self._snapshot["source_timestamp"] = tick_stamp
                     continue
+                tick_stamp = _iso_epoch(update.get("exch_feed_time")) or _iso_epoch(update.get("last_traded_time"))
+                if tick_stamp and (self._last_index_time is None or tick_stamp > self._last_index_time):
+                    self._last_index_time = tick_stamp
+                    self._snapshot["source_timestamp"] = tick_stamp
                 identity = self._symbol_to_leg.get(str(symbol))
                 if not identity:
                     continue
