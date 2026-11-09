@@ -35,6 +35,16 @@ For Render, configure the MCP server command and arguments only if the server ca
 
 The MCP adapter does not include any NSE scraper, bypass, CAPTCHA workaround or automatic order placement. It does not make an unapproved source compliant. When disabled, unapproved, stale or malformed, the app remains UNAVAILABLE/STALE and alerts remain paused.
 
+## Production backend update architecture
+
+The dashboard now uses a backend WebSocket at `/ws/market` for push notifications. The backend sends a 3-second connection heartbeat (`DASHBOARD_HEARTBEAT_SECONDS`); this heartbeat is **not** a market tick and never changes market values. Provider status and source-timestamp changes are pushed separately. The browser uses a low-frequency REST fallback only when the WebSocket is disconnected.
+
+`ANALYTICS_UPDATE_INTERVAL_SECONDS=3` is the analytics responsiveness target when a new source update is available; `DASHBOARD_HEARTBEAT_SECONDS=3` only keeps the browser connection responsive. Neither setting is a promise that NSE publishes new data every three seconds. Analytics and signal lifecycle processing run only when a new, unique, fresh, permitted source snapshot arrives. Provider polling/cache cadence is separately configured with `PROVIDER_POLL_INTERVAL_SECONDS` and `PROVIDER_CACHE_TTL_SECONDS`; do not set these to three seconds merely to make the screen look live.
+
+The Render deployment profile is fail-closed: `NSE_AUTOMATED_COLLECTION_ENABLED=false`, `MCP_PROVIDER_ENABLED=false`, `JUGAAD_PROVIDER_ENABLED=false`, `FYERS_PROVIDER_ENABLED=false`, and `ORDER_EXECUTION_ENABLED=false`. NSE data can be imported manually from a user-downloaded CSV for research, but imported snapshots are never labelled LIVE and cannot trigger entry signals. No NSE website JSON polling, browser scraping, CAPTCHA/session bypass, or automated collection is implemented.
+
+The live-provider interface remains provider-neutral. A future provider must have documented permission for automated collection and display, a genuine exchange/source timestamp, complete CE/PE rows for one expiry, and must pass `services/data_quality.py` before the app can report LIVE. A WebSocket connection or HTTP 200 alone does not establish data permission or freshness.
+
 ## Run locally (Python 3.12)
 ```powershell
 py -3.12 -m venv .venv
@@ -45,7 +55,7 @@ uvicorn app:app --reload
 Open http://127.0.0.1:8000
 
 ## Render
-The `main` branch is connected to the Render web service and the current application build is deployed. The Python 3.12 CI suite is used for regression checks. The service uses a background 5-second polling loop while the instance is awake and an approved provider is enabled. Render's free web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history.
+The `main` branch is connected to the Render web service and the current application build is deployed. The Python 3.12 CI suite is used for regression checks. The service uses a provider polling loop only for an explicitly enabled and permitted provider. The dashboard WebSocket sends a 3-second heartbeat and market-update notifications when a new provider snapshot arrives. Render's free web service can spin down, and its local SQLite filesystem is not durable across all restarts/redeploys; use a persistent database before relying on long-term signal history.
 
 Research tool only. Not investment advice.
 

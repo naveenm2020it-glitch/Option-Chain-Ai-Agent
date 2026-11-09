@@ -11,6 +11,22 @@ services:
         value: 3.12.8
       - key: NSE_ENABLED
         value: "false"
+      - key: NSE_AUTOMATED_COLLECTION_ENABLED
+        value: "false"
+      - key: ORDER_EXECUTION_ENABLED
+        value: "false"
+      - key: ANALYTICS_UPDATE_INTERVAL_SECONDS
+        value: "3"
+      - key: DASHBOARD_HEARTBEAT_SECONDS
+        value: "3"
+      - key: PROVIDER_POLL_INTERVAL_SECONDS
+        value: "5"
+      - key: PROVIDER_CACHE_TTL_SECONDS
+        value: "5"
+      - key: MCP_PROVIDER_ENABLED
+        value: "false"
+      - key: MCP_AUTOMATED_USE_PERMITTED
+        value: "false"
       - key: JUGAAD_PROVIDER_ENABLED
         value: "false"
       - key: JUGAAD_AUTOMATED_USE_PERMITTED

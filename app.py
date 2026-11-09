@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, Query, Request, HTTPException
+from fastapi import FastAPI, Query, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from io import BytesIO
 from fastapi.staticfiles import StaticFiles
@@ -125,6 +125,61 @@ app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 def now():
     return datetime.now(IST).isoformat(timespec="seconds")
 
+
+class MarketSocketManager:
+    """Push provider status/snapshot-change notifications to connected dashboards."""
+
+    def __init__(self):
+        self.connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.connections.discard(websocket)
+
+    async def broadcast(self, payload: dict):
+        stale = []
+        for websocket in tuple(self.connections):
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                stale.append(websocket)
+        for websocket in stale:
+            self.disconnect(websocket)
+
+
+market_sockets = MarketSocketManager()
+
+
+@app.websocket("/ws/market")
+async def market_websocket(websocket: WebSocket):
+    """Dashboard push channel. Heartbeats are not market ticks or proof of LIVE data."""
+    await market_sockets.connect(websocket)
+    try:
+        await websocket.send_json({
+            "type": "connection",
+            "status": "CONNECTED",
+            "server_time": now(),
+            "market_data_status": "UNAVAILABLE",
+        })
+        heartbeat_seconds = max(1, min(10, int(os.getenv("DASHBOARD_HEARTBEAT_SECONDS", "3"))))
+        while True:
+            await asyncio.sleep(heartbeat_seconds)
+            await websocket.send_json({
+                "type": "heartbeat",
+                "server_time": now(),
+                "market_data_status": "UNCHANGED",
+            })
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        market_sockets.disconnect(websocket)
+
+
 def clean_leg(value):
     keys = ("lastPrice", "change", "pChange", "totalTradedVolume", "openInterest",
             "changeinOpenInterest", "impliedVolatility", "bidprice", "askPrice",
@@ -222,7 +277,7 @@ _MCP_MARKET_CACHE_LOCK = threading.Lock()
 def get_market(force=False, expiry=None):
     """Share one bounded backend poll across dashboard/API requests."""
     key = expiry or "__nearest__"
-    ttl = max(1, min(30, int(os.getenv("MCP_POLL_INTERVAL_SECONDS", "5"))))
+    ttl = max(1, min(30, int(os.getenv("PROVIDER_CACHE_TTL_SECONDS", os.getenv("MCP_POLL_INTERVAL_SECONDS", "5")))))
     with _MCP_MARKET_CACHE_LOCK:
         cached = _MCP_MARKET_CACHE.get(key)
         if not force and cached and (time.monotonic() - cached[0]) < ttl:
@@ -329,6 +384,9 @@ def health():
         "fyers_credentials_configured": bool(fyers_cfg["app_id"] and fyers_cfg["access_token"]),
         "fyers_status": fyers_status_data,
         "order_execution_enabled": False,
+        "nse_automated_collection_enabled": False,
+        "analytics_update_target_seconds": max(1, int(os.getenv("ANALYTICS_UPDATE_INTERVAL_SECONDS", "3"))),
+        "provider_poll_interval_seconds": max(3, int(os.getenv("PROVIDER_POLL_INTERVAL_SECONDS", "5"))),
     }
 
 
@@ -547,6 +605,15 @@ async def _background_market_loop():
                 except (IndexError, AttributeError):
                     expiry = None
             snapshot = await asyncio.to_thread(lambda: get_market(force=True, expiry=expiry))
+            await market_sockets.broadcast({
+                "type": "market_update",
+                "status": snapshot.get("status", "UNAVAILABLE"),
+                "source": snapshot.get("source"),
+                "source_timestamp": snapshot.get("source_timestamp"),
+                "received_at": snapshot.get("received_at"),
+                "quality": snapshot.get("quality"),
+                "message": snapshot.get("error"),
+            })
             if snapshot.get("status") == "LIVE" and snapshot.get("spot") is not None:
                 chosen = expiry or snapshot.get("selected_expiry")
                 if not chosen:
@@ -561,7 +628,7 @@ async def _background_market_loop():
         except Exception:
             # A temporary provider failure must not crash the web service.
             pass
-        await asyncio.sleep(max(3, min(10, int(os.getenv("MCP_POLL_INTERVAL_SECONDS", "5")))))
+        await asyncio.sleep(max(3, min(30, int(os.getenv("PROVIDER_POLL_INTERVAL_SECONDS", os.getenv("MCP_POLL_INTERVAL_SECONDS", "5"))))))
 
 
 @_asynccontextmanager
