@@ -1,9 +1,10 @@
 import hashlib
+import json
 import re
 import time
 from datetime import datetime
 from pathlib import Path
-from .config import INCOMING_DIR, RAW_DIR
+from .config import INCOMING_DIR, RAW_DIR, ROOT
 from .database import add_report, update_report_status
 from .reports import identify_report, inspect_report, fingerprint
 
@@ -102,3 +103,47 @@ def store_upload(filename: str, content: bytes, trading_date=None):
         destination.write_bytes(content)
     result = import_path(destination, trading_date=trading_date)
     return result
+
+
+
+def scan_manifest(directory: Path):
+    """Import report metadata from the collector manifest without reparsing archives.
+
+    The collector has already validated each official file and stored its SHA,
+    row count, and columns. This keeps Render startup quick while preserving
+    historical report metadata and the exact original files.
+    """
+    directory = Path(directory)
+    manifest_path = directory / "manifest.json"
+    if not manifest_path.is_file():
+        return scan_directory(directory, wait_stable=False)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1 or not isinstance(manifest.get("datasets"), dict):
+        raise ValueError("NSE EOD manifest has an unsupported schema.")
+    added = []
+    for report_type, dataset in manifest["datasets"].items():
+        for trading_date, record in dataset.get("records", {}).items():
+            if record.get("status") != "available" or not record.get("filename"):
+                continue
+            path = (ROOT / record["filename"]).resolve()
+            try:
+                path.relative_to(ROOT.resolve())
+            except ValueError:
+                continue
+            if not path.is_file():
+                continue
+            digest = record.get("sha256") or hashlib.sha256(path.read_bytes()).hexdigest()
+            item = {
+                "fingerprint": digest,
+                "original_name": path.name,
+                "report_type": report_type,
+                "trading_date": trading_date,
+                "file_path": str(path),
+                "byte_size": record.get("bytes") or path.stat().st_size,
+                "row_count": record.get("rows", 0),
+                "columns": record.get("columns", []),
+                "warnings": [],
+                "status": "imported" if record.get("rows", 0) > 0 else "unreadable",
+            }
+            added.append(add_report(item))
+    return added

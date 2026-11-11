@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from nifty_ai import database
 from nifty_ai.config import ROOT, INCOMING_DIR, DATA_DIR, APP_PASSWORD, ENABLE_WATCHER, MAX_UPLOAD_MB
-from nifty_ai.ingest import scan_incoming, scan_directory, store_upload
+from nifty_ai.ingest import scan_incoming, scan_manifest, store_upload
 from nifty_ai.analytics import run_analysis
 from nifty_ai.reports import REPORTS
 from nifty_ai.watcher import FolderWatcher
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     scan_incoming()
     # The GitHub Actions collector commits verified NSE EOD files here. Import
     # them on every process start so the analysis can use them without uploads.
-    auto_added = scan_directory(AUTO_REPORT_DIR, wait_stable=False)
+    auto_added = scan_manifest(AUTO_REPORT_DIR)
     logging.info("NSE EOD archive scan: %s newly imported; %s total report records", len(auto_added), len(database.list_reports()))
     if ENABLE_WATCHER and not os.getenv("RENDER"):
         watcher.start()
