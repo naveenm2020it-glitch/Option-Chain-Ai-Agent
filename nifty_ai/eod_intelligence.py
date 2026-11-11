@@ -455,9 +455,11 @@ def _institutional_positioning(reports, institutional, participant, migration):
     score = 0.0
     if participant_net.get("available"):
         score = max(-0.25, min(0.25, participant_net["net"] / max(abs(participant_net["net"]), 1) * 0.25))
-    elif institutional.get("available"):
-        cash_bias = institutional.get("bias", "UNAVAILABLE")
-        score = 0.12 if cash_bias == "BULLISH" else -0.12 if cash_bias == "BEARISH" else 0.0
+    cash_trend = institutional.get("cash_flow_trend", {})
+    fii_cash_trend = cash_trend.get("FII", {}) if isinstance(cash_trend, dict) else {}
+    if not participant_net.get("available") and fii_cash_trend.get("classification"):
+        cash_bias = fii_cash_trend.get("classification")
+        score = 0.12 if cash_bias == "NET_BUYING_TREND" else -0.12 if cash_bias == "NET_SELLING_TREND" else 0.0
     migration_score = 0.0
     if migration.get("available"):
         call_shift = migration.get("call_wall_shift_points")
@@ -487,10 +489,15 @@ def _institutional_positioning(reports, institutional, participant, migration):
     if migration.get("available"):
         evidence.append("Strike-wise OI migration was measured against the previous uploaded session for the same expiry.")
     if institutional.get("available"):
-        evidence.append("Cash-market FII/DII net activity is included as secondary context, not treated as NIFTY option writing.")
+        evidence.append("Cash-market FII/DII net activity is shown separately from derivatives positioning.")
+    if fii_cash_trend.get("classification"):
+        evidence.append("FII cash-flow trend uses multiple dated EOD sessions; it is secondary context, not proof of NIFTY option writing.")
+    elif institutional.get("available"):
+        evidence.append("FII/DII cash-flow trend is withheld because fewer than three dated sessions are available; single-session flow does not create an accumulation/distribution signal.")
     return {"status": status, "bias": bias, "score": score,
             "metrics": {"files_available": len(available), "sources": fields,
                         "cash_fii_dii_net": institutional.get("net_total"),
+                        "cash_flow_trend": cash_trend,
                         "participant_index_position": participant_net,
                         "oi_migration": migration,
                         "migration_available": migration.get("available", False),
