@@ -9,7 +9,7 @@ This validation suite is designed for the NIFTY AI EOD-only application. It does
 | Unit | Formula, parser, schema, integrity, expiry, EOD price-action and institutional helper tests | All pytest tests pass |
 | Integration | Real archived NSE report parsing, manifest import, analytics integration, SQLite-backed API fixture | All integration tests pass |
 | API | Health, dashboard state, reports, analyses, prices, config, authentication, invalid analysis and upload validation | Expected HTTP status and response contracts |
-| E2E | Chromium loads the dashboard and switches all six navigation views and a cross-view link | No page errors; all target views become active |
+| E2E | Chromium loads the dashboard, switches all six views, follows a cross-view link, and runs analysis against the repository's archived NSE EOD dataset | API returns a structured 13-agent result with the EOD-only intraday limitation; no page errors |
 | Regression | Entire existing and new pytest suite on every push/PR | No test regressions |
 | Smoke | Live Render health, root HTML and static JavaScript | All public routes respond successfully |
 | Load/performance | 200 concurrent health API requests on CI app, 12 workers; mean/p95/max recorded | No request failures; p95 below 2 seconds |
