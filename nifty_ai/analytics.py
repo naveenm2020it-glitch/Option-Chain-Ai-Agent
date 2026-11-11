@@ -301,24 +301,88 @@ def extract_volatility_metrics(reports):
 
 def extract_participant_summary(reports):
     summary = report_quality_summary(reports, ["participant_oi", "participant_volume", "fii_derivatives"])
-    result = {}
+    sources = {}
     for item in reports:
-        if item["report_type"] not in {"participant_oi", "participant_volume", "fii_derivatives"}: continue
-        fields = []
+        report_type = item.get("report_type")
+        if report_type not in {"participant_oi", "participant_volume", "fii_derivatives"}:
+            continue
         try:
             for _, frame in load_tables(item["file_path"]):
                 df = norm_columns(frame)
-                label_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
                 numeric_fields = []
                 for col in df.columns:
-                    series = numeric(df[col])
-                    if series.notna().sum() > 0:
+                    if numeric(df[col]).notna().sum() > 0:
                         numeric_fields.append(str(col))
-                fields.extend(numeric_fields)
-                result[item["report_type"]] = {"rows": int(len(df)), "participant_labels": df[label_col].astype(str).head(10).tolist() if label_col else [],
-                                                "numeric_fields": numeric_fields[:24]}
-        except Exception: pass
-    summary["sources"] = result
+                detail = {
+                    "rows": int(len(df)),
+                    "participant_labels": [],
+                    "numeric_fields": numeric_fields[:24],
+                }
+
+                if report_type == "participant_volume":
+                    label_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
+                    long_col = find_column(df, ["Total Long Contracts", "TotalLongContracts"])
+                    short_col = find_column(df, ["Total Short Contracts", "TotalShortContracts"])
+                    participant_rows = []
+                    if label_col:
+                        detail["participant_labels"] = df[label_col].astype(str).head(10).tolist()
+                        for _, row in df.iterrows():
+                            label = str(row[label_col]).strip()
+                            if not label or label.lower() == "nan":
+                                continue
+                            long_value = _float(numeric(pd.Series([row[long_col]])).iloc[0]) if long_col else None
+                            short_value = _float(numeric(pd.Series([row[short_col]])).iloc[0]) if short_col else None
+                            if long_value is not None or short_value is not None:
+                                participant_rows.append({
+                                    "participant": label,
+                                    "total_long_contracts": long_value,
+                                    "total_short_contracts": short_value,
+                                    "net_traded_contracts": (
+                                        long_value - short_value
+                                        if long_value is not None and short_value is not None else None
+                                    ),
+                                })
+                    detail["participant_totals"] = participant_rows
+                    detail["interpretation"] = "Daily traded-contract volume by participant; not open interest and not a directional position by itself."
+
+                elif report_type == "fii_derivatives":
+                    instrument_col = df.columns[0] if len(df.columns) else None
+                    buy_contracts = find_column(df, ["BUY No. of contracts"])
+                    buy_value = find_column(df, ["BUY Amt in Crores"])
+                    sell_contracts = find_column(df, ["SELL No. of contracts"])
+                    sell_value = find_column(df, ["SELL Amt in Crores"])
+                    oi_contracts = find_column(df, ["OPEN INTEREST AT THE END OF THE DAY No. of contracts"])
+                    oi_value = find_column(df, ["OPEN INTEREST AT THE END OF THE DAY Amt in Crores"])
+                    instruments = []
+                    if instrument_col and all((buy_contracts, buy_value, sell_contracts, sell_value)):
+                        for _, row in df.iterrows():
+                            label = str(row[instrument_col]).strip().upper()
+                            if "NIFTY FUTURES" not in label and "NIFTY OPTIONS" not in label:
+                                continue
+                            buy_n = _float(numeric(pd.Series([row[buy_contracts]])).iloc[0])
+                            buy_cr = _float(numeric(pd.Series([row[buy_value]])).iloc[0])
+                            sell_n = _float(numeric(pd.Series([row[sell_contracts]])).iloc[0])
+                            sell_cr = _float(numeric(pd.Series([row[sell_value]])).iloc[0])
+                            oi_n = _float(numeric(pd.Series([row[oi_contracts]])).iloc[0]) if oi_contracts else None
+                            oi_cr = _float(numeric(pd.Series([row[oi_value]])).iloc[0]) if oi_value else None
+                            instruments.append({
+                                "instrument": label,
+                                "buy_contracts": buy_n,
+                                "buy_value_crores": buy_cr,
+                                "sell_contracts": sell_n,
+                                "sell_value_crores": sell_cr,
+                                "net_traded_contracts": buy_n - sell_n if buy_n is not None and sell_n is not None else None,
+                                "net_traded_value_crores": buy_cr - sell_cr if buy_cr is not None and sell_cr is not None else None,
+                                "open_interest_contracts": oi_n,
+                                "open_interest_value_crores": oi_cr,
+                            })
+                    detail["nifty_instruments"] = instruments
+                    detail["interpretation"] = "FII NIFTY futures buy/sell is daily traded flow; options activity and end-of-day OI are shown separately, not conflated."
+
+                sources[report_type] = detail
+        except Exception:
+            continue
+    summary["sources"] = sources
     return summary
 
 def _pivots(price):
