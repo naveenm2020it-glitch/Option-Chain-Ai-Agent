@@ -294,29 +294,149 @@ def _daily_absorption_proxy(price_history):
             "limitations": ["Not true order-flow absorption: no intraday bid/ask trades or order-book depth were supplied."]}
 
 
-def _institutional_positioning(reports, institutional, participant):
+def _cell_number(row, column):
+    if not column:
+        return None
+    try:
+        value = pd.to_numeric(row[column], errors="coerce")
+        return float(value) if pd.notna(value) else None
+    except Exception:
+        return None
+
+
+def _participant_index_net(reports):
+    totals = []
+    for item in reports:
+        if item.get("report_type") not in {"participant_oi", "fii_derivatives"}:
+            continue
+        try:
+            tables = load_tables(item["file_path"])
+        except Exception:
+            continue
+        for _, frame in tables:
+            df = norm_columns(frame)
+            participant_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
+            if not participant_col:
+                continue
+            fields = {
+                "future_long": find_column(df, ["Future Index Long", "FutIdxLong"]),
+                "future_short": find_column(df, ["Future Index Short", "FutIdxShort"]),
+                "call_long": find_column(df, ["Option Index Call Long", "OptIdxCallLong"]),
+                "call_short": find_column(df, ["Option Index Call Short", "OptIdxCallShort"]),
+                "put_long": find_column(df, ["Option Index Put Long", "OptIdxPutLong"]),
+                "put_short": find_column(df, ["Option Index Put Short", "OptIdxPutShort"]),
+            }
+            has_future = fields["future_long"] and fields["future_short"]
+            has_options = all(fields[k] for k in ("call_long", "call_short", "put_long", "put_short"))
+            if not (has_future or has_options):
+                continue
+            for _, row in df.iterrows():
+                label = str(row[participant_col]).upper()
+                if not ("FII" in label or "FPI" in label or "FOREIGN" in label):
+                    continue
+                future_net = 0.0
+                option_net = 0.0
+                if has_future:
+                    long_value, short_value = _cell_number(row, fields["future_long"]), _cell_number(row, fields["future_short"])
+                    if long_value is not None and short_value is not None:
+                        future_net = long_value - short_value
+                if has_options:
+                    cl, cs = _cell_number(row, fields["call_long"]), _cell_number(row, fields["call_short"])
+                    pl, ps = _cell_number(row, fields["put_long"]), _cell_number(row, fields["put_short"])
+                    if None not in (cl, cs, pl, ps):
+                        option_net = (cl - cs) + (ps - pl)
+                totals.append({"participant": label, "future_index_net": future_net,
+                               "option_index_net": option_net, "combined_index_net": future_net + option_net,
+                               "source": item.get("original_name")})
+    if not totals:
+        return {"available": False, "net": None, "rows": []}
+    net = sum(x["combined_index_net"] for x in totals)
+    return {"available": True, "net": net, "rows": totals}
+
+
+def _compare_oi_migration(history_reports, trading_date):
+    target_day = _as_date(trading_date)
+    dated = {}
+    for item in history_reports:
+        if item.get("report_type") != "fo_bhavcopy":
+            continue
+        day = _as_date(item.get("trading_date"))
+        if day and (target_day is None or day <= target_day):
+            dated.setdefault(day, []).append(item)
+    days = sorted(dated)
+    if len(days) < 2:
+        return {"available": False, "reason": "Upload at least two dated F&O Bhavcopies to measure strike migration."}
+    current_day = days[-1]
+    previous_day = days[-2]
+    current = _load_option_rows(dated[current_day], current_day.isoformat())
+    previous = _load_option_rows(dated[previous_day], previous_day.isoformat())
+    if not current.get("available") or not previous.get("available"):
+        return {"available": False, "reason": "Both sessions need readable NIFTY option OI data."}
+    if current.get("expiry") != previous.get("expiry"):
+        return {"available": False, "reason": "Nearest expiry changed between sessions; strike migration is withheld across expiry rollover.",
+                "current_expiry": current.get("expiry"), "previous_expiry": previous.get("expiry")}
+    prior_by_strike = {x["strike"]: x for x in previous["strikes"]}
+    deltas = []
+    for row in current["strikes"]:
+        old = prior_by_strike.get(row["strike"], {})
+        deltas.append({"strike": row["strike"], "ce_oi_change": row["ce_oi"] - old.get("ce_oi", 0.0),
+                       "pe_oi_change": row["pe_oi"] - old.get("pe_oi", 0.0)})
+    top_call_add = max(deltas, key=lambda x: x["ce_oi_change"]) if deltas else None
+    top_put_add = max(deltas, key=lambda x: x["pe_oi_change"]) if deltas else None
+    call_shift = None if current.get("top_call_oi_strike") is None or previous.get("top_call_oi_strike") is None else current["top_call_oi_strike"] - previous["top_call_oi_strike"]
+    put_shift = None if current.get("top_put_oi_strike") is None or previous.get("top_put_oi_strike") is None else current["top_put_oi_strike"] - previous["top_put_oi_strike"]
+    return {
+        "available": True, "current_date": current_day.isoformat(), "previous_date": previous_day.isoformat(),
+        "expiry": current.get("expiry"),
+        "previous_top_call_oi_strike": previous.get("top_call_oi_strike"),
+        "current_top_call_oi_strike": current.get("top_call_oi_strike"),
+        "call_wall_shift_points": call_shift,
+        "previous_top_put_oi_strike": previous.get("top_put_oi_strike"),
+        "current_top_put_oi_strike": current.get("top_put_oi_strike"),
+        "put_wall_shift_points": put_shift,
+        "largest_call_oi_addition_strike": top_call_add["strike"] if top_call_add else None,
+        "largest_call_oi_addition": round(top_call_add["ce_oi_change"], 2) if top_call_add else None,
+        "largest_put_oi_addition_strike": top_put_add["strike"] if top_put_add else None,
+        "largest_put_oi_addition": round(top_put_add["pe_oi_change"], 2) if top_put_add else None,
+        "interpretation": "Strike-wise OI migration is compared across two uploaded sessions for the same expiry; OI movement alone does not prove writing."
+    }
+
+
+def _institutional_positioning(reports, institutional, participant, migration):
     sources = [x for x in reports if x.get("report_type") in {"participant_oi", "participant_volume", "fii_derivatives", "fii_dii"}]
     available = [x for x in sources if int(x.get("row_count") or 0) > 0]
     fields = {}
     for item in available:
         fields[item["report_type"]] = {"file": item.get("original_name"), "rows": item.get("row_count"),
                                        "columns": item.get("columns", [])[:30]}
-    bias = institutional.get("bias", "UNAVAILABLE") if institutional.get("available") else "UNAVAILABLE"
-    score = 0.15 if bias == "BULLISH" else -0.15 if bias == "BEARISH" else 0.0
-    status = "partial" if available else "missing_data"
-    evidence = ["Participant/FII reports are context; they do not identify the exact strike where an institution will defend."]
+    participant_net = _participant_index_net(reports)
+    bias = "UNAVAILABLE"
+    score = 0.0
+    if participant_net.get("available"):
+        bias = "BULLISH" if participant_net["net"] > 0 else "BEARISH" if participant_net["net"] < 0 else "NEUTRAL"
+        score = max(-0.25, min(0.25, participant_net["net"] / max(abs(participant_net["net"]), 1) * 0.25))
+    elif institutional.get("available"):
+        bias = institutional.get("bias", "UNAVAILABLE")
+        score = 0.12 if bias == "BULLISH" else -0.12 if bias == "BEARISH" else 0.0
+    status = "partial" if available or participant_net.get("available") or migration.get("available") else "missing_data"
+    evidence = ["Participant positioning is a broad index context and cannot identify exact defending traders at an individual strike."]
+    if participant_net.get("available"):
+        evidence.append("FII index futures/options net positioning was calculated only where the report supplied all required long/short fields.")
+    elif available:
+        evidence.append("Participant report files were found, but their columns did not support a safe directional net-position calculation.")
+    if migration.get("available"):
+        evidence.append("Strike-wise OI migration was measured against the previous uploaded session for the same expiry.")
     if institutional.get("available"):
-        evidence.append("Cash-market FII/DII net activity was parsed; it is broad market context, not NIFTY option-writing proof.")
-    if fields:
-        evidence.append("Available participant report fields are listed for transparent audit; unrecognised layouts are not force-interpreted.")
+        evidence.append("Cash-market FII/DII net activity is included as secondary context, not treated as NIFTY option writing.")
     return {"status": status, "bias": bias, "score": score,
             "metrics": {"files_available": len(available), "sources": fields,
                         "cash_fii_dii_net": institutional.get("net_total"),
+                        "participant_index_position": participant_net,
+                        "oi_migration": migration,
                         "participant_summary": participant.get("sources", {})},
             "evidence": evidence}
 
-
-def augment_analysis(result, reports):
+def augment_analysis(result, reports, history_reports=None):
     price_history = []
     for row in result.get("spot_history", []):
         price_history.append(row)
@@ -375,7 +495,8 @@ def augment_analysis(result, reports):
         "score": round(absorption_score, 4), "confidence": None,
         "metrics": absorption, "evidence": ["Daily wick and close-location proxy only; true absorption requires intraday trade/order-book data."]
     })
-    inst = _institutional_positioning(reports, result.get("institutional", {}), result.get("participant_reports", {}))
+    migration = _compare_oi_migration(history_reports or reports, result.get("trading_date"))
+    inst = _institutional_positioning(reports, result.get("institutional", {}), result.get("participant_reports", {}), migration)
     result["agents"].append({"name": "Institutional Positioning & Migration", **inst, "confidence": None})
     validation = walk_forward_zone_validation(price_history)
     result["accuracy_validation"] = validation
