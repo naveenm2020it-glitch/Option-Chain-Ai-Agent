@@ -536,5 +536,17 @@ def run_analysis(trading_date: str, reports):
         "volatility_reports": volatility_reports, "settlement_report": settlement, "breadth": breadth,
         "india_vix": vix, "warnings": warnings,
         "source_reports": [{"name": x["original_name"], "type": x["report_type"], "status": x["status"]} for x in reports],
-        "methodology": "Seven specialist agents discover price-action/OI zones and an eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or accuracy are fabricated."}
+        "methodology": "Seven specialist agents discover price-action/OI zones and an eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or accuracy are fabricated.",
+        "_price_history_for_eod": price_history}
     return result
+
+
+# EOD buyer/seller defence intelligence is layered on top of the stable base analytics.
+# This keeps traditional reference levels available while preventing them from driving AI S/R.
+_base_run_analysis = run_analysis
+
+
+def run_analysis(trading_date: str, reports, history_reports=None):
+    from .eod_intelligence import augment_analysis
+    result = _base_run_analysis(trading_date, reports)
+    return augment_analysis(result, reports, history_reports=history_reports)
