@@ -105,3 +105,19 @@ def test_option_pressure_summary_marks_missing_required_fields_partial():
     assert result["status"] == "PARTIAL"
     assert result["classification_counts"]["ce"]["INSUFFICIENT_FIELDS"] == 1
     assert "change_in_open_interest" in result["required_fields"]
+
+
+def test_expiry_context_uses_reported_trading_date_and_expiry():
+    from nifty_ai.eod_intelligence import _expiry_context
+
+    result = _expiry_context("2026-11-11", "2026-11-12")
+    assert result["status"] == "READY"
+    assert result["days_to_expiry"] == 1
+    assert result["expiry_day"] is False
+
+
+def test_expiry_context_rejects_expiry_before_trading_date():
+    from nifty_ai.eod_intelligence import _expiry_context
+
+    result = _expiry_context("2026-11-11", "2026-11-10")
+    assert result["status"] == "INVALID_EXPIRY_ALIGNMENT"
