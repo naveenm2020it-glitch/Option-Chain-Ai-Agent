@@ -144,6 +144,6 @@ def test_fii_xls_parser_uses_second_row_as_header(monkeypatch):
     monkeypatch.setattr(collector.pd, "read_excel", fake_read_excel)
     payload = bytes.fromhex("D0CF11E0A1B11AE1") + b"\x00" * 64
     rows, columns = collector._parse_report("fii_derivatives", payload)
-    assert observed["header"] == 1
+    assert observed["header"] == [1, 2]
     assert rows == 2
     assert columns == ["Instrument", "Buy", "Sell"]
