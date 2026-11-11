@@ -410,14 +410,24 @@ def _institutional_positioning(reports, institutional, participant, migration):
         fields[item["report_type"]] = {"file": item.get("original_name"), "rows": item.get("row_count"),
                                        "columns": item.get("columns", [])[:30]}
     participant_net = _participant_index_net(reports)
-    bias = "UNAVAILABLE"
     score = 0.0
     if participant_net.get("available"):
-        bias = "BULLISH" if participant_net["net"] > 0 else "BEARISH" if participant_net["net"] < 0 else "NEUTRAL"
         score = max(-0.25, min(0.25, participant_net["net"] / max(abs(participant_net["net"]), 1) * 0.25))
     elif institutional.get("available"):
-        bias = institutional.get("bias", "UNAVAILABLE")
-        score = 0.12 if bias == "BULLISH" else -0.12 if bias == "BEARISH" else 0.0
+        cash_bias = institutional.get("bias", "UNAVAILABLE")
+        score = 0.12 if cash_bias == "BULLISH" else -0.12 if cash_bias == "BEARISH" else 0.0
+    migration_score = 0.0
+    if migration.get("available"):
+        call_shift = migration.get("call_wall_shift_points")
+        put_shift = migration.get("put_wall_shift_points")
+        if call_shift is not None:
+            migration_score += 0.05 if call_shift > 0 else -0.05 if call_shift < 0 else 0.0
+        if put_shift is not None:
+            migration_score += 0.05 if put_shift > 0 else -0.05 if put_shift < 0 else 0.0
+    score = max(-0.35, min(0.35, score + migration_score))
+    bias = "BULLISH" if score > 0.04 else "BEARISH" if score < -0.04 else "NEUTRAL"
+    if not (participant_net.get("available") or institutional.get("available") or migration.get("available")):
+        bias = "UNAVAILABLE"
     status = "partial" if available or participant_net.get("available") or migration.get("available") else "missing_data"
     evidence = ["Participant positioning is a broad index context and cannot identify exact defending traders at an individual strike."]
     if participant_net.get("available"):
@@ -433,6 +443,13 @@ def _institutional_positioning(reports, institutional, participant, migration):
                         "cash_fii_dii_net": institutional.get("net_total"),
                         "participant_index_position": participant_net,
                         "oi_migration": migration,
+                        "migration_available": migration.get("available", False),
+                        "previous_top_call_oi_strike": migration.get("previous_top_call_oi_strike"),
+                        "current_top_call_oi_strike": migration.get("current_top_call_oi_strike"),
+                        "call_wall_shift_points": migration.get("call_wall_shift_points"),
+                        "previous_top_put_oi_strike": migration.get("previous_top_put_oi_strike"),
+                        "current_top_put_oi_strike": migration.get("current_top_put_oi_strike"),
+                        "put_wall_shift_points": migration.get("put_wall_shift_points"),
                         "participant_summary": participant.get("sources", {})},
             "evidence": evidence}
 
