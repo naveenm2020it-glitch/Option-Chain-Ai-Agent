@@ -52,46 +52,63 @@ def _read_bytes(name: str, content: bytes):
     ext = Path(name).suffix.lower()
     if ext in {".xls", ".xlsx"}:
         book = pd.read_excel(io.BytesIO(content), sheet_name=None)
-        return [(str(k), v.dropna(how="all")) for k, v in book.items() if isinstance(v, pd.DataFrame) and not v.empty]
-    if ext in {".csv", ".txt", ".dat", ".zip"}:
-        attempts = []
+        return [(str(k), v.dropna(how="all")) for k, v in book.items()
+                if isinstance(v, pd.DataFrame) and not v.empty]
+    if ext in {".csv", ".txt", ".dat"}:
+        errors = []
         for encoding in ("utf-8-sig", "latin1"):
-            try:
-                df = pd.read_csv(io.BytesIO(content), sep=None, engine="python", encoding=encoding, on_bad_lines="skip")
-                if len(df.columns) > 1 or not attempts:
-                    return [(name, df.dropna(how="all"))]
-            except Exception as exc:
-                attempts.append(str(exc))
-        try:
-            return [(name, pd.read_csv(io.BytesIO(content), encoding="latin1", on_bad_lines="skip").dropna(how="all"))]
-        except Exception as exc:
-            raise ValueError(f"Unable to read tabular file: {exc}")
+            for sep in (None, ",", ";", "\\t", "|"):
+                try:
+                    kwargs = {"sep": sep, "encoding": encoding, "on_bad_lines": "skip"}
+                    if sep is None:
+                        kwargs["engine"] = "python"
+                    df = pd.read_csv(io.BytesIO(content), **kwargs).dropna(how="all")
+                    if len(df.columns) > 1 and not df.empty:
+                        return [(name, df)]
+                except Exception as exc:
+                    errors.append(str(exc))
+        raise ValueError("Unable to parse CSV/DAT report: " + (errors[-1] if errors else "no tabular columns found"))
     raise ValueError(f"Unsupported report format: {ext or 'unknown'}")
+
+
+def _zip_tables(name: str, content: bytes, depth: int = 0):
+    if depth > 3:
+        raise ValueError("Nested ZIP depth exceeds the safe import limit.")
+    tables = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                member = info.filename
+                payload = archive.read(info)
+                ext = Path(member).suffix.lower()
+                if ext == ".zip" or payload[:4] == b"PK\\x03\\x04":
+                    tables.extend(_zip_tables(member, payload, depth + 1))
+                elif ext in {".csv", ".dat", ".txt", ".xls", ".xlsx"}:
+                    tables.extend(_read_bytes(member, payload))
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"{name} is not a valid ZIP archive: {exc}")
+    if not tables:
+        raise ValueError("ZIP contains no readable CSV, DAT, TXT, XLS or XLSX report.")
+    return tables
 
 
 def load_tables(path: str):
     p = Path(path)
-    if p.suffix.lower() == ".zip":
-        tables = []
-        with zipfile.ZipFile(p) as archive:
-            for info in archive.infolist():
-                if info.is_dir() or Path(info.filename).suffix.lower() not in {".csv", ".dat", ".txt", ".xls", ".xlsx"}:
-                    continue
-                content = archive.read(info)
-                try:
-                    parsed = _read_bytes(info.filename, content)
-                    tables.extend((member, df) for member, df in parsed)
-                except Exception:
-                    continue
-        return tables
-    return _read_bytes(p.name, p.read_bytes())
+    content = p.read_bytes()
+    if p.suffix.lower() == ".zip" or content[:4] == b"PK\\x03\\x04":
+        return _zip_tables(p.name, content)
+    return _read_bytes(p.name, content)
 
 
 def dataframe_date(df: pd.DataFrame) -> Optional[str]:
     for col in df.columns:
         c = compact(col)
-        if c in {"date", "trddt", "trad dt", "trad dt", "tradingdate", "bizdt", "indexdate", "timestamp", "expirydate"} or "date" in c or c.endswith("dt"):
-            parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+        if c in {"date", "trddt", "traddt", "tradingdate", "bizdt", "indexdate", "timestamp"} or "tradingdate" in c:
+            values = df[col].dropna().astype(str).str.strip()
+            parsed = pd.to_datetime(values, format="%Y%m%d", errors="coerce")
+            parsed = parsed.fillna(pd.to_datetime(values, errors="coerce", dayfirst=True))
             parsed = parsed.dropna()
             if not parsed.empty:
                 return parsed.max().date().isoformat()
@@ -102,20 +119,40 @@ def fingerprint(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def infer_report_type(filename: str, frames) -> str:
+    detected = identify_report(filename)
+    if detected != "unknown":
+        return detected
+    for df in frames:
+        cols = {compact(c) for c in df.columns}
+        if {"optnTp".lower(), "strkPric".lower(), "opnintrst"}.issubset(cols):
+            return "fo_bhavcopy"
+        if {"tckrsymb", "sctysrs", "clspric"}.issubset(cols):
+            return "cm_bhavcopy"
+        if {"tckrsymb", "clspric", "prvsclsgpric"}.issubset(cols):
+            return "cm_bhavcopy"
+    return "unknown"
+
+
 def inspect_report(report_type: str, path: str):
     tables = load_tables(path)
-    frames = [df for _, df in tables if isinstance(df, pd.DataFrame) and not df.empty]
+    frames = [norm_columns(df) for _, df in tables if isinstance(df, pd.DataFrame) and not df.empty]
     if not frames:
-        return {"row_count": 0, "columns": [], "trading_date": None, "warnings": ["No readable rows were found in this file."], "table_count": 0}
+        return {"report_type": report_type, "row_count": 0, "columns": [], "trading_date": None,
+                "warnings": ["No readable rows were found in this file."], "table_count": 0}
+    detected = infer_report_type(Path(path).name, frames)
     total_rows = sum(len(x) for x in frames)
     cols = list(dict.fromkeys(str(c) for df in frames for c in df.columns))[:80]
-    date = next((dataframe_date(df) for df in frames if dataframe_date(df)), None)
+    date = next((d for d in (dataframe_date(df) for df in frames) if d), None)
     warnings = []
-    if report_type == "unknown":
-        warnings.append("Report type could not be identified from the filename. Rename it using the NSE report name or assign its type in the Data Centre.")
+    if detected == "unknown":
+        warnings.append("Report type could not be identified from its filename or UDiFF column schema.")
     if date is None:
         warnings.append("Trading date could not be read automatically; choose the date in the Data Centre.")
-    return {"row_count": total_rows, "columns": cols, "trading_date": date, "warnings": warnings, "table_count": len(frames)}
+    if detected == "fo_bhavcopy":
+        warnings.append("F&O UDiFF schema detected; option contracts will be validated during analysis.")
+    return {"report_type": detected, "row_count": total_rows, "columns": cols, "trading_date": date,
+            "warnings": warnings, "table_count": len(frames)}
 
 
 def norm_columns(df: pd.DataFrame):
