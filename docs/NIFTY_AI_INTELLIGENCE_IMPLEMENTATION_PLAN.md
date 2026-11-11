@@ -88,6 +88,18 @@ This is an archive count, not proof that every report has the required columns f
 - Gate: expiry isolation, contract filtering, sign/unit checks, premium/OI combination tests and missing-field tests.
 
 ### Phase 3 — EOD price action and scenario intelligence
+
+Implementation update (2026-11-11):
+- Added a separate EOD price-action payload while leaving the original traditional pivot and AI-discovered support/resistance calculations untouched.
+- Daily reference levels expose the previous completed session's high, low and close.
+- Weekly and monthly context use the previous completed week/month; the currently forming period is excluded.
+- A 20-session daily-close breakout/breakdown classifier uses only the preceding 20 sessions. Daily failed-break attempts are separately labelled and are not called intraday fake breakouts.
+- Expected-range context uses empirical daily true-range quantiles from up to 20 completed sessions and requires at least 10 observations. It is a range reference, not a directional target or calibrated probability.
+- Historical gap-up/down and same-session fill counts are exposed only as descriptive history; fill rates require at least 10 examples of that gap direction.
+- UI labels intraday triggers, 5m/15m/hourly analysis and intraday fake-breakout sequencing as LIMITED — EOD DATA ONLY.
+- New tests cover period alignment, close-confirmed breakouts, daily failed-break attempts, gap samples and insufficient history.
+- Phase 3 remains gated on successful CI and a live Render deployment.
+
 - Add daily demand/supply zones, daily/weekly/monthly levels, daily-close breakout/breakdown outcomes, daily pattern failure and historical gap scenarios.
 - Add daily expected-range distributions with VIX context.
 - Explicitly mark intraday multi-timeframe and intraday fake-breakout functions LIMITED.
