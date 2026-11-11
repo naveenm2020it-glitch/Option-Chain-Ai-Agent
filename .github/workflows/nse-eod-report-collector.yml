@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/nse_eod_collector.py
       - scripts/nse_core_eod_collector.py
+      - scripts/nse_extended_eod_collector.py
       - nifty_ai/reports.py
   schedule:
     # 21:45 India time, after the NSE end-of-day report publication window.
@@ -58,6 +59,7 @@ jobs:
           DAYS="${{ github.event.inputs.lookback_calendar_days || '60' }}"
           python scripts/nse_eod_collector.py --lookback-calendar-days "$DAYS"
           python scripts/nse_core_eod_collector.py --lookback-calendar-days "$DAYS"
+          python scripts/nse_extended_eod_collector.py --lookback-calendar-days "$DAYS"
 
       - name: Commit newly available reports and manifest
         run: |
