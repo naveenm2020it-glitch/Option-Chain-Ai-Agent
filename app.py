@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     scan_incoming()
     # The GitHub Actions collector commits verified NSE EOD files here. Import
     # them on every process start so the analysis can use them without uploads.
-    scan_directory(AUTO_REPORT_DIR)
+    scan_directory(AUTO_REPORT_DIR, wait_stable=False)
     if ENABLE_WATCHER and not os.getenv("RENDER"):
         watcher.start()
     yield
