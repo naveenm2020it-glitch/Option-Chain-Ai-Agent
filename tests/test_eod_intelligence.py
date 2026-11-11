@@ -56,6 +56,8 @@ def test_option_positioning_uses_nearest_expiry_and_nifty_only(monkeypatch):
     assert len(result["strikes"]) == 2
     assert result["call_writing_strikes"] == [25000.0]
     assert result["put_writing_strikes"] == [24900.0]
+    assert result["max_pain"] == 24900.0
+    assert "Nearest-expiry" in result["max_pain_method"]
 
 
 def test_oi_migration_compares_same_expiry_across_uploaded_sessions(monkeypatch):
