@@ -546,7 +546,7 @@ def run_analysis(trading_date: str, reports):
 _base_run_analysis = run_analysis
 
 
-def run_analysis(trading_date: str, reports):
+def run_analysis(trading_date: str, reports, history_reports=None):
     from .eod_intelligence import augment_analysis
     result = _base_run_analysis(trading_date, reports)
-    return augment_analysis(result, reports)
+    return augment_analysis(result, reports, history_reports=history_reports)
