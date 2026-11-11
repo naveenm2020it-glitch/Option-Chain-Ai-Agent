@@ -31,7 +31,8 @@ def _load_option_rows(reports, trading_date):
     grouped = defaultdict(lambda: defaultdict(lambda: {
         "ce_oi": 0.0, "pe_oi": 0.0, "ce_change": 0.0, "pe_change": 0.0,
         "ce_volume": 0.0, "pe_volume": 0.0, "ce_premium_change": [],
-        "pe_premium_change": [], "ce_contracts": 0, "pe_contracts": 0
+        "pe_premium_change": [], "ce_contracts": 0, "pe_contracts": 0,
+        "ce_change_available": False, "pe_change_available": False
     }))
     available_fields = set()
     for item in reports:
@@ -82,6 +83,7 @@ def _load_option_rows(reports, trading_date):
                 record = grouped[key][strike_value]
                 record[side + "_oi"] += max(0.0, float(row["_oi"] or 0))
                 record[side + "_change"] += float(row["_change"] or 0)
+                record[side + "_change_available"] = bool(change)
                 record[side + "_volume"] += max(0.0, float(row["_volume"] or 0))
                 if pd.notna(row["_close"]) and pd.notna(row["_previous"]) and float(row["_previous"]) > 0:
                     record[side + "_premium_change"].append((float(row["_close"]) / float(row["_previous"]) - 1) * 100)
@@ -102,7 +104,7 @@ def _load_option_rows(reports, trading_date):
             item[side + "_premium_change_pct"] = sum(changes) / len(changes) if changes else None
             item[side + "_pressure_label"] = _classify_option_pressure(
                 item[side + "_change"], item[side + "_premium_change_pct"],
-                has_oi_change="change_oi" in available_fields,
+                has_oi_change=item.get(side + "_change_available", False),
             )
         rows.append(item)
     total_ce = sum(x["ce_oi"] for x in rows)
