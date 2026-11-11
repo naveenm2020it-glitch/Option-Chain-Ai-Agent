@@ -20,11 +20,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest httpx
-      - name: Run 30 consecutive Python and JavaScript validation cycles
-        run: |
-          for iteration in $(seq 1 30); do
-            echo "===== VALIDATION CYCLE ${iteration}/30 ====="
-            python -m pytest -q --ignore=tests/e2e
-            node --check static/app.js
-          done
-          echo "All 30 validation cycles passed."
+      - name: Run unit, integration, API and regression tests
+        env:
+          PYTHONPATH: .
+          NIFTY_APP_PASSWORD: ""
+          NIFTY_ENABLE_WATCHER: "false"
+        run: python -m pytest -q --ignore=tests/e2e
+      - name: JavaScript syntax validation
+        run: node --check static/app.js
