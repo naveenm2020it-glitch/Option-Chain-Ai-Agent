@@ -762,6 +762,142 @@ def _zone_confluence_agent(defence_map, spot):
                          "Does not convert evidence scores into holding probabilities or manufacture missing zones."]}
 
 
+
+def _phase3_price_action(price_history, india_vix=None, breakout_lookback=20):
+    """EOD-only price context. All reference periods are completed before the latest session."""
+    rows = []
+    for row in price_history or []:
+        if not all(row.get(k) is not None for k in ("open", "high", "low", "close")):
+            continue
+        try:
+            values = {k: float(row[k]) for k in ("open", "high", "low", "close")}
+            if values["low"] <= min(values["open"], values["close"]) <= max(values["open"], values["close"]) <= values["high"]:
+                day = _as_date(row.get("date"))
+                if day:
+                    rows.append({**values, "date": day, "source": row.get("source")})
+        except (TypeError, ValueError):
+            continue
+    rows = sorted({r["date"]: r for r in rows}.values(), key=lambda r: r["date"])
+    if not rows:
+        return {"status": "INSUFFICIENT DATA", "sessions": 0, "daily_levels": {},
+                "weekly_levels": {"status": "INSUFFICIENT HISTORY"},
+                "monthly_levels": {"status": "INSUFFICIENT HISTORY"},
+                "breakout": {"status": "INSUFFICIENT HISTORY"},
+                "expected_range": {"status": "INSUFFICIENT HISTORY"},
+                "gap_scenarios": {"status": "INSUFFICIENT HISTORY"},
+                "intraday_status": "LIMITED — EOD DATA ONLY"}
+
+    latest = rows[-1]
+    previous = rows[-2] if len(rows) > 1 else None
+    daily = {"status": "READY" if previous else "INSUFFICIENT HISTORY",
+             "previous_session_date": previous["date"].isoformat() if previous else None,
+             "previous_high": previous["high"] if previous else None,
+             "previous_low": previous["low"] if previous else None,
+             "previous_close": previous["close"] if previous else None,
+             "latest_session_date": latest["date"].isoformat(),
+             "latest_open": latest["open"], "latest_high": latest["high"],
+             "latest_low": latest["low"], "latest_close": latest["close"]}
+
+    def completed_period(kind):
+        groups = defaultdict(list)
+        if kind == "week":
+            latest_key = latest["date"].isocalendar()[:2]
+            for r in rows:
+                iso = r["date"].isocalendar()
+                key = (iso.year, iso.week)
+                if key != latest_key:
+                    groups[key].append(r)
+        else:
+            latest_key = (latest["date"].year, latest["date"].month)
+            for r in rows:
+                key = (r["date"].year, r["date"].month)
+                if key != latest_key:
+                    groups[key].append(r)
+        keys = sorted(groups)
+        if not keys:
+            return {"status": "INSUFFICIENT HISTORY", "method": f"Previous completed {kind} only"}
+        group = groups[keys[-1]]
+        return {"status": "READY", "period_start": group[0]["date"].isoformat(),
+                "period_end": group[-1]["date"].isoformat(),
+                "high": max(x["high"] for x in group), "low": min(x["low"] for x in group),
+                "close": group[-1]["close"], "sessions": len(group),
+                "method": f"Previous completed {kind}; current incomplete period excluded"}
+
+    weekly, monthly = completed_period("week"), completed_period("month")
+    breakout = {"status": "INSUFFICIENT HISTORY", "lookback_sessions": breakout_lookback,
+                "breakout_up": False, "breakdown_down": False,
+                "daily_failed_upside_attempt": False, "daily_failed_downside_attempt": False,
+                "reference_high": None, "reference_low": None}
+    if len(rows) >= breakout_lookback + 1:
+        prior = rows[-(breakout_lookback + 1):-1]
+        ref_high, ref_low = max(x["high"] for x in prior), min(x["low"] for x in prior)
+        breakout.update({"status": "READY", "reference_high": ref_high, "reference_low": ref_low,
+            "breakout_up": latest["close"] > ref_high, "breakdown_down": latest["close"] < ref_low,
+            "daily_failed_upside_attempt": latest["high"] > ref_high and latest["close"] <= ref_high,
+            "daily_failed_downside_attempt": latest["low"] < ref_low and latest["close"] >= ref_low,
+            "latest_close": latest["close"],
+            "method": f"Latest daily close versus the prior {breakout_lookback} completed sessions; no intraday candles"})
+        breakout["classification"] = (
+            "CLOSE_CONFIRMED_UPSIDE_BREAKOUT" if breakout["breakout_up"] else
+            "CLOSE_CONFIRMED_DOWNSIDE_BREAKDOWN" if breakout["breakdown_down"] else
+            "DAILY_FAILED_UPSIDE_ATTEMPT" if breakout["daily_failed_upside_attempt"] else
+            "DAILY_FAILED_DOWNSIDE_ATTEMPT" if breakout["daily_failed_downside_attempt"] else "NO_20_SESSION_CLOSE_BREAK")
+
+    true_ranges, gaps = [], []
+    for i, row in enumerate(rows):
+        prev_close = rows[i - 1]["close"] if i else None
+        tr = max(row["high"] - row["low"], abs(row["high"] - prev_close),
+                 abs(row["low"] - prev_close)) if prev_close else row["high"] - row["low"]
+        if tr > 0: true_ranges.append(tr)
+        if prev_close and prev_close > 0:
+            gap_pct = (row["open"] / prev_close - 1) * 100
+            direction = "GAP_UP" if gap_pct >= 0.25 else "GAP_DOWN" if gap_pct <= -0.25 else "NO_MATERIAL_GAP"
+            filled = row["low"] <= prev_close if gap_pct >= 0.25 else row["high"] >= prev_close if gap_pct <= -0.25 else None
+            gaps.append({"date": row["date"].isoformat(), "gap_pct": gap_pct,
+                         "direction": direction, "filled_same_session": filled})
+
+    if len(true_ranges) >= 10:
+        sample = pd.Series(true_ranges[-20:], dtype="float64")
+        expected = {"status": "READY", "sample_sessions": int(sample.size),
+            "true_range_q25_points": round(float(sample.quantile(0.25)), 2),
+            "true_range_median_points": round(float(sample.quantile(0.50)), 2),
+            "true_range_q75_points": round(float(sample.quantile(0.75)), 2),
+            "true_range_median_pct_of_close": round(float(sample.median() / latest["close"] * 100), 3),
+            "india_vix_eod": india_vix,
+            "volatility_context": "HIGH_VIX_CONTEXT" if india_vix is not None and float(india_vix) >= 22 else "STANDARD_OR_UNAVAILABLE_VIX_CONTEXT",
+            "method": "Trailing up to 20 completed daily true ranges; empirical quantiles, not a directional price target",
+            "is_forecast_probability": False}
+    else:
+        expected = {"status": "INSUFFICIENT HISTORY", "sample_sessions": len(true_ranges),
+                    "minimum_sessions": 10, "india_vix_eod": india_vix}
+
+    gap_counts = {name: [x for x in gaps if x["direction"] == name] for name in ("GAP_UP", "GAP_DOWN")}
+    gap_scenarios = {"status": "READY" if len(gaps) >= 10 else "INSUFFICIENT HISTORY",
+        "sessions_with_prior_close": len(gaps), "material_gap_threshold_pct": 0.25,
+        "historical_gap_up_sessions": len(gap_counts["GAP_UP"]),
+        "historical_gap_down_sessions": len(gap_counts["GAP_DOWN"]),
+        "gap_up_same_session_fill_count": sum(x["filled_same_session"] is True for x in gap_counts["GAP_UP"]),
+        "gap_down_same_session_fill_count": sum(x["filled_same_session"] is True for x in gap_counts["GAP_DOWN"]),
+        "recent_observations": gaps[-10:],
+        "method": "Historical open versus prior close; same-session fill means daily low/high crossed prior close",
+        "limitations": ["Historical sample frequencies are descriptive, not calibrated next-session probabilities.",
+                        "Daily OHLC cannot determine the intraday path or time of gap fill."]}
+    for key in ("GAP_UP", "GAP_DOWN"):
+        gap_scenarios[key.lower() + "_fill_rate_pct"] = (
+            round(100 * sum(x["filled_same_session"] is True for x in gap_counts[key]) / len(gap_counts[key]), 2)
+            if len(gap_counts[key]) >= 10 else None)
+
+    return {"status": "READY" if len(rows) >= 2 else "PARTIAL", "sessions": len(rows),
+        "latest_session_date": latest["date"].isoformat(), "daily_levels": daily,
+        "weekly_levels": weekly, "monthly_levels": monthly, "breakout": breakout,
+        "expected_range": expected, "gap_scenarios": gap_scenarios,
+        "intraday_status": "LIMITED — EOD DATA ONLY",
+        "intraday_limitations": [
+            "No 5-minute, 15-minute or hourly candles are available from the selected 12 EOD reports.",
+            "Intraday fake breakouts, live triggers, exact breakout time and intraday targets are disabled.",
+            "A daily failed-break attempt means the session high/low crossed a prior daily boundary but the daily close returned inside; it does not reveal the intraday sequence."],
+        "source_policy": "Only dated NIFTY 50 OHLC from the selected NSE EOD report archive."}
+
 def augment_analysis(result, reports, history_reports=None):
     price_history = []
     for row in result.get("spot_history", []):
@@ -845,6 +981,10 @@ def augment_analysis(result, reports, history_reports=None):
         "score": round(absorption_score, 4), "confidence": None,
         "metrics": absorption, "evidence": ["Daily wick and close-location proxy only; true absorption requires intraday trade/order-book data."]
     })
+    result["eod_price_action"] = _phase3_price_action(price_history, result.get("india_vix"))
+    if result["eod_price_action"].get("status") != "READY":
+        result.setdefault("warnings", []).append("Phase 3 EOD price-action context is partial or lacks sufficient dated NIFTY OHLC history.")
+    result.setdefault("warnings", []).append("Intraday breakouts, fake-breakout sequencing and intraday targets remain LIMITED — EOD DATA ONLY.")
     migration = _compare_oi_migration(history_reports or reports, result.get("trading_date"))
     inst = _institutional_positioning(reports, result.get("institutional", {}), result.get("participant_reports", {}), migration)
     result["agents"].append({"name": "Institutional Positioning & Migration", **inst, "confidence": None})
