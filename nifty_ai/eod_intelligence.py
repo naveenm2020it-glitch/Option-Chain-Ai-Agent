@@ -440,6 +440,59 @@ def _compare_oi_migration(history_reports, trading_date):
     }
 
 
+
+def _participant_hedge_candidates(participant):
+    """Flag possible offsets between participant futures and options OI.
+
+    This is a hedge-candidate heuristic only. NSE aggregate long/short fields
+    do not disclose matched legs, delta, expiry alignment or trader intent.
+    """
+    sources = (participant or {}).get("sources", {})
+    oi_detail = sources.get("participant_oi", {}) if isinstance(sources, dict) else {}
+    rows = oi_detail.get("participant_positions", []) if isinstance(oi_detail, dict) else []
+    candidates = []
+    for row in rows:
+        future_net = row.get("future_index_net")
+        option_net = row.get("option_directional_proxy_contracts")
+        if future_net is None or option_net is None:
+            continue
+        try:
+            future_net, option_net = float(future_net), float(option_net)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(future_net) and math.isfinite(option_net)):
+            continue
+        gross = max(abs(future_net), abs(option_net))
+        offset_ratio = min(abs(future_net), abs(option_net)) / gross if gross else 0.0
+        opposite = future_net * option_net < 0
+        if opposite and offset_ratio >= 0.25:
+            classification = "POTENTIAL_HEDGE_OFFSET"
+        elif opposite:
+            classification = "WEAK_OFFSET_CANDIDATE"
+        else:
+            classification = "NO_CLEAR_OFFSET"
+        candidates.append({
+            "participant": row.get("participant"),
+            "future_index_net_contracts": future_net,
+            "option_directional_proxy_contracts": option_net,
+            "opposite_direction": opposite,
+            "offset_ratio": round(offset_ratio, 4),
+            "classification": classification,
+            "source": row.get("source"),
+            "interpretation": "Possible offset between aggregate futures and options exposures; not proof of an executed hedge or matched risk.",
+        })
+    return {
+        "available": bool(candidates),
+        "status": "PARTIAL — HEDGE CANDIDATES ONLY" if candidates else "INSUFFICIENT DATA",
+        "candidates": candidates,
+        "limitations": [
+            "Participant-wise aggregates do not identify matched contracts, delta, expiry or trader intent.",
+            "Option directional exposure is a proxy and may contain spreads or multi-leg hedges.",
+            "FII futures traded flow is not substituted for end-of-day participant open interest.",
+        ],
+    }
+
+
 def _institutional_positioning(reports, institutional, participant, migration):
     sources = [x for x in reports if x.get("report_type") in {"participant_oi", "participant_volume", "fii_derivatives", "fii_dii"}]
     available = [x for x in sources if int(x.get("row_count") or 0) > 0]
@@ -448,6 +501,7 @@ def _institutional_positioning(reports, institutional, participant, migration):
         fields[item["report_type"]] = {"file": item.get("original_name"), "rows": item.get("row_count"),
                                        "columns": item.get("columns", [])[:30]}
     participant_net = _participant_index_net(reports)
+    hedge_candidates = _participant_hedge_candidates(participant)
     volume_detail = participant.get("sources", {}).get("participant_volume", {})
     participant_volume_available = bool(volume_detail.get("participant_totals"))
     fii_stats_detail = participant.get("sources", {}).get("fii_derivatives", {})
@@ -486,6 +540,8 @@ def _institutional_positioning(reports, institutional, participant, migration):
         evidence.append("Participant-wise trading volume is included as activity context only; traded volume is not mistaken for open interest or a directional position.")
     if fii_nifty_flow_available and not participant_net.get("available"):
         evidence.append("The official FII derivatives report contains NIFTY instrument rows; raw buy/sell and open-interest values are available for review.")
+    if hedge_candidates.get("available"):
+        evidence.append("Potential futures/options offsets are flagged as hedge candidates only; aggregate EOD data cannot prove matched hedges or trader intent.")
     if migration.get("available"):
         evidence.append("Strike-wise OI migration was measured against the previous uploaded session for the same expiry.")
     if institutional.get("available"):
@@ -499,6 +555,7 @@ def _institutional_positioning(reports, institutional, participant, migration):
                         "cash_fii_dii_net": institutional.get("net_total"),
                         "cash_flow_trend": cash_trend,
                         "participant_index_position": participant_net,
+                        "hedge_candidates": hedge_candidates,
                         "oi_migration": migration,
                         "migration_available": migration.get("available", False),
                         "previous_top_call_oi_strike": migration.get("previous_top_call_oi_strike"),
