@@ -447,6 +447,10 @@ def _institutional_positioning(reports, institutional, participant, migration):
         fields[item["report_type"]] = {"file": item.get("original_name"), "rows": item.get("row_count"),
                                        "columns": item.get("columns", [])[:30]}
     participant_net = _participant_index_net(reports)
+    volume_detail = participant.get("sources", {}).get("participant_volume", {})
+    participant_volume_available = bool(volume_detail.get("participant_totals"))
+    fii_stats_detail = participant.get("sources", {}).get("fii_derivatives", {})
+    fii_nifty_flow_available = bool(fii_stats_detail.get("nifty_instruments"))
     score = 0.0
     if participant_net.get("available"):
         score = max(-0.25, min(0.25, participant_net["net"] / max(abs(participant_net["net"]), 1) * 0.25))
@@ -464,13 +468,21 @@ def _institutional_positioning(reports, institutional, participant, migration):
     score = max(-0.35, min(0.35, score + migration_score))
     bias = "BULLISH" if score > 0.04 else "BEARISH" if score < -0.04 else "NEUTRAL"
     if not (participant_net.get("available") or institutional.get("available") or migration.get("available")):
-        bias = "UNAVAILABLE"
-    status = "partial" if participant_net.get("available") or institutional.get("available") or migration.get("available") else "missing_data"
+        bias = "NEUTRAL" if participant_volume_available or fii_nifty_flow_available else "UNAVAILABLE"
+    usable_context = participant_net.get("available") or institutional.get("available") or migration.get("available") or participant_volume_available or fii_nifty_flow_available
+    status = "partial" if usable_context else "missing_data"
     evidence = ["Participant positioning is a broad index context and cannot identify exact defending traders at an individual strike."]
     if participant_net.get("available"):
-        evidence.append("FII index futures/options net positioning was calculated only where the report supplied all required long/short fields.")
+        if any(x.get("metric") == "fii_nifty_futures_net_traded_contracts" for x in participant_net.get("rows", [])):
+            evidence.append("NSE FII NIFTY futures buy-minus-sell contracts are treated as daily traded flow, not as end-of-day open interest.")
+        else:
+            evidence.append("FII index futures/options net positioning was calculated only where the participant report supplied all required long/short fields.")
     elif available:
         evidence.append("Participant report files were found, but their columns did not support a safe directional net-position calculation.")
+    if participant_volume_available:
+        evidence.append("Participant-wise trading volume is included as activity context only; traded volume is not mistaken for open interest or a directional position.")
+    if fii_nifty_flow_available and not participant_net.get("available"):
+        evidence.append("The official FII derivatives report contains NIFTY instrument rows; raw buy/sell and open-interest values are available for review.")
     if migration.get("available"):
         evidence.append("Strike-wise OI migration was measured against the previous uploaded session for the same expiry.")
     if institutional.get("available"):
@@ -487,7 +499,9 @@ def _institutional_positioning(reports, institutional, participant, migration):
                         "previous_top_put_oi_strike": migration.get("previous_top_put_oi_strike"),
                         "current_top_put_oi_strike": migration.get("current_top_put_oi_strike"),
                         "put_wall_shift_points": migration.get("put_wall_shift_points"),
-                        "participant_summary": participant.get("sources", {})},
+                        "participant_summary": participant.get("sources", {}),
+                        "participant_volume_available": participant_volume_available,
+                        "fii_nifty_flow_available": fii_nifty_flow_available},
             "evidence": evidence}
 
 def augment_analysis(result, reports, history_reports=None):
