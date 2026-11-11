@@ -1,29 +1,18 @@
 services:
   - type: web
-    name: option-chain-ai-agent
+    name: nifty-next-day-ai
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    region: singapore
+    buildCommand: python bootstrap.py && pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.8
-      - key: NSE_ENABLED
-        value: "false"
-      - key: JUGAAD_PROVIDER_ENABLED
-        value: "false"
-      - key: JUGAAD_AUTOMATED_USE_PERMITTED
-        value: "false"
-      - key: FYERS_PROVIDER_ENABLED
-        value: "false"
-      - key: FYERS_APP_ID
+      - key: NIFTY_APP_PASSWORD
         sync: false
-      - key: FYERS_ACCESS_TOKEN
-        sync: false
-      - key: FYERS_REST_REFRESH_SECONDS
-        value: "60"
-      - key: FYERS_STANDARD_STRIKE_COUNT
-        value: "24"
-      - key: FYERS_MAX_AGE_SECONDS
-        value: "30"
+      - key: NIFTY_ENABLE_WATCHER
+        value: "false"
+      - key: NIFTY_DATA_DIR
+        value: /tmp/nifty-ai-data
+      - key: NIFTY_INCOMING_DIR
+        value: /tmp/nifty-ai-data/incoming
