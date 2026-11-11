@@ -8,7 +8,7 @@ The repository contains a source archive split into small binary parts for the G
 2. Install Python 3.12 (64-bit) with the `py` launcher.
 3. Double-click `START_HERE.bat`. It reconstructs the source and launches the local app.
 4. Open `http://127.0.0.1:8000` if it does not open automatically.
-5. Put your manually downloaded NSE reports into `INCOMING_REPORTS/`, or choose Data centre → Import files.
+5. The scheduled NSE collectors automatically archive all 12 configured EOD report types in GitHub. Manual import remains available for exceptional missing files.
 6. Confirm the report checklist, then run the six-agent analysis.
 
 ## Render
@@ -24,9 +24,11 @@ The root `render.yaml` creates a free Python web service in Singapore. Add a str
 - Produces six transparent specialist analytics outputs and one master evidence summary.
 - Saves reports, daily index prices and analysis history locally.
 
-A scheduled GitHub Actions collector fetches the official NSE F&O Participant-wise Trading Volumes CSV and FII Derivatives Statistics XLS archives after market hours. It validates file formats and tabular contents, retries temporary failures, records unavailable dates honestly, retains raw source files, and backfills a rolling 60-calendar-day window (typically enough for at least 20 trading sessions). The latest 20 available sessions are indexed in `data/nse_reports/manifest.json`.
+Scheduled GitHub Actions collectors fetch all 12 configured report types from official NSE sources: NIFTY 50 historical index, India VIX, CM UDiFF bhavcopy, CM security-wise delivery, CM daily volatility, FII/DII activity, F&O UDiFF bhavcopy, participant-wise OI, participant-wise volumes, FII derivatives statistics, F&O settlement prices and F&O daily volatility. The collectors use NSE's daily-report discovery API for current/previous report paths where available and documented NSE archive paths for historical backfill. Filenames and trading dates are calculated automatically for future sessions; no date is hardcoded.
 
-On Render startup, verified archived CSV/XLS reports are automatically imported into the analysis database; no manual upload is required for these two reports. Other reports remain importable manually. The collector does not fabricate missing market values. NSE publication delays or access blocks are reported as missing/error states and retried on the next scheduled run.
+Every accepted file is checked for a readable non-empty format, fingerprinted with SHA-256, retained in `data/nse_reports/`, and indexed in `manifest.json`. The workflow runs after market hours on weekdays, retries transient errors, and scans a rolling 60-calendar-day window. A report that has not yet been published or cannot be fetched remains explicitly missing/error and is retried on the next run. It is never replaced with stale or fabricated data.
+
+On Render startup, verified archived reports from the manifest are imported into the analysis database. The dashboard can therefore show the latest available date and missing-report state for all 12 report types. Manual import remains available as a fallback.
 
 GitHub is the durable raw archive. Render's free filesystem remains temporary, so the SQLite database and user-uploaded files can be lost after restart or redeploy; the committed NSE archive is retained in GitHub. Check NSE's data terms for the permitted use of downloaded reports. This is a personal research tool, not investment advice or order execution.
 
