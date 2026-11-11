@@ -104,3 +104,12 @@ def test_lookback_bounds_are_enforced(tmp_path, monkeypatch):
     monkeypatch.setattr(collector, "MANIFEST_PATH", tmp_path / "nse_reports" / "manifest.json")
     with pytest.raises(ValueError):
         collector.collect(lookback_calendar_days=0, session_factory=lambda: FakeSession([]))
+
+
+def test_session_does_not_depend_on_blocked_homepage(monkeypatch):
+    fake = FakeSession([])
+    monkeypatch.setattr(collector.requests, "Session", lambda: fake)
+    session = collector._session()
+    assert session is fake
+    assert session.calls == []
+    assert session.headers["User-Agent"].startswith("Mozilla/")
