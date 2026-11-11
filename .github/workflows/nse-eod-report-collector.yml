@@ -51,10 +51,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
 
-      - name: Run unit and regression tests before collection
+      - name: Run 30 consecutive unit and regression test cycles before collection
         env:
           PYTHONPATH: .
-        run: python -m pytest -q
+        run: |
+          for iteration in $(seq 1 30); do
+            echo "===== COLLECTOR TEST CYCLE ${iteration}/30 ====="
+            python -m pytest -q
+          done
+          echo "All 30 collector test cycles passed."
 
       - name: Collect and validate NSE reports
         env:
