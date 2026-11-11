@@ -155,6 +155,10 @@ def build_defence_map(price_history, options, ai_levels):
             center = float(zone.get("center", 0))
             if not center:
                 continue
+            if spot is not None and side == "support" and center > spot + tolerance:
+                continue
+            if spot is not None and side == "resistance" and center < spot - tolerance:
+                continue
             share = options.get(share_key) if options.get("available") and center == oi_strike else None
             writers = options.get(writer_key, []) if options.get("available") else []
             writer_confirmed = any(abs(float(x) - center) <= tolerance for x in writers)
@@ -165,7 +169,7 @@ def build_defence_map(price_history, options, ai_levels):
             elif latest and side == "resistance":
                 candle_rejection = latest["high"] >= center - tolerance and latest["close"] < latest["open"] and (close_position or 1) <= 0.45
             score = 15
-            score += min(25, int((share or 0) * 100)) if share is not None else 0
+            score += min(25, int((share or 0) * 0.25)) if share is not None else 0
             score += 25 if writer_confirmed else 0
             score += min(20, touch_count * 5)
             score += 15 if candle_rejection else 0
