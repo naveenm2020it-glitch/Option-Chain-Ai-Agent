@@ -20,8 +20,8 @@
     </a>
     <div class="sidebar-label">WORKSPACE</div>
     <nav class="main-nav" aria-label="Main navigation">
-      <button class="nav-item active" data-view="overview"><i class="nav-icon">⌂</i><span>Overview</span><kbd>01</kbd></button>
-      <button class="nav-item" data-view="data"><i class="nav-icon">▤</i><span>Data centre</span><kbd>02</kbd></button>
+      <button type="button" class="nav-item active" data-view="overview"><i class="nav-icon">⌂</i><span>Overview</span><kbd>01</kbd></button>
+      <button type="button" class="nav-item" data-view="data"><i class="nav-icon">▤</i><span>Data centre</span><kbd>02</kbd></button>
       <button class="nav-item" data-view="agents"><i class="nav-icon">✳</i><span>AI analysis</span><kbd>03</kbd></button>
       <button class="nav-item" data-view="levels"><i class="nav-icon">⌁</i><span>Market levels</span><kbd>04</kbd></button>
       <button class="nav-item" data-view="history"><i class="nav-icon">◷</i><span>Forecast history</span><kbd>05</kbd></button>
@@ -135,6 +135,32 @@
 <div class="modal-backdrop" id="upload-modal" aria-hidden="true"><section class="modal glass-panel"><div class="modal-head"><div><div class="panel-kicker">REPORT INGESTION</div><h2>Import NSE reports</h2></div><button class="icon-button modal-close" data-action="close-upload">×</button></div><p>Choose the trading date if the report files do not contain one. The file contents remain on the server you are using.</p><label class="field-label" for="trading-date">Trading date (optional)</label><input id="trading-date" type="date" class="field-input"><label class="field-label" for="modal-files">Select multiple reports</label><input id="modal-files" type="file" multiple accept=".csv,.zip,.xls,.xlsx,.dat,.txt" class="field-input file-input"><div class="modal-actions"><button class="button button-ghost" data-action="close-upload">Cancel</button><button class="button button-primary" id="upload-submit">Import selected files</button></div><div class="modal-progress" id="modal-progress"></div></section></div>
 <div class="modal-backdrop" id="login-modal" aria-hidden="true"><section class="modal login-modal glass-panel"><div class="brand-mark large"><span></span><span></span><span></span></div><div class="panel-kicker">PRIVATE WORKSPACE</div><h2>Unlock NIFTY AI</h2><p>This deployment is protected. Enter the access password configured for this service.</p><input id="login-password" type="password" class="field-input" placeholder="Workspace password" autocomplete="current-password"><button class="button button-primary button-full" id="login-submit">Unlock workspace</button><div class="login-error" id="login-error"></div></section></div>
 <div class="toast-region" id="toast-region" aria-live="polite"></div>
-<script src="/static/app.js?v=d859cfc4"></script>
+<script>
+/* Independent navigation fallback: keeps tabs usable even if dashboard data scripts fail. */
+(function(){
+  document.addEventListener('click',function(event){
+    var button=event.target.closest('.nav-item[data-view], [data-view-link]');
+    if(!button) return;
+    var name=button.getAttribute('data-view')||button.getAttribute('data-view-link');
+    var target=document.getElementById('view-'+name);
+    if(!target) return;
+    event.preventDefault();
+    document.querySelectorAll('.view').forEach(function(view){
+      var active=view===target;
+      view.classList.toggle('active',active);
+      view.setAttribute('aria-hidden',active?'false':'true');
+    });
+    document.querySelectorAll('.nav-item[data-view]').forEach(function(item){
+      var active=item.getAttribute('data-view')===name;
+      item.classList.toggle('active',active);
+      if(active) item.setAttribute('aria-current','page'); else item.removeAttribute('aria-current');
+    });
+    var title=document.getElementById('page-name');
+    if(title) title.textContent=({overview:'Overview',data:'Data centre',agents:'AI analysis',levels:'Market levels',history:'Forecast history',settings:'Settings'})[name]||'Overview';
+    if(name==='history' && typeof window.loadHistory==='function') window.loadHistory();
+  },true);
+})();
+</script>
+<script src="/static/app.js?v=phase2-nav-20261111"></script>
 </body>
 </html>
