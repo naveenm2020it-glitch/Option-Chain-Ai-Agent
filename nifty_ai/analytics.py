@@ -538,3 +538,15 @@ def run_analysis(trading_date: str, reports):
         "source_reports": [{"name": x["original_name"], "type": x["report_type"], "status": x["status"]} for x in reports],
         "methodology": "Seven specialist agents discover price-action/OI zones and an eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or accuracy are fabricated."}
     return result
+
+
+# EOD buyer/seller defence intelligence is layered on top of the stable base analytics.
+# This keeps traditional reference levels available while preventing them from driving AI S/R.
+_base_run_analysis = run_analysis
+
+
+def run_analysis(trading_date: str, reports):
+    from .eod_intelligence import augment_analysis
+    result = _base_run_analysis(trading_date, reports)
+    result["_price_history_for_eod"] = extract_spot_history(reports)
+    return augment_analysis(result, reports)
