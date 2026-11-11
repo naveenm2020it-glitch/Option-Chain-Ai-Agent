@@ -38,3 +38,25 @@ html[data-theme="light"] .login-modal,html[data-theme="light"] .modal{background
 html[data-theme="light"] .ai-sr-column{background:rgba(232,239,253,.64);border-color:rgba(105,126,173,.16)}
 html[data-theme="light"] .ai-sr-zone small{color:#71809b}
 @media(max-width:560px){.ai-sr-grid{grid-template-columns:1fr}}
+
+
+/* EOD buyer/seller defence and validation panels */
+.defence-map-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.defence-column{padding:14px;border:1px solid rgba(106,153,183,.18);border-radius:13px;background:rgba(12,40,60,.22)}
+.defence-column h3{font-size:10px;letter-spacing:.1em;margin:0 0 10px}
+.defence-column.support h3{color:#31b98b}.defence-column.resistance h3{color:#e47a82}
+.defence-zone{padding:11px 0;border-top:1px solid rgba(106,153,183,.14)}
+.defence-zone-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.defence-zone-top strong{font:12px 'DM Mono',monospace}
+.defence-zone-top em{font:8px 'DM Mono',monospace;font-style:normal;color:#6bc6a5;text-align:right}
+.defence-column.resistance .defence-zone-top em{color:#e58b91}
+.defence-zone small{display:block;color:#8298ad;font-size:9px;margin-top:5px;line-height:1.5}
+.defence-zone p{font-size:10px;color:#a5b5c5;line-height:1.5;margin:7px 0 0}
+.accuracy-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.accuracy-grid>div{padding:12px;border-radius:11px;background:rgba(12,40,60,.22);border:1px solid rgba(106,153,183,.14)}
+.accuracy-grid small,.accuracy-grid span{display:block;color:#8298ad;font-size:9px}
+.accuracy-grid strong{display:block;font:20px 'DM Mono',monospace;margin:7px 0}
+html[data-theme="light"] .defence-column{background:rgba(232,239,253,.64);border-color:rgba(105,126,173,.16)}
+html[data-theme="light"] .defence-zone small,html[data-theme="light"] .defence-zone p,html[data-theme="light"] .accuracy-grid small,html[data-theme="light"] .accuracy-grid span{color:#71809b}
+html[data-theme="light"] .accuracy-grid>div{background:rgba(232,239,253,.64);border-color:rgba(105,126,173,.16)}
+@media(max-width:720px){.defence-map-grid{grid-template-columns:1fr}.accuracy-grid{grid-template-columns:1fr}}
