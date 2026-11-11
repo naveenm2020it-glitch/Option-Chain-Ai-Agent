@@ -135,6 +135,7 @@ def collect(lookback_calendar_days: int = 60, end_date: date | None = None,
         raise ValueError("lookback_calendar_days must be between 1 and 366")
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
     manifest = _load_manifest()
+    original_manifest = json.dumps(manifest, sort_keys=True)
     session = session_factory()
     end = end_date or datetime.now(ZoneInfo("Asia/Kolkata")).date()
     days = [end - timedelta(days=i) for i in range(lookback_calendar_days)
@@ -161,7 +162,6 @@ def collect(lookback_calendar_days: int = 60, end_date: date | None = None,
                         "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload),
                         "rows": rows, "columns": columns[:60],
                         "source_url": spec["url"].format(date=date_token),
-                        "last_checked_utc": checked_at,
                     }
                     continue
                 except Exception:
@@ -170,10 +170,11 @@ def collect(lookback_calendar_days: int = 60, end_date: date | None = None,
             try:
                 payload = _download(session, url, attempts=3, sleep=sleep)
                 if payload is None:
-                    records[iso_day] = {
-                        "status": "not_available", "source_url": url,
-                        "last_checked_utc": checked_at,
-                    }
+                    if not (existing and existing.get("status") == "not_available"):
+                        records[iso_day] = {
+                            "status": "not_available", "source_url": url,
+                            "last_checked_utc": checked_at,
+                        }
                     continue
                 rows, columns = _parse_report(kind, payload)
                 temp = target.with_suffix(target.suffix + ".tmp")
@@ -188,10 +189,12 @@ def collect(lookback_calendar_days: int = 60, end_date: date | None = None,
             except Exception as exc:
                 # Never overwrite a verified local archive with a transient fetch failure.
                 if not (existing and existing.get("status") == "available" and target.exists()):
-                    records[iso_day] = {
-                        "status": "error", "source_url": url,
-                        "error": str(exc)[:500], "last_checked_utc": checked_at,
-                    }
+                    error_text = str(exc)[:500]
+                    if not (existing and existing.get("status") == "error" and existing.get("error") == error_text):
+                        records[iso_day] = {
+                            "status": "error", "source_url": url,
+                            "error": error_text, "last_checked_utc": checked_at,
+                        }
                 logging.warning("%s %s: %s", kind, iso_day, exc)
                 sleep(0.25)
 
@@ -200,9 +203,10 @@ def collect(lookback_calendar_days: int = 60, end_date: date | None = None,
         dataset["available_dates"] = available
         dataset["latest_20_sessions"] = available[-20:]
 
-    manifest["updated_at_utc"] = checked_at
     manifest["lookback_calendar_days"] = lookback_calendar_days
-    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if json.dumps(manifest, sort_keys=True) != original_manifest:
+        manifest["updated_at_utc"] = checked_at
+        MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return manifest
 
 
