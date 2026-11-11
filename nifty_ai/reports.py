@@ -53,7 +53,7 @@ def _read_bytes(name: str, content: bytes):
     if ext in {".xls", ".xlsx"}:
         # NSE FII statistics workbooks start with a merged report-title row;
         # the second row contains the actual table headings.
-        header = 1 if "fiistats" in compact(name) else 0
+        header = [1, 2] if "fiistats" in compact(name) else 0
         book = pd.read_excel(io.BytesIO(content), sheet_name=None, header=header)
         return [(str(k), v.dropna(how="all")) for k, v in book.items()
                 if isinstance(v, pd.DataFrame) and not v.empty]
