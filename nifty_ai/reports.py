@@ -10,15 +10,15 @@ REPORTS = {
     "nifty50": {"label": "NIFTY 50 Historical Index", "group": "Index", "required": True},
     "india_vix": {"label": "India VIX Historical Index", "group": "Index", "required": True},
     "cm_bhavcopy": {"label": "CM UDiFF Common Bhavcopy Final", "group": "Cash market", "required": True},
-    "cm_delivery": {"label": "CM Security-wise Delivery Positions", "group": "Cash market", "required": False},
-    "cm_volatility": {"label": "CM Daily Volatility", "group": "Cash market", "required": False},
+    "cm_delivery": {"label": "CM Security-wise Delivery Positions", "group": "Cash market", "required": True},
+    "cm_volatility": {"label": "CM Daily Volatility", "group": "Cash market", "required": True},
     "fii_dii": {"label": "FII/FPI and DII Trading Activity", "group": "Institutional", "required": True},
     "fo_bhavcopy": {"label": "F&O UDiFF Common Bhavcopy Final", "group": "Derivatives", "required": True},
-    "participant_oi": {"label": "F&O Participant-wise Open Interest", "group": "Derivatives", "required": False},
-    "participant_volume": {"label": "F&O Participant-wise Trading Volumes", "group": "Derivatives", "required": False},
-    "fii_derivatives": {"label": "F&O FII Derivatives Statistics", "group": "Derivatives", "required": False},
-    "fo_settlement": {"label": "F&O Daily Settlement Prices", "group": "Derivatives", "required": False},
-    "fo_volatility": {"label": "F&O Daily Volatility", "group": "Derivatives", "required": False},
+    "participant_oi": {"label": "F&O Participant-wise Open Interest", "group": "Derivatives", "required": True},
+    "participant_volume": {"label": "F&O Participant-wise Trading Volumes", "group": "Derivatives", "required": True},
+    "fii_derivatives": {"label": "F&O FII Derivatives Statistics", "group": "Derivatives", "required": True},
+    "fo_settlement": {"label": "F&O Daily Settlement Prices", "group": "Derivatives", "required": True},
+    "fo_volatility": {"label": "F&O Daily Volatility", "group": "Derivatives", "required": True},
 }
 
 
