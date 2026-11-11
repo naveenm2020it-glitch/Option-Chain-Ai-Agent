@@ -121,3 +121,110 @@ html[data-theme="light"] #ai-sr-grid .ai-level-card.no-level .ai-level-value{col
 html[data-theme="light"] #ai-sr-grid .ai-level-card.current{background:linear-gradient(105deg,#e2f5ff,#f4fbff)}
 html[data-theme="light"] #ai-sr-grid .ai-level-card.current .ai-level-value{color:#087db8}
 @media(max-width:900px){#ai-sr-grid .ai-level-card{grid-template-columns:1fr;gap:6px;padding:14px 16px}#ai-sr-grid .ai-level-value{font-size:18px}#ai-sr-grid .ai-level-evidence{font-size:9px}}
+
+
+/* Responsive readability pass — consistent type scale, spacing and touch targets */
+:root{--font-body:Manrope,Inter,system-ui,sans-serif}
+body{font-size:14px;line-height:1.55}
+button,input,select,textarea{font:inherit}
+.page-heading p,.fine-print,.empty-inline,.level-empty{font-size:11px;line-height:1.65}
+.panel{padding:clamp(16px,2vw,24px)}
+.panel-heading{gap:14px;flex-wrap:wrap}
+.panel-heading h2{font-size:clamp(15px,1.4vw,18px);line-height:1.35}
+.panel-kicker,.eyebrow,.sidebar-label{font-size:10px;letter-spacing:.13em}
+.nav-item{min-height:44px;font-size:12px}
+.nav-item span{font-size:12px}
+.button{min-height:40px;font-size:11px}
+.metric-top,.metric-foot,.data-table th,.data-table td,.report-item strong,.report-item small{font-size:10px}
+.metric-value{font-size:clamp(20px,2vw,26px)}
+.metric-card{min-height:138px;padding:17px}
+.agent-card h3{font-size:12px}
+.agent-evidence,.agent-score,.agent-metrics span{font-size:10px;line-height:1.6}
+.data-table th{padding:12px 11px}
+.data-table td{padding:13px 11px;line-height:1.5}
+.report-item{padding:11px;min-height:52px}
+.report-item strong{font-size:11px}
+.report-item small{font-size:10px}
+.topbar{gap:12px}
+.breadcrumbs{font-size:11px}
+.profile-button{min-height:38px}
+.page-heading{margin-bottom:26px}
+.view{min-width:0}
+.ai-sr-panel{padding:clamp(16px,2.4vw,26px);margin-bottom:16px}
+.ai-sr-panel>.fine-print{max-width:1000px;font-size:12px;color:var(--soft);margin:10px 0 18px}
+#ai-sr-grid{width:100%;min-width:0}
+#ai-sr-grid>.ai-level-stack{gap:12px}
+#ai-sr-grid .ai-level-card{
+ display:grid;
+ grid-template-columns:minmax(0,1.2fr) minmax(0,1.7fr) minmax(130px,.65fr);
+ align-items:center;
+ gap:clamp(12px,2vw,26px);
+ min-height:100px;
+ width:100%;
+ padding:clamp(15px,2vw,22px);
+ border-radius:16px;
+}
+#ai-sr-grid .ai-level-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,1fr);align-items:center;gap:14px;min-width:0}
+#ai-sr-grid .ai-level-label{font-size:clamp(11px,.95vw,13px);line-height:1.4;letter-spacing:.11em;font-weight:800}
+#ai-sr-grid .ai-level-value{font-size:clamp(18px,1.65vw,24px);line-height:1.35;white-space:normal;overflow-wrap:anywhere}
+#ai-sr-grid .ai-level-evidence-wrap{min-width:0}
+#ai-sr-grid .ai-level-evidence{display:block;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+#ai-sr-grid .ai-level-state{justify-self:end;display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:7px 10px;border:1px solid rgba(125,164,190,.2);border-radius:999px;color:#a9bfd0;font:700 9px Manrope,sans-serif;letter-spacing:.08em;text-align:center}
+#ai-sr-grid .ai-level-card.support .ai-level-state{color:#55d9aa;border-color:rgba(43,212,154,.28);background:rgba(43,212,154,.07)}
+#ai-sr-grid .ai-level-card.resistance .ai-level-state{color:#ff91a0;border-color:rgba(255,102,126,.28);background:rgba(255,102,126,.07)}
+#ai-sr-grid .ai-level-card.current .ai-level-state{color:#8bdcff;border-color:rgba(63,184,242,.32);background:rgba(63,184,242,.08)}
+#ai-sr-grid .ai-level-card.current .ai-level-main{grid-template-columns:minmax(0,1fr) minmax(150px,1fr)}
+#ai-sr-grid .ai-level-card.current .ai-level-value{font-size:clamp(23px,2vw,30px)}
+#ai-sr-grid .ai-level-card.no-level{background:linear-gradient(110deg,rgba(18,39,57,.78),rgba(9,26,42,.76))}
+#ai-sr-grid .ai-level-card.no-level .ai-level-value{font-size:16px}
+html[data-theme="light"] #ai-sr-grid .ai-level-state{color:#586f84;background:rgba(92,123,153,.06)}
+html[data-theme="light"] #ai-sr-grid .ai-level-card.support .ai-level-state{color:#16855f;background:rgba(43,180,130,.07)}
+html[data-theme="light"] #ai-sr-grid .ai-level-card.resistance .ai-level-state{color:#c34d62;background:rgba(220,80,100,.06)}
+html[data-theme="light"] #ai-sr-grid .ai-level-card.current .ai-level-state{color:#087db8;background:rgba(63,184,242,.08)}
+@media(max-width:1100px){
+ .app-shell{grid-template-columns:205px minmax(0,1fr);padding:10px}
+ .main-content{padding-left:14px}
+ #ai-sr-grid .ai-level-card{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:10px}
+ #ai-sr-grid .ai-level-state{grid-column:1/-1;justify-self:start}
+ #ai-sr-grid .ai-level-main{grid-template-columns:1fr;gap:5px}
+}
+@media(max-width:850px){
+ .app-shell{display:block;padding:10px}
+ .sidebar{position:relative;top:auto;height:auto;min-height:0;margin-bottom:14px}
+ .main-content{padding:0}
+ .topbar{margin-bottom:18px}
+ .page-heading h1{font-size:clamp(24px,5vw,30px)}
+ .panel{padding:16px}
+ #ai-sr-grid .ai-level-card{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);min-height:90px}
+}
+@media(max-width:600px){
+ body{font-size:14px}
+ .app-shell{padding:8px}
+ .sidebar{padding:12px}
+ .brand{padding-bottom:12px}
+ .main-nav{padding-bottom:2px;scrollbar-width:thin}
+ .nav-item{min-height:40px}
+ .topbar{height:auto;min-height:48px;align-items:center}
+ .breadcrumbs{flex-wrap:wrap;line-height:1.4}
+ .top-actions{gap:6px}
+ .page-heading{gap:14px}
+ .page-heading p{font-size:11px}
+ .heading-actions{flex-wrap:wrap;gap:9px}
+ .panel-heading{align-items:flex-start}
+ .panel-heading h2{font-size:16px}
+ #ai-sr-grid .ai-level-card{grid-template-columns:1fr;gap:8px;padding:15px;min-height:0}
+ #ai-sr-grid .ai-level-main,#ai-sr-grid .ai-level-card.current .ai-level-main{grid-template-columns:1fr;gap:5px}
+ #ai-sr-grid .ai-level-label{font-size:11px}
+ #ai-sr-grid .ai-level-value,#ai-sr-grid .ai-level-card.current .ai-level-value{font-size:22px}
+ #ai-sr-grid .ai-level-evidence{font-size:11px}
+ #ai-sr-grid .ai-level-state{grid-column:auto;justify-self:start;font-size:9px}
+ .metric-grid,.data-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .metric-card{min-height:120px}
+ .levels-grid{grid-template-columns:1fr 1fr}
+ .app-footer{font-size:8px;line-height:1.6}
+}
+@media(max-width:360px){
+ .metric-grid,.data-summary-grid,.levels-grid{grid-template-columns:1fr}
+ .page-heading h1{font-size:23px}
+ .nav-item{padding:0 8px}
+}
