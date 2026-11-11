@@ -325,7 +325,47 @@ def extract_participant_summary(reports):
                     "numeric_fields": numeric_fields[:24],
                 }
 
-                if report_type == "participant_volume":
+                if report_type == "participant_oi":
+                    label_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
+                    aliases = {
+                        "future_index_long": ["Future Index Long", "FutIdxLong"],
+                        "future_index_short": ["Future Index Short", "FutIdxShort"],
+                        "call_index_long": ["Option Index Call Long", "OptIdxCallLong"],
+                        "call_index_short": ["Option Index Call Short", "OptIdxCallShort"],
+                        "put_index_long": ["Option Index Put Long", "OptIdxPutLong"],
+                        "put_index_short": ["Option Index Put Short", "OptIdxPutShort"],
+                    }
+                    columns = {key: find_column(df, names) for key, names in aliases.items()}
+                    participant_rows = []
+                    if label_col:
+                        detail["participant_labels"] = df[label_col].astype(str).head(10).tolist()
+                        for _, row in df.iterrows():
+                            label = str(row[label_col]).strip()
+                            if not label or label.lower() in {"nan", "total"}:
+                                continue
+                            values = {
+                                key: (_float(numeric(pd.Series([row[col]])).iloc[0]) if col else None)
+                                for key, col in columns.items()
+                            }
+                            if not any(value is not None for value in values.values()):
+                                continue
+                            future_net = (
+                                values["future_index_long"] - values["future_index_short"]
+                                if values["future_index_long"] is not None and values["future_index_short"] is not None else None
+                            )
+                            option_net = None
+                            if all(values[key] is not None for key in ("call_index_long", "call_index_short", "put_index_long", "put_index_short")):
+                                option_net = (values["call_index_long"] - values["call_index_short"]) + (values["put_index_short"] - values["put_index_long"])
+                            values["future_index_net"] = future_net
+                            values["option_directional_proxy_contracts"] = option_net
+                            values["combined_directional_proxy_contracts"] = (
+                                future_net + option_net if future_net is not None and option_net is not None else None
+                            )
+                            values["interpretation"] = "Participant-reported EOD positioning; option net is a directional proxy and may include hedges."
+                            participant_rows.append({"participant": label, **values})
+                    detail["participant_positions"] = participant_rows
+                    detail["interpretation"] = "Participant-wise end-of-day open positions. Long/short fields are reported values; net option exposure is a proxy, not verified directional intent."
+                elif report_type == "participant_volume":
                     label_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
                     long_col = find_column(df, ["Total Long Contracts", "TotalLongContracts"])
                     short_col = find_column(df, ["Total Short Contracts", "TotalShortContracts"])
