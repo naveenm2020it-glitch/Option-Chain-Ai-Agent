@@ -20,3 +20,16 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m pytest -q
+
+      - name: Smoke-test live Render endpoint and password removal
+        run: |
+          for attempt in $(seq 1 18); do
+            body="$(curl -fsS https://nifty-next-day-ai-live.onrender.com/api/health)" || body=""
+            if [ -n "$body" ]; then
+              echo "$body"
+              echo "$body" | grep -q '"auth_required":false' && exit 0
+            fi
+            sleep 10
+          done
+          echo "Render health endpoint did not confirm auth_required=false"
+          exit 1
