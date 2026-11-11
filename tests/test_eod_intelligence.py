@@ -56,3 +56,29 @@ def test_option_positioning_uses_nearest_expiry_and_nifty_only(monkeypatch):
     assert len(result["strikes"]) == 2
     assert result["call_writing_strikes"] == [25000.0]
     assert result["put_writing_strikes"] == [24900.0]
+
+
+def test_oi_migration_compares_same_expiry_across_uploaded_sessions(monkeypatch):
+    from nifty_ai import eod_intelligence
+
+    previous = {"available": True, "expiry": "2026-11-19", "top_call_oi_strike": 25000,
+                "top_put_oi_strike": 24900,
+                "strikes": [{"strike": 25000, "ce_oi": 1000, "pe_oi": 100},
+                            {"strike": 24900, "ce_oi": 100, "pe_oi": 900}]}
+    current = {"available": True, "expiry": "2026-11-19", "top_call_oi_strike": 25100,
+               "top_put_oi_strike": 25000,
+               "strikes": [{"strike": 25100, "ce_oi": 1800, "pe_oi": 50},
+                           {"strike": 25000, "ce_oi": 1200, "pe_oi": 1100}]}
+
+    def fake_load(items, day):
+        return current if day == "2026-11-11" else previous
+
+    monkeypatch.setattr(eod_intelligence, "_load_option_rows", fake_load)
+    reports = [
+        {"report_type": "fo_bhavcopy", "trading_date": "2026-11-10"},
+        {"report_type": "fo_bhavcopy", "trading_date": "2026-11-11"},
+    ]
+    result = eod_intelligence._compare_oi_migration(reports, "2026-11-11")
+    assert result["available"] is True
+    assert result["call_wall_shift_points"] == 100
+    assert result["put_wall_shift_points"] == 100
