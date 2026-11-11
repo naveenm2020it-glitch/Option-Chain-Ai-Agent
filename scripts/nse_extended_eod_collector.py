@@ -103,7 +103,9 @@ def _match_discovered(kind, day, discovered):
     spec = SPECS[kind]
     candidates = discovered.get(day.isoformat(), [])
     for item in candidates:
-        if any(token in item["display"] for token in spec["display"]):
+        display_key = "".join(ch for ch in str(item.get("display", "")).lower() if ch.isalnum())
+        if any("".join(ch for ch in token.lower() if ch.isalnum()) in display_key
+               for token in spec["display"]):
             # The CM and FO APIs both publish "Daily Volatility". The API
             # segment disambiguates CMVOLT from FOVOLT.
             name = item["filename"].upper()
