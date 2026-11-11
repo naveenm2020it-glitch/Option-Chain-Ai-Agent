@@ -1,25 +1,35 @@
 # NIFTY Next-Day AI Intelligence
 
-A personal, local-first NIFTY end-of-day research application. The repository source is stored in a split ZIP bundle; run `python bootstrap.py` to reconstruct it.
+The repository contains a source archive split into small binary parts for the GitHub deployment upload. The application source is reconstructed by `bootstrap.py`.
 
-## Windows quick start
-1. Download this repository with **Code → Download ZIP** (or clone it).
-2. Install Python 3.12 (64-bit).
-3. Double-click `START_HERE.bat`. It reconstructs the app and launches it.
-4. Open `http://127.0.0.1:8000`.
-5. Put manually downloaded NSE reports in `INCOMING_REPORTS/`, or upload them through Data Centre.
-6. Review the validation checklist and run the six-agent analysis.
+## Start locally on Windows
+
+1. Download this repository using **Code → Download ZIP**, or clone it.
+2. Install Python 3.12 (64-bit) with the `py` launcher.
+3. Double-click `START_HERE.bat`. It reconstructs the source and launches the local app.
+4. Open `http://127.0.0.1:8000` if it does not open automatically.
+5. Put your manually downloaded NSE reports into `INCOMING_REPORTS/`, or choose Data centre → Import files.
+6. Confirm the report checklist, then run the six-agent analysis.
 
 ## Render
-The root `render.yaml` defines a free Python service in Singapore. Set a strong unique `NIFTY_APP_PASSWORD` in Render. Render disables local folder watching and supports browser uploads. Free service storage is temporary; keep originals and long-term history on your PC. The local Windows mode is the persistent personal workspace.
 
-## Features
-- Import and audit the 12 selected NSE EOD report types.
-- Folder monitoring locally, ZIP extraction, duplicate fingerprints, data-date checks and import logs.
-- NIFTY OHLC pivots, R/S levels and CPR when valid spot OHLC is available.
-- NIFTY options OI, PCR, max CE/PE OI strike candidates and Max Pain when the bhavcopy schema is recognized.
-- Six transparent specialist analytics modules and a master evidence summary.
-- SQLite report and prediction history.
-- Dark navy/cyan glass dashboard inspired by the supplied references.
+The root `render.yaml` creates a free Python web service in Singapore. Add a strong unique `NIFTY_APP_PASSWORD` in the Render environment. Browser report uploads are supported. The free Render filesystem is temporary; uploaded files and SQLite history can be lost after restart or redeploy. Keep original reports and long-term history on your PC. The local Windows mode is the persistent personal workspace.
 
-The application does not scrape NSE or automatically download exchange reports. Missing values are not fabricated. The engine withholds predictions when required data is incomplete. ML performance is not claimed until sufficient historical inputs and chronological walk-forward validation exist. Check the permitted use of downloaded market data. Research only; no orders are placed.
+## What it does
+
+- Imports the 12 NSE EOD report types selected by the user: NIFTY 50 historical index, India VIX, CM UDiFF Bhavcopy, CM delivery, CM volatility, FII/DII activity, F&O UDiFF Bhavcopy, participant OI, participant volumes, FII derivatives statistics, F&O settlement prices and F&O volatility.
+- Detects files in the local `INCOMING_REPORTS/` folder, fingerprints duplicates, extracts ZIP contents and audits each report.
+- Calculates previous-day classic pivot, R1/R2/R3, S1/S2/S3 and CPR from genuine NIFTY OHLC.
+- Calculates NIFTY option OI aggregates, PCR, max CE/PE OI strike candidates and Max Pain where the UDiFF contract schema is recognized.
+- Produces six transparent specialist analytics outputs and one master evidence summary.
+- Saves reports, daily index prices and analysis history locally.
+
+The app does not scrape NSE or automatically download NSE reports. The user downloads reports manually from NSE. It does not fabricate missing market values. Historical ML claims are withheld until sufficient valid history has been imported and walk-forward testing has been performed. Check NSE's data terms for the permitted use of downloaded reports. This is a personal research tool, not investment advice or order execution.
+
+## Render build
+
+`python bootstrap.py && pip install -r requirements.txt`
+
+Start: `uvicorn app:app --host 0.0.0.0 --port $PORT`
+
+Health: `/api/health`

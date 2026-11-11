@@ -1,9 +1,9 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 py -3.12 bootstrap.py
 if errorlevel 1 (
-  echo.
-  echo Source setup failed. Install Python 3.12 and retry.
+  echo Could not reconstruct the source. Install Python 3.12 first.
   pause
   exit /b 1
 )

@@ -1,4 +1,4 @@
-"""Rebuild the application source archive from the checked-in GitHub bundle parts."""
+"""Rebuild the checked-in source archive from GitHub's binary bundle parts."""
 from pathlib import Path
 import zipfile
 
@@ -7,6 +7,10 @@ PARTS = ROOT / "bundle.parts"
 ARCHIVE = ROOT / "nifty-ai-source.zip"
 
 def main():
+    # Prefer reviewed, version-controlled application files over the legacy archive.
+    if (ROOT / "app.py").is_file() and (ROOT / "nifty_ai" / "analytics.py").is_file():
+        print("Using checked-in application source; legacy bundle extraction skipped.")
+        return
     pieces = sorted(PARTS.glob("part-*"))
     if not pieces:
         raise SystemExit("Source bundle parts were not found in bundle.parts/.")
