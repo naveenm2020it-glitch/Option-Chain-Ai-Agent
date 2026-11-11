@@ -82,3 +82,26 @@ def test_oi_migration_compares_same_expiry_across_uploaded_sessions(monkeypatch)
     assert result["available"] is True
     assert result["call_wall_shift_points"] == 100
     assert result["put_wall_shift_points"] == 100
+
+
+def test_option_pressure_labels_cover_four_eod_combinations_and_missing_fields():
+    from nifty_ai.eod_intelligence import _classify_option_pressure
+
+    assert _classify_option_pressure(100, 5) == "LONG_BUILDUP_PROXY"
+    assert _classify_option_pressure(100, -5) == "SHORT_BUILDUP_PROXY"
+    assert _classify_option_pressure(-100, 5) == "SHORT_COVERING_PROXY"
+    assert _classify_option_pressure(-100, -5) == "LONG_UNWINDING_PROXY"
+    assert _classify_option_pressure(100, None) == "INSUFFICIENT_FIELDS"
+    assert _classify_option_pressure(100, 5, has_oi_change=False) == "INSUFFICIENT_FIELDS"
+
+
+def test_option_pressure_summary_marks_missing_required_fields_partial():
+    from nifty_ai.eod_intelligence import _summarize_option_pressure
+
+    result = _summarize_option_pressure(
+        [{"ce_pressure_label": "INSUFFICIENT_FIELDS", "pe_pressure_label": "INSUFFICIENT_FIELDS"}],
+        {"oi", "volume"},
+    )
+    assert result["status"] == "PARTIAL"
+    assert result["classification_counts"]["ce"]["INSUFFICIENT_FIELDS"] == 1
+    assert "change_in_open_interest" in result["required_fields"]
