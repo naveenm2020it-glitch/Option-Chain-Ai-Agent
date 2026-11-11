@@ -79,9 +79,8 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
 def _session() -> requests.Session:
     session = requests.Session()
     session.headers.update(HEADERS)
-    # NSE archive hosts may require a first-party session cookie.
-    session.get(NSE_HOME, timeout=(10, 25)).raise_for_status()
-    session.get(NSE_REPORTS, timeout=(10, 25)).raise_for_status()
+    # Do not require a homepage warm-up: NSE can block the homepage from
+    # cloud-runner IPs while still serving the public archive files directly.
     return session
 
 
