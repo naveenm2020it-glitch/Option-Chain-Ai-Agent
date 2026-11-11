@@ -428,7 +428,7 @@ def _institutional_positioning(reports, institutional, participant, migration):
     bias = "BULLISH" if score > 0.04 else "BEARISH" if score < -0.04 else "NEUTRAL"
     if not (participant_net.get("available") or institutional.get("available") or migration.get("available")):
         bias = "UNAVAILABLE"
-    status = "partial" if available or participant_net.get("available") or migration.get("available") else "missing_data"
+    status = "partial" if participant_net.get("available") or institutional.get("available") or migration.get("available") else "missing_data"
     evidence = ["Participant positioning is a broad index context and cannot identify exact defending traders at an individual strike."]
     if participant_net.get("available"):
         evidence.append("FII index futures/options net positioning was calculated only where the report supplied all required long/short fields.")
@@ -499,8 +499,14 @@ def augment_analysis(result, reports, history_reports=None):
         chain_bias = "BULLISH" if chain_score > 0.06 else "BEARISH" if chain_score < -0.06 else "NEUTRAL"
         for agent in result["agents"]:
             if agent.get("name") == "Option Chain":
+                base_metrics = {k: v for k, v in agent.get("metrics", {}).items()
+                                if k not in {"ce_oi", "pe_oi", "pcr", "ce_change_oi", "pe_change_oi",
+                                             "highest_ce_oi_strike", "highest_pe_oi_strike", "max_pain"}}
                 agent.update({"bias": chain_bias, "score": round(chain_score, 4),
-                              "metrics": {**agent.get("metrics", {}), "selected_expiry": option_evidence.get("expiry"),
+                              "metrics": {**base_metrics, "selected_expiry": option_evidence.get("expiry"),
+                                          "selected_expiry_ce_oi": option_evidence.get("ce_total_oi"),
+                                          "selected_expiry_pe_oi": option_evidence.get("pe_total_oi"),
+                                          "selected_expiry_pcr": option_evidence.get("pcr"),
                                           "fresh_call_writing_proxy_strikes": option_evidence.get("call_writing_strikes", []),
                                           "fresh_put_writing_proxy_strikes": option_evidence.get("put_writing_strikes", []),
                                           "nearest_expiry_only": True},
