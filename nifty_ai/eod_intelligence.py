@@ -100,6 +100,10 @@ def _load_option_rows(reports, trading_date):
         for side in ("ce", "pe"):
             changes = values[side + "_premium_change"]
             item[side + "_premium_change_pct"] = sum(changes) / len(changes) if changes else None
+            item[side + "_pressure_label"] = _classify_option_pressure(
+                item[side + "_change"], item[side + "_premium_change_pct"],
+                has_oi_change="change_oi" in available_fields,
+            )
         rows.append(item)
     total_ce = sum(x["ce_oi"] for x in rows)
     total_pe = sum(x["pe_oi"] for x in rows)
@@ -125,8 +129,53 @@ def _load_option_rows(reports, trading_date):
         "put_writing_strikes": [x["strike"] for x in put_writers[:5]],
         "call_writing_count": len(call_writers), "put_writing_count": len(put_writers),
         "total_option_oi": total_oi,
+        "pressure_analysis": _summarize_option_pressure(rows, available_fields),
     }
 
+
+
+def _classify_option_pressure(oi_change, premium_change_pct, has_oi_change=True):
+    """Classify EOD OI/premium combinations as descriptive proxies, never verified intent."""
+    if not has_oi_change or oi_change is None or premium_change_pct is None:
+        return "INSUFFICIENT_FIELDS"
+    oi_delta = float(oi_change)
+    premium_delta = float(premium_change_pct)
+    if oi_delta > 0 and premium_delta > 0:
+        return "LONG_BUILDUP_PROXY"
+    if oi_delta > 0 and premium_delta < 0:
+        return "SHORT_BUILDUP_PROXY"
+    if oi_delta < 0 and premium_delta > 0:
+        return "SHORT_COVERING_PROXY"
+    if oi_delta < 0 and premium_delta < 0:
+        return "LONG_UNWINDING_PROXY"
+    return "NO_CLEAR_CHANGE"
+
+
+def _summarize_option_pressure(strikes, available_fields):
+    labels = ("LONG_BUILDUP_PROXY", "SHORT_BUILDUP_PROXY",
+              "SHORT_COVERING_PROXY", "LONG_UNWINDING_PROXY",
+              "NO_CLEAR_CHANGE", "INSUFFICIENT_FIELDS")
+    summary = {side: {label: 0 for label in labels} for side in ("ce", "pe")}
+    for row in strikes:
+        for side in ("ce", "pe"):
+            label = row.get(side + "_pressure_label", "INSUFFICIENT_FIELDS")
+            summary[side][label] = summary[side].get(label, 0) + 1
+    has_change = "change_oi" in available_fields
+    has_premium = "premium_close" in available_fields and "previous_premium" in available_fields
+    ready = bool(strikes) and has_change and has_premium
+    return {
+        "status": "PARTIAL" if strikes and (not has_change or not has_premium) else "READY" if ready else "INSUFFICIENT DATA",
+        "classification_counts": summary,
+        "contracts_or_strikes_evaluated": len(strikes),
+        "required_fields": ["open_interest", "change_in_open_interest", "close_premium", "previous_close_premium"],
+        "available_fields": sorted(available_fields),
+        "method": "EOD change-in-OI sign combined with option premium percentage change sign.",
+        "limitations": [
+            "Labels are contract-level positioning proxies, not proof of buyer/seller identity or intent.",
+            "Daily bhavcopy does not reveal intraday sequence, order-book depth or trade initiation.",
+            "Missing OI-change or premium comparison fields suppress classification rather than being treated as zero."
+        ]
+    }
 
 def _touch_count(rows, center, tolerance, side):
     count = 0
