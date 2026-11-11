@@ -43,11 +43,10 @@ def _load_option_rows(reports, trading_date):
             volume = find_column(df, ["TtlTradgVol", "Total Traded Volume", "Volume", "TradedVolume"])
             close = find_column(df, ["ClsPric", "Close", "ClosePrice", "LastPric"])
             previous = find_column(df, ["PrvsClsgPric", "Previous Close", "PrevClose", "PrvsClsgPric"])
-            if not all((opt, strike, oi)):
+            if not all((symbol, opt, strike, oi)):
                 continue
-            if symbol:
-                tokens = df[symbol].astype(str).str.upper().str.replace(r"[^A-Z0-9]", "", regex=True)
-                df = df[tokens.isin(["NIFTY", "NIFTY50"])]
+            tokens = df[symbol].astype(str).str.upper().str.replace(r"[^A-Z0-9]", "", regex=True)
+            df = df[tokens.isin(["NIFTY", "NIFTY50"])]
             types = df[opt].astype(str).str.upper().str.strip().replace({"CALL": "CE", "PUT": "PE"})
             df = df[types.isin(["CE", "PE"])].copy()
             if df.empty:
