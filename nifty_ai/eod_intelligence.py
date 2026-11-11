@@ -14,7 +14,15 @@ from .reports import load_tables, norm_columns, find_column, numeric
 
 
 def _as_date(value):
-    parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", text):
+        parsed = pd.to_datetime(text, format="%Y-%m-%d", errors="coerce")
+    elif re.fullmatch(r"\\d{8}", text):
+        parsed = pd.to_datetime(text, format="%Y%m%d", errors="coerce")
+    else:
+        parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
     return parsed.date() if pd.notna(parsed) else None
 
 
