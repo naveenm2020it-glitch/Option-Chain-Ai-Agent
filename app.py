@@ -450,7 +450,9 @@ def options_analysis(tables: list) -> dict:
                 "available_columns": [str(c) for c in df.columns]}
     work = df.copy()
     if symbol_c:
-        work = work[work[symbol_c].astype(str).str.upper().str.contains("NIFTY", na=False)]
+        # NIFTY 50 only: do not accidentally mix BANKNIFTY / FINNIFTY contracts.
+        normalized_symbols = work[symbol_c].astype(str).str.upper().str.strip()
+        work = work[normalized_symbols.isin(["NIFTY", "NIFTY 50"])]
     if expiry_c:
         expiry_values = pd.to_datetime(work[expiry_c], errors="coerce", dayfirst=True)
         valid_expiries = expiry_values.dropna()

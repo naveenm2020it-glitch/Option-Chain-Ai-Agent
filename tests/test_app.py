@@ -33,7 +33,10 @@ def test_option_analytics_maps_udiff_style_columns():
         {"TckrSymb":"NIFTY","XpryDt":"26-Nov-2026","StrkPric":"25000","OptnTp":"PE","OpnIntrst":"1500"},
         {"TckrSymb":"NIFTY","XpryDt":"26-Nov-2026","StrkPric":"25100","OptnTp":"CE","OpnIntrst":"1200"},
         {"TckrSymb":"NIFTY","XpryDt":"26-Nov-2026","StrkPric":"25100","OptnTp":"PE","OpnIntrst":"1400"},
+        {"TckrSymb":"BANKNIFTY","XpryDt":"26-Nov-2026","StrkPric":"50000","OptnTp":"CE","OpnIntrst":"999999"},
+        {"TckrSymb":"FINNIFTY","XpryDt":"26-Nov-2026","StrkPric":"25000","OptnTp":"PE","OpnIntrst":"999999"},
     ])
     result = options_analysis([("fo.csv","fo_bhavcopy",frame)])
     assert result["status"] == "valid"
     assert result["pcr"] == (1500 + 1400) / (1000 + 1200)
+    assert result["rows"] == 4
