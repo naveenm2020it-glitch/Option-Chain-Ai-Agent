@@ -33,3 +33,11 @@ jobs:
           done
           echo "Render health endpoint did not confirm auth_required=false"
           exit 1
+
+      - name: Verify deployed dashboard and unauthenticated state endpoint
+        run: |
+          page="$(curl -fsS https://nifty-next-day-ai-live.onrender.com/)"
+          echo "$page" | grep -q 'theme-toggle'
+          echo "$page" | grep -q 'ai-sr-grid'
+          curl -fsS https://nifty-next-day-ai-live.onrender.com/api/state >/dev/null
+          echo "Dashboard HTML and public state endpoint are responding."
