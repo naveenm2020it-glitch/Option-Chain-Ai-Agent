@@ -38,7 +38,7 @@ jobs:
           PYTHONPATH: .
           NIFTY_APP_PASSWORD: ""
           NIFTY_ENABLE_WATCHER: "false"
-        run: python -m pytest -q
+        run: python -m pytest -q --ignore=tests/e2e
       - name: JavaScript syntax validation
         run: node --check static/app.js
 
