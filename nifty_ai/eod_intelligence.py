@@ -504,6 +504,65 @@ def _institutional_positioning(reports, institutional, participant, migration):
                         "fii_nifty_flow_available": fii_nifty_flow_available},
             "evidence": evidence}
 
+def _next_day_regime_agent(price_history, india_vix):
+    rows = [r for r in price_history if all(r.get(k) is not None for k in ("open", "high", "low", "close"))]
+    if len(rows) < 10:
+        return {"name": "Next-Day Regime", "status": "insufficient_history", "bias": "NEUTRAL",
+                "score": 0.0, "confidence": None, "metrics": {"sessions": len(rows), "minimum_sessions": 10},
+                "evidence": ["Ten complete OHLC sessions are required; no regime is guessed from a short sample."]}
+    closes = [float(r["close"]) for r in rows]
+    ranges = []
+    previous_close = None
+    for row in rows:
+        high, low, close = float(row["high"]), float(row["low"]), float(row["close"])
+        tr = max(high - low, abs(high - previous_close), abs(low - previous_close)) if previous_close is not None else high - low
+        ranges.append(tr)
+        previous_close = close
+    ema5 = float(pd.Series(closes).ewm(span=5, adjust=False).mean().iloc[-1])
+    ema10 = float(pd.Series(closes).ewm(span=10, adjust=False).mean().iloc[-1])
+    change5 = closes[-1] / closes[-6] - 1
+    median_range = float(pd.Series(ranges[-10:]).median())
+    latest_range = ranges[-1]
+    high_vol = (india_vix is not None and float(india_vix) >= 22) or (median_range > 0 and latest_range >= 1.5 * median_range)
+    raw = max(-1.0, min(1.0, change5 * 18 + (0.2 if ema5 > ema10 else -0.2 if ema5 < ema10 else 0)))
+    score = raw * (0.5 if high_vol else 1.0)
+    bias = "BULLISH" if score > 0.12 else "BEARISH" if score < -0.12 else "NEUTRAL"
+    regime = "HIGH_VOLATILITY" if high_vol else "TRENDING_UP" if bias == "BULLISH" else "TRENDING_DOWN" if bias == "BEARISH" else "RANGE_OR_MIXED"
+    return {"name": "Next-Day Regime", "status": "complete", "bias": bias, "score": round(score, 4),
+            "confidence": None, "metrics": {"regime": regime, "sessions": len(rows), "five_session_return_pct": round(change5 * 100, 3),
+            "ema5": round(ema5, 2), "ema10": round(ema10, 2), "india_vix": india_vix,
+            "latest_true_range_points": round(latest_range, 2), "median_10_session_true_range_points": round(median_range, 2),
+            "range_reference_type": "HISTORICAL_MEDIAN_TRUE_RANGE_NOT_A_PRICE_TARGET"},
+            "evidence": ["Regime uses only completed OHLC sessions and available India VIX.",
+                         "High volatility reduces directional score; regime classification is not a calibrated probability.",
+                         "The median true range is a historical risk reference, not a guaranteed next-session range."]}
+
+
+def _zone_confluence_agent(defence_map, spot):
+    support = list((defence_map or {}).get("buyer_defence", []))
+    resistance = list((defence_map or {}).get("seller_defence", []))
+    def summarize(items, side):
+        valid = [z for z in items if z.get("center") is not None]
+        if spot is not None:
+            valid = [z for z in valid if (float(z["center"]) < float(spot) if side == "support" else float(z["center"]) > float(spot))]
+        valid.sort(key=lambda z: (abs(float(z["center"]) - float(spot)) if spot is not None else 0,
+                                  -float(z.get("evidence_score", 0))))
+        return [{"center": z.get("center"), "zone_low": z.get("zone_low"), "zone_high": z.get("zone_high"),
+                 "distance_points": round(abs(float(z["center"]) - float(spot)), 2) if spot is not None else None,
+                 "evidence_score": z.get("evidence_score"), "strength": z.get("strength"),
+                 "evidence_sources": z.get("evidence_sources", [])} for z in valid[:3]]
+    nearest_support = summarize(support, "support")
+    nearest_resistance = summarize(resistance, "resistance")
+    usable = bool(nearest_support or nearest_resistance)
+    return {"name": "Zone Confluence & Quality", "status": "complete" if usable else "missing_data",
+            "bias": "NEUTRAL", "score": 0.0, "confidence": None,
+            "metrics": {"nearest_support_candidates": nearest_support, "nearest_resistance_candidates": nearest_resistance,
+                        "support_candidates": len(support), "resistance_candidates": len(resistance),
+                        "score_type": "EVIDENCE_SCORE_NOT_PROBABILITY"},
+            "evidence": ["Ranks independently discovered buyer/seller defence zones by distance and evidence.",
+                         "Does not convert evidence scores into holding probabilities or manufacture missing zones."]}
+
+
 def augment_analysis(result, reports, history_reports=None):
     price_history = []
     for row in result.get("spot_history", []):
@@ -582,32 +641,39 @@ def augment_analysis(result, reports, history_reports=None):
         "evidence": ["Retrospective zone-touch rates are not prospective forecast accuracy.",
                      "Probability calibration remains disabled until timestamped predictions are logged before outcomes."]
     })
+    # Two additional independent specialists: next-day regime and zone quality.
+    regime_agent = _next_day_regime_agent(price_history, result.get("india_vix"))
+    result["agents"].append(regime_agent)
+    spot_price = (price_history[-1].get("close") if price_history else None)
+    result["agents"].append(_zone_confluence_agent(defence, spot_price))
+
     specialists = result["agents"]
     weights = {"Price Action": 1.0, "Option Chain": 1.4, "Volume Profile": 0.45, "Trend": 0.9,
                "Volatility": 0.45, "Pattern Recognition": 0.65, "Historical Validation": 0.55,
                "Buyer & Seller Absorption": 0.55, "Institutional Positioning & Migration": 0.55,
-               "Prediction Accuracy & Calibration": 0.15}
+               "Prediction Accuracy & Calibration": 0.15, "Next-Day Regime": 0.45,
+               "Zone Confluence & Quality": 0.10}
     usable = [x for x in specialists if x.get("status") not in {"missing_data", "insufficient_history"}]
     total_weight = sum(weights.get(x["name"], 0.25) for x in usable)
     master = sum(float(x.get("score") or 0) * weights.get(x["name"], 0.25) for x in usable) / total_weight if total_weight else 0.0
-    completeness = len(usable) / 10
+    completeness = len(usable) / 12
     direction = "BULLISH" if master > 0.15 else "BEARISH" if master < -0.15 else "NEUTRAL"
     if completeness < 0.5:
         direction = "INSUFFICIENT_DATA"
     result["agents"].append({
         "name": "Final Consensus", "status": "complete" if completeness >= 0.7 else "partial",
         "bias": direction, "score": round(master, 4), "confidence": None,
-        "metrics": {"specialist_agents": 10, "available_specialists": len(usable),
+        "metrics": {"specialist_agents": 12, "available_specialists": len(usable),
                     "data_completeness_pct": round(completeness * 100, 1),
                     "weighted_score": round(master, 4), "probability": None},
-        "evidence": ["Agent 11 synthesises the ten specialist outputs, including buyer/seller defence and independent accuracy review.",
+        "evidence": ["Agent 13 synthesises twelve specialists, including regime classification, zone quality, institutional context and accuracy review.",
                      "This is not a calibrated probability; incomplete evidence and conflicting signals remain visible."]
     })
     result["direction"] = direction
     result["master_score"] = round(master, 4)
     result["confidence"] = None
     result["data_completeness"] = round(completeness * 100, 1)
-    result["agent_count"] = 11
+    result["agent_count"] = 13
     result["methodology"] = ("Ten specialist agents analyse daily price structure, nearest-expiry option positioning, "
         "institutional context, volatility, historical patterns and retrospective zone tests. Agent 8 is final consensus. "
         "Evidence scores are not probabilities; no pivot-derived support/resistance is used as AI discovery.")
