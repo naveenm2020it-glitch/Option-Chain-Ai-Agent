@@ -55,11 +55,14 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
         last_error = None
         for encoding in ("utf-8-sig", "latin1"):
             try:
-                frame = pd.read_csv(BytesIO(payload), sep=None, engine="python", encoding=encoding)
+                frame = pd.read_csv(BytesIO(payload), sep=None, engine="python", encoding=encoding, header=1)
                 frame = frame.dropna(how="all")
-                if frame.empty or len(frame.columns) < 2:
-                    raise ValueError("CSV has no usable tabular rows")
-                return int(len(frame)), [str(c).strip() for c in frame.columns]
+                if frame.empty or len(frame.columns) < 4:
+                    raise ValueError("CSV has no usable tabular rows after its title line")
+                columns = [str(c).strip() for c in frame.columns]
+                if "Client Type" not in columns:
+                    raise ValueError("Participant-volume CSV is missing its Client Type table header")
+                return int(len(frame)), columns
             except Exception as exc:
                 last_error = exc
         raise ValueError(f"Participant volume CSV validation failed: {last_error}")
@@ -67,7 +70,7 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
     # NSE publishes this report as legacy Excel .xls. Refuse HTML/CSV error pages.
     if not payload.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
         raise ValueError("FII report is not a genuine XLS/OLE workbook")
-    book = pd.read_excel(BytesIO(payload), sheet_name=None, engine="xlrd")
+    book = pd.read_excel(BytesIO(payload), sheet_name=None, engine="xlrd", header=1)
     frames = [frame.dropna(how="all") for frame in book.values() if isinstance(frame, pd.DataFrame)]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
