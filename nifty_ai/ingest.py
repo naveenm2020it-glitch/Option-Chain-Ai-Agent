@@ -36,6 +36,7 @@ def import_path(path: Path, trading_date=None):
     fp = fingerprint(content)
     report_type = identify_report(path.name)
     info = inspect_report(report_type, str(path))
+    report_type = info.get("report_type", report_type)
     date = info.get("trading_date") or trading_date
     item = {
         "fingerprint": fp,
