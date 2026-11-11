@@ -315,7 +315,8 @@ def _cell_number(row, column):
 def _participant_index_net(reports):
     totals = []
     for item in reports:
-        if item.get("report_type") not in {"participant_oi", "fii_derivatives"}:
+        report_type = item.get("report_type")
+        if report_type not in {"participant_oi", "fii_derivatives"}:
             continue
         try:
             tables = load_tables(item["file_path"])
@@ -323,6 +324,35 @@ def _participant_index_net(reports):
             continue
         for _, frame in tables:
             df = norm_columns(frame)
+            if report_type == "fii_derivatives":
+                # The NSE FII XLS has two grouped header rows. Use the NIFTY
+                # futures buy/sell contract counts as daily flow, not as OI.
+                instrument_col = df.columns[0] if len(df.columns) else None
+                buy_col = find_column(df, ["BUY No. of contracts"])
+                sell_col = find_column(df, ["SELL No. of contracts"])
+                if not instrument_col or not buy_col or not sell_col:
+                    continue
+                for _, row in df.iterrows():
+                    label = str(row[instrument_col]).strip().upper()
+                    if label != "NIFTY FUTURES":
+                        continue
+                    buy_value = _cell_number(row, buy_col)
+                    sell_value = _cell_number(row, sell_col)
+                    if buy_value is None or sell_value is None:
+                        continue
+                    net_value = buy_value - sell_value
+                    totals.append({
+                        "participant": "FII",
+                        "future_index_net": net_value,
+                        "option_index_net": 0.0,
+                        "combined_index_net": net_value,
+                        "source": item.get("original_name"),
+                        "metric": "fii_nifty_futures_net_traded_contracts",
+                        "buy_contracts": buy_value,
+                        "sell_contracts": sell_value,
+                    })
+                continue
+
             participant_col = find_column(df, ["Client Type", "Participant", "Client Type Name", "Category"])
             if not participant_col:
                 continue
@@ -355,12 +385,11 @@ def _participant_index_net(reports):
                         option_net = (cl - cs) + (ps - pl)
                 totals.append({"participant": label, "future_index_net": future_net,
                                "option_index_net": option_net, "combined_index_net": future_net + option_net,
-                               "source": item.get("original_name")})
+                               "source": item.get("original_name"), "metric": "participant_open_interest_position"})
     if not totals:
         return {"available": False, "net": None, "rows": []}
     net = sum(x["combined_index_net"] for x in totals)
     return {"available": True, "net": net, "rows": totals}
-
 
 def _compare_oi_migration(history_reports, trading_date):
     target_day = _as_date(trading_date)
