@@ -179,6 +179,19 @@ def _summarize_option_pressure(strikes, available_fields):
         ]
     }
 
+def _expiry_context(trading_date, expiry):
+    trade_day, expiry_day = _as_date(trading_date), _as_date(expiry)
+    if not trade_day or not expiry_day:
+        return {"status": "INSUFFICIENT DATA", "trading_date": str(trading_date or ""),
+                "expiry": str(expiry or ""), "days_to_expiry": None}
+    days = (expiry_day - trade_day).days
+    if days < 0:
+        return {"status": "INVALID_EXPIRY_ALIGNMENT", "trading_date": trade_day.isoformat(),
+                "expiry": expiry_day.isoformat(), "days_to_expiry": days}
+    return {"status": "READY", "trading_date": trade_day.isoformat(),
+            "expiry": expiry_day.isoformat(), "days_to_expiry": days,
+            "expiry_day": days == 0}
+
 def _touch_count(rows, center, tolerance, side):
     count = 0
     for row in rows[-60:]:
@@ -688,7 +701,26 @@ def augment_analysis(result, reports, history_reports=None):
     option_evidence = _load_option_rows(reports, result.get("trading_date"))
     if option_evidence.get("available"):
         result["option_positioning"] = {k: v for k, v in option_evidence.items() if k != "strikes"}
-        result["option_pressure"] = {"expiry": option_evidence.get("expiry"), "strikes": option_evidence.get("strikes", []), "summary": option_evidence.get("pressure_analysis", {})}
+        result["option_pressure"] = {
+            "expiry": option_evidence.get("expiry"),
+            "expiry_context": _expiry_context(result.get("trading_date"), option_evidence.get("expiry")),
+            "strikes": option_evidence.get("strikes", []),
+            "summary": option_evidence.get("pressure_analysis", {}),
+            "settlement_context": {
+                "status": "PARTIAL" if (result.get("settlement_report") or {}).get("readable") else "INSUFFICIENT DATA",
+                "report_files": (result.get("settlement_report") or {}).get("files", 0),
+                "report_rows": (result.get("settlement_report") or {}).get("rows", 0),
+                "columns": (result.get("settlement_report") or {}).get("columns", []),
+                "limitation": "Settlement report is detected, but contract-level settlement prices are not yet reconciled to each option strike and expiry."
+            },
+            "volatility_context": {
+                "status": "PARTIAL" if (result.get("volatility_reports") or {}).get("readable") or result.get("india_vix") is not None else "INSUFFICIENT DATA",
+                "india_vix_eod": result.get("india_vix"),
+                "report_metrics": (result.get("volatility_reports") or {}).get("metrics", {}),
+                "report_files": (result.get("volatility_reports") or {}).get("files", 0),
+                "limitation": "EOD volatility fields and India VIX are contextual risk measures; they do not produce intraday implied-volatility surfaces or Greeks."
+            }
+        }
         # Replace the coarse all-expiry OI walls with nearest-expiry evidence for the defence map.
         options_for_map = {
             "available": True,
