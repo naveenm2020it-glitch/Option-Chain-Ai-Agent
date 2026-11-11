@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from . import database
 from .reports import REPORTS, load_tables, norm_columns, find_column, numeric
+from .institutional import summarize_cash_flow_trend
 
 
 SPOT_ALIASES = {
@@ -202,12 +203,17 @@ def extract_fii_dii(reports):
                             b, s = _float(numeric(pd.Series([row[buy]])).iloc[0]) if buy else None, _float(numeric(pd.Series([row[sell]])).iloc[0]) if sell else None
                             n = _float(numeric(pd.Series([row[net]])).iloc[0]) if net else ((b-s) if b is not None and s is not None else None)
                             if n is not None:
-                                result["rows"].append({"category": category, "buy": b, "sell": s, "net": n})
+                                result["rows"].append({"category": category, "buy": b, "sell": s, "net": n,
+                                                       "trading_date": item.get("trading_date"),
+                                                       "source": item.get("original_name")})
         except Exception:
             continue
     if result["rows"]:
         total = sum(x["net"] for x in result["rows"])
         result.update({"available": True, "net_total": total, "bias": "BULLISH" if total > 0 else "BEARISH" if total < 0 else "NEUTRAL"})
+        result["cash_flow_trend"] = summarize_cash_flow_trend(result["rows"])
+    else:
+        result["cash_flow_trend"] = summarize_cash_flow_trend([])
     return result
 
 
