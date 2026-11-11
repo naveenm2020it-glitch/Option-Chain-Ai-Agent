@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from nifty_ai import analytics
 from nifty_ai import eod_intelligence
@@ -46,7 +47,7 @@ def test_fii_derivatives_summary_extracts_nifty_futures_buy_sell_and_oi(monkeypa
     futures = next(row for row in instruments if row["instrument"] == "NIFTY FUTURES")
     assert futures["net_traded_contracts"] == -16534
     assert futures["open_interest_contracts"] == 262207
-    assert futures["net_traded_value_crores"] == -2451.65
+    assert futures["net_traded_value_crores"] == pytest.approx(-2451.65)
 
 
 def test_fii_derivatives_net_flow_is_used_as_separate_institutional_evidence(monkeypatch):
