@@ -67,7 +67,7 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
                     last_error = exc
         raise ValueError(f"Participant volume CSV validation failed: {last_error}")
 
-    # NSE publishes this report as legacy Excel .xls. Refuse HTML/CSV error pages.
+    # NSE publishes this report as legacy Excel .xls with two grouped header rows. Refuse HTML/CSV error pages.
     if not payload.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
         raise ValueError("FII report is not a genuine XLS/OLE workbook")
     book = pd.read_excel(BytesIO(payload), sheet_name=None, engine="xlrd", header=[1, 2])
