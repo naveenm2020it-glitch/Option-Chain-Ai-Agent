@@ -37,6 +37,8 @@ def test_dashboard_navigation_and_primary_views():
         assert "eod_price_action" in result
         assert result["eod_price_action"].get("intraday_status") == "LIMITED — EOD DATA ONLY"
         page.locator("#eod-price-action-overview-content").get_by_text("Status:").wait_for(state="visible", timeout=5000)
+        page.get_by_role("button", name="Open detailed market levels ↗").click()
+        page.locator("#view-levels.active").wait_for(state="visible", timeout=5000)
         page.locator("#eod-price-action-content").get_by_text("Status:").wait_for(state="visible", timeout=5000)
         assert not errors, "Browser JavaScript errors: " + "; ".join(errors)
         browser.close()
