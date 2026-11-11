@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -41,7 +41,7 @@
       <div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="page-name">Overview</strong></div>
       <div class="top-actions">
         <div class="market-chip"><span class="pulse"></span><span>NIFTY 50</span><small>EOD RESEARCH</small></div>
-        <button class="icon-button" id="theme-toggle" title="Switch to dark theme" aria-label="Toggle colour theme">☾</button><button class="icon-button" id="refresh-button" title="Refresh data">↻</button>
+        <button class="icon-button" id="refresh-button" title="Refresh data">↻</button>
         <button class="profile-button"><span class="avatar small">N</span><span>My workspace</span><span class="chevron">⌄</span></button>
       </div>
     </header>
@@ -70,19 +70,19 @@
 
         <article class="panel briefing-panel">
           <div class="panel-heading"><div><div class="panel-kicker">MASTER DECISION ENGINE</div><h2>Tomorrow's outlook</h2></div><span class="engine-symbol">✳</span></div>
-          <div class="outlook-state" id="outlook-state"><span class="outlook-orbit">✧</span><strong>Analysis not run</strong><small>Import reports, then run the eight-agent analysis.</small></div>
+          <div class="outlook-state" id="outlook-state"><span class="outlook-orbit">✧</span><strong>Analysis not run</strong><small>Import reports, then run the six-agent analysis.</small></div>
           <div class="outlook-divider"></div>
           <div class="outlook-row"><span>Consolidated score</span><strong class="mono" id="outlook-score">—</strong></div>
           <div class="outlook-row"><span>Data completeness</span><strong class="mono" id="outlook-completeness">—</strong></div>
           <div class="outlook-row"><span>Analysis timestamp</span><strong class="mono" id="outlook-time">—</strong></div>
-          <button class="button button-primary button-full" id="run-analysis"><span>✳</span> Run eight-agent analysis</button>
+          <button class="button button-primary button-full" id="run-analysis"><span>✳</span> Run six-agent analysis</button>
           <p class="fine-print">Evidence-based research output. Not a guaranteed market prediction or trading instruction.</p>
         </article>
       </div>
 
       <div class="lower-grid">
         <article class="panel levels-preview"><div class="panel-heading compact"><div><div class="panel-kicker">PREVIOUS-DAY CALCULATIONS</div><h2>Key market levels</h2></div><button class="subtle-link" data-view-link="levels">View levels ↗</button></div><div class="level-list" id="overview-levels"><div class="empty-inline">Levels appear after a valid NIFTY OHLC report is imported.</div></div></article>
-        <article class="panel agents-preview"><div class="panel-heading compact"><div><div class="panel-kicker">SPECIALIST MODELS</div><h2>Agent status</h2></div><button class="subtle-link" data-view-link="agents">View all ↗</button></div><div id="overview-agents" class="agent-mini-list"><div class="empty-inline">Eight specialist agents are ready for validated data.</div></div></article>
+        <article class="panel agents-preview"><div class="panel-heading compact"><div><div class="panel-kicker">SPECIALIST MODELS</div><h2>Agent status</h2></div><button class="subtle-link" data-view-link="agents">View all ↗</button></div><div id="overview-agents" class="agent-mini-list"><div class="empty-inline">Six specialist agents are ready for validated data.</div></div></article>
       </div>
     </section>
 
@@ -95,15 +95,15 @@
     </section>
 
     <section class="view" id="view-agents">
-      <div class="page-heading compact-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> MULTI-AGENT INTELLIGENCE</div><h1>Independent <em>perspectives.</em></h1><p>Eight specialist agents analyse separate parts of the market before consolidation.</p></div><button class="button button-primary" id="run-analysis-agents">✳ Run analysis</button></div>
-      <div class="agent-grid" id="agent-grid"><div class="agent-empty panel">Eight agents are ready. Import validated NSE reports and run the analysis to see independent findings and final consensus.</div></div>
+      <div class="page-heading compact-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> MULTI-AGENT INTELLIGENCE</div><h1>Independent <em>perspectives.</em></h1><p>Six specialist agents analyse separate parts of the market before consolidation.</p></div><button class="button button-primary" id="run-analysis-agents">✳ Run analysis</button></div>
+      <div class="agent-grid" id="agent-grid"><div class="agent-empty panel">Agents are ready. Import your NSE reports and run an analysis to see individual findings.</div></div>
       <article class="panel master-panel"><div class="panel-heading"><div><div class="panel-kicker">FINAL SYNTHESIS</div><h2>Master decision engine</h2></div><span class="engine-symbol">✳</span></div><div id="master-summary" class="master-summary">The master engine will reconcile agent evidence, note disagreements and withhold a directional conclusion when data coverage is insufficient.</div><div id="master-warnings" class="warning-list"></div></article>
     </section>
 
     <section class="view" id="view-levels">
-      <div class="page-heading compact-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> TECHNICAL REFERENCE</div><h1>Market <em>levels.</em></h1><p>Mathematically calculated from the previous completed NIFTY 50 session.</p></div><span class="source-pill">AI DISCOVERY + TRADITIONAL REFERENCES</span></div>
+      <div class="page-heading compact-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> TECHNICAL REFERENCE</div><h1>Market <em>levels.</em></h1><p>Mathematically calculated from the previous completed NIFTY 50 session.</p></div><span class="source-pill">CLASSIC PIVOT + CPR</span></div>
       <div class="levels-grid" id="levels-grid"><div class="panel level-empty">Import a valid NIFTY 50 OHLC report to calculate support, resistance and CPR. No levels are estimated.</div></div>
-      <article class="panel ai-sr-panel"><div class="panel-heading"><div><div class="panel-kicker">INDEPENDENT LEVEL DISCOVERY</div><h2>AI-discovered support &amp; resistance zones</h2></div><span class="source-pill">PRICE ACTION + OI</span></div><p class="fine-print">Zones are clustered from historical swing highs/lows and corroborating option OI walls. They are separate from PDC and classic pivot calculations.</p><div id="ai-sr-grid" class="ai-sr-grid"><div class="level-empty">Import dated NIFTY OHLC and F&amp;O bhavcopy reports to discover independent zones.</div></div></article><article class="panel level-method"><div class="panel-kicker">TRADITIONAL REFERENCE METHOD</div><h2>Classic floor pivot (reference only)</h2><div class="formula-grid"><div><small>PIVOT</small><code>(High + Low + Close) / 3</code></div><div><small>RESISTANCE 1</small><code>(2 × Pivot) − Low</code></div><div><small>SUPPORT 1</small><code>(2 × Pivot) − High</code></div><div><small>RESISTANCE 2</small><code>Pivot + (High − Low)</code></div><div><small>SUPPORT 2</small><code>Pivot − (High − Low)</code></div><div><small>CPR</small><code>BC = (High + Low) / 2; TC = 2P − BC</code></div></div><p class="fine-print">These are reference levels, not guaranteed turning points. OI-based candidate zones are shown separately from mathematical pivots.</p></article>
+      <article class="panel level-method"><div class="panel-kicker">CALCULATION METHOD</div><h2>Classic floor pivot</h2><div class="formula-grid"><div><small>PIVOT</small><code>(High + Low + Close) / 3</code></div><div><small>RESISTANCE 1</small><code>(2 × Pivot) − Low</code></div><div><small>SUPPORT 1</small><code>(2 × Pivot) − High</code></div><div><small>RESISTANCE 2</small><code>Pivot + (High − Low)</code></div><div><small>SUPPORT 2</small><code>Pivot − (High − Low)</code></div><div><small>CPR</small><code>BC = (High + Low) / 2; TC = 2P − BC</code></div></div><p class="fine-print">These are reference levels, not guaranteed turning points. OI-based candidate zones are shown separately from mathematical pivots.</p></article>
     </section>
 
     <section class="view" id="view-history">
@@ -114,7 +114,7 @@
 
     <section class="view" id="view-settings">
       <div class="page-heading compact-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE CONFIGURATION</div><h1>System <em>settings.</em></h1><p>Local storage, access, file monitoring and processing configuration.</p></div></div>
-      <div class="settings-grid"><article class="panel setting-card"><div class="setting-icon">▰</div><h2>Data directories</h2><p>In local mode, use the incoming folder on this PC. In Render mode, use browser uploads; cloud files are temporary on the free filesystem.</p><div class="setting-path"><small>INCOMING REPORTS</small><code id="settings-incoming">—</code></div><div class="setting-path"><small>DATA STORAGE</small><code id="settings-data">—</code></div></article><article class="panel setting-card"><div class="setting-icon">◉</div><h2>Folder monitoring</h2><p>The local Python service watches the incoming folder and detects new report files. Render cannot watch folders on your computer.</p><div class="setting-row"><span>Watcher status</span><strong id="settings-watcher">—</strong></div><button class="button button-ghost button-full" id="settings-scan">Scan folder now</button></article><article class="panel setting-card"><div class="setting-icon">⌘</div><h2>Analysis policy</h2><p>Only validated imported data is used. Missing values are never substituted with sample market figures.</p><div class="setting-row"><span>Instrument</span><strong>NIFTY 50</strong></div><div class="setting-row"><span>Forecast horizon</span><strong>Next trading session</strong></div><div class="setting-row"><span>AI agents</span><strong>7 specialists + final consensus</strong></div></article><article class="panel setting-card"><div class="setting-icon">⛨</div><h2>Privacy & deployment</h2><p>Use an access password when deployed publicly. Never upload API keys or private credentials as NSE report files.</p><div class="setting-row"><span>Environment</span><strong id="settings-mode">—</strong></div><div class="setting-row"><span>Version</span><strong>1.0.0</strong></div></article></div>
+      <div class="settings-grid"><article class="panel setting-card"><div class="setting-icon">▰</div><h2>Data directories</h2><p>In local mode, use the incoming folder on this PC. In Render mode, use browser uploads; cloud files are temporary on the free filesystem.</p><div class="setting-path"><small>INCOMING REPORTS</small><code id="settings-incoming">—</code></div><div class="setting-path"><small>DATA STORAGE</small><code id="settings-data">—</code></div></article><article class="panel setting-card"><div class="setting-icon">◉</div><h2>Folder monitoring</h2><p>The local Python service watches the incoming folder and detects new report files. Render cannot watch folders on your computer.</p><div class="setting-row"><span>Watcher status</span><strong id="settings-watcher">—</strong></div><button class="button button-ghost button-full" id="settings-scan">Scan folder now</button></article><article class="panel setting-card"><div class="setting-icon">⌘</div><h2>Analysis policy</h2><p>Only validated imported data is used. Missing values are never substituted with sample market figures.</p><div class="setting-row"><span>Instrument</span><strong>NIFTY 50</strong></div><div class="setting-row"><span>Forecast horizon</span><strong>Next trading session</strong></div><div class="setting-row"><span>AI agents</span><strong>6 specialists + master</strong></div></article><article class="panel setting-card"><div class="setting-icon">⛨</div><h2>Privacy & deployment</h2><p>Use an access password when deployed publicly. Never upload API keys or private credentials as NSE report files.</p><div class="setting-row"><span>Environment</span><strong id="settings-mode">—</strong></div><div class="setting-row"><span>Version</span><strong>1.0.0</strong></div></article></div>
     </section>
 
     <footer class="app-footer"><span>© NIFTY AI INTELLIGENCE</span><span>RESEARCH WORKSPACE <i></i> NO BROKER ORDERS</span><span>DATA: USER-IMPORTED REPORTS</span></footer>
