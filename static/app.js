@@ -83,7 +83,7 @@ function renderAiLevels(data={},spot={}){
     if(kind==='current'){value=validPrice?fmt(price,2):'Spot unavailable';detail='Latest validated NIFTY spot · '+(spot.date||'date unavailable');}
     else if(z){value=fmtZone(z);detail=evidence(z)+' · '+(Math.abs(Number(z.center)-price)).toFixed(0)+' pts from spot';}
     else {value=emptyText;detail=emptyDetail;}
-    return '<article class="ai-level-card '+tone+(z?' has-level':' no-level')+'"><div class="ai-level-label">'+label+'</div><strong class="ai-level-value">'+esc(value)+'</strong><small class="ai-level-evidence">'+esc(detail)+'</small></article>';
+    return '<article class="ai-level-card '+tone+(z?' has-level':' no-level')+'" aria-label="'+label+'"><div class="ai-level-main"><div class="ai-level-label">'+label+'</div><strong class="ai-level-value">'+esc(value)+'</strong></div><div class="ai-level-evidence-wrap"><small class="ai-level-evidence">'+esc(detail)+'</small></div><span class="ai-level-state">'+(kind==='current'?'LIVE SPOT':z?(Number(z.evidence_score||0)>=70?'VALIDATED':'EVIDENCE CANDIDATE'):'AWAITING EVIDENCE')+'</span></article>';
   };
   const nearestFar=(items)=>items[0]||null;
   const srStrong=(items,near,side)=>{
