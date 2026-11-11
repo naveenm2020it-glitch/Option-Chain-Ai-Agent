@@ -16,3 +16,5 @@ for header in (None, 0, 1, 2, [1, 2]):
             print(frame.head(12).to_string(index=False, header=True))
     except Exception as exc:
         print("HEADER FAILED:", header, repr(exc))
+
+# Trigger diagnostic workflow after it has been added.
