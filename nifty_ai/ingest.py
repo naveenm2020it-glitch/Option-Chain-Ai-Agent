@@ -46,10 +46,10 @@ def _date_from_filename(filename: str):
     return None
 
 
-def import_path(path: Path, trading_date=None):
+def import_path(path: Path, trading_date=None, wait_stable=True):
     if not path.exists() or not path.is_file() or path.suffix.lower() not in ALLOWED:
         return None
-    if not _wait_until_stable(path):
+    if wait_stable and not _wait_until_stable(path):
         return None
     content = path.read_bytes()
     fp = fingerprint(content)
@@ -72,14 +72,14 @@ def import_path(path: Path, trading_date=None):
     return add_report(item)
 
 
-def scan_directory(directory: Path, trading_date=None):
+def scan_directory(directory: Path, trading_date=None, wait_stable=True):
     added = []
     directory = Path(directory)
     if not directory.exists():
         return added
     for path in directory.rglob("*"):
         if path.is_file() and path.suffix.lower() in ALLOWED:
-            result = import_path(path, trading_date=trading_date)
+            result = import_path(path, trading_date=trading_date, wait_stable=wait_stable)
             if result:
                 added.append(result)
     return added
