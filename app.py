@@ -105,7 +105,8 @@ def analyze(trading_date: Optional[str] = Form(default=None), x_app_password: Op
     effective_date = trading_date or (max(dates) if dates else None)
     if not effective_date:
         raise HTTPException(status_code=400, detail="Trading date is unknown. Re-import files after choosing their trading date.")
-    result = run_analysis(effective_date, all_reports)
+    historical_reports = database.list_reports()
+    result = run_analysis(effective_date, all_reports, history_reports=historical_reports)
     status = "complete" if result["data_completeness"] >= 75 else "partial"
     run_id = database.save_analysis(effective_date, result, status)
     return {"run_id": run_id, "status": status, "result": result}
