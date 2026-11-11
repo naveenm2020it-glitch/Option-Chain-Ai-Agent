@@ -53,18 +53,18 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
         raise ValueError("Downloaded file is empty or too small")
     if kind == "participant_volume":
         last_error = None
-        for encoding in ("utf-8-sig", "latin1"):
-            try:
-                frame = pd.read_csv(BytesIO(payload), sep=None, engine="python", encoding=encoding, header=1)
-                frame = frame.dropna(how="all")
-                if frame.empty or len(frame.columns) < 4:
-                    raise ValueError("CSV has no usable tabular rows after its title line")
-                columns = [str(c).strip() for c in frame.columns]
-                if "Client Type" not in columns:
-                    raise ValueError("Participant-volume CSV is missing its Client Type table header")
-                return int(len(frame)), columns
-            except Exception as exc:
-                last_error = exc
+        for header in (1, 0):
+            for encoding in ("utf-8-sig", "latin1"):
+                try:
+                    frame = pd.read_csv(BytesIO(payload), sep=None, engine="python",
+                                        encoding=encoding, header=header)
+                    frame = frame.dropna(how="all")
+                    columns = [str(c).strip() for c in frame.columns]
+                    if frame.empty or len(columns) < 4 or "Client Type" not in columns:
+                        raise ValueError("CSV does not contain the NSE Client Type table header")
+                    return int(len(frame)), columns
+                except Exception as exc:
+                    last_error = exc
         raise ValueError(f"Participant volume CSV validation failed: {last_error}")
 
     # NSE publishes this report as legacy Excel .xls. Refuse HTML/CSV error pages.
