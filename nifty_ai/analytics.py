@@ -536,7 +536,8 @@ def run_analysis(trading_date: str, reports):
         "volatility_reports": volatility_reports, "settlement_report": settlement, "breadth": breadth,
         "india_vix": vix, "warnings": warnings,
         "source_reports": [{"name": x["original_name"], "type": x["report_type"], "status": x["status"]} for x in reports],
-        "methodology": "Seven specialist agents discover price-action/OI zones and an eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or accuracy are fabricated."}
+        "methodology": "Seven specialist agents discover price-action/OI zones and an eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or accuracy are fabricated.",
+        "_price_history_for_eod": price_history}
     return result
 
 
@@ -548,5 +549,4 @@ _base_run_analysis = run_analysis
 def run_analysis(trading_date: str, reports):
     from .eod_intelligence import augment_analysis
     result = _base_run_analysis(trading_date, reports)
-    result["_price_history_for_eod"] = extract_spot_history(reports)
     return augment_analysis(result, reports)
