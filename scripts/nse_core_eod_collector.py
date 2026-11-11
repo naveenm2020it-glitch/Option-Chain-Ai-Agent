@@ -254,12 +254,12 @@ def _collect_fii_dii(session, manifest):
         # Keep prior verified dates. Do not create zero-valued placeholder rows.
 
 
-def collect(lookback_calendar_days=60, end_date=None, pause_seconds=0.25):
+def collect(lookback_calendar_days=60, end_date=None, pause_seconds=0.25, session_factory=requests.Session):
     if not 1 <= lookback_calendar_days <= 366:
         raise ValueError("lookback_calendar_days must be between 1 and 366.")
     DATA_ROOT.mkdir(parents=True, exist_ok=True)
     manifest = _load_manifest()
-    session = requests.Session()
+    session = session_factory()
     session.headers.update(HEADERS)
     end = end_date or datetime.now(ZoneInfo("Asia/Kolkata")).date()
     days = [end - timedelta(days=i) for i in range(lookback_calendar_days)
