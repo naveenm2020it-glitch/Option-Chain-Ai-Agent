@@ -108,7 +108,7 @@ jobs:
           LOAD_TEST_BASE_URL: http://127.0.0.1:8765
           LOAD_TEST_REQUESTS: "200"
           LOAD_TEST_WORKERS: "12"
-        run: python scripts/ci_load_test.py
+        run: python scripts/ci_load_probe.py
       - name: Stop application
         if: always()
         run: if [ -f /tmp/nifty-load.pid ]; then kill "$(cat /tmp/nifty-load.pid)" || true; fi
