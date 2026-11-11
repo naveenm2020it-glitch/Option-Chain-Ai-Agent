@@ -1,10 +1,12 @@
-name: Collect NSE participant EOD reports
+name: Collect NSE EOD reports
 
 on:
   push:
     branches: [main]
     paths:
       - scripts/nse_eod_collector.py
+      - scripts/nse_core_eod_collector.py
+      - nifty_ai/reports.py
   schedule:
     # 21:45 India time, after the NSE end-of-day report publication window.
     - cron: "15 16 * * 1-5"
@@ -55,6 +57,7 @@ jobs:
         run: |
           DAYS="${{ github.event.inputs.lookback_calendar_days || '60' }}"
           python scripts/nse_eod_collector.py --lookback-calendar-days "$DAYS"
+          python scripts/nse_core_eod_collector.py --lookback-calendar-days "$DAYS"
 
       - name: Commit newly available reports and manifest
         run: |
@@ -62,7 +65,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/nse_reports
           if ! git diff --cached --quiet; then
-            git commit -m "Update NSE participant EOD report archive"
+            git commit -m "Update NSE core and participant EOD report archive"
             git push origin HEAD:main
           else
             echo "No new NSE report archive changes."
