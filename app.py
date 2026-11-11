@@ -12,6 +12,8 @@ from nifty_ai.config import ROOT, INCOMING_DIR, DATA_DIR, APP_PASSWORD, ENABLE_W
 from nifty_ai.ingest import scan_incoming, scan_manifest, store_upload
 from nifty_ai.analytics import run_analysis
 from nifty_ai.reports import REPORTS
+from nifty_ai.agent_registry import AGENT_COUNT, SPECIALIST_COUNT, public_agent_registry
+from nifty_ai.data_quality import report_integrity_summary
 from nifty_ai.watcher import FolderWatcher
 
 watcher = FolderWatcher()
@@ -78,6 +80,9 @@ def state(x_app_password: Optional[str] = Header(default=None)):
     recent = analyses[0] if analyses else None
     return {"reports": reports[:80], "report_counts": counts, "report_catalog": REPORTS,
             "latest_analysis": recent, "historical_sessions": len(database.get_session_prices(5000)),
+            "agent_registry": public_agent_registry(), "agent_count": AGENT_COUNT,
+            "specialist_count": SPECIALIST_COUNT,
+            "data_quality": report_integrity_summary(reports),
             "incoming_folder": str(INCOMING_DIR), "watcher_enabled": watcher.enabled,
             "storage_mode": "render-ephemeral" if os.getenv("RENDER") else "local"}
 
@@ -128,6 +133,10 @@ def analyze(trading_date: Optional[str] = Form(default=None), x_app_password: Op
         raise HTTPException(status_code=400, detail="Trading date is unknown. Re-import files after choosing their trading date.")
     historical_reports = database.list_reports()
     result = run_analysis(effective_date, all_reports, history_reports=historical_reports)
+    result["data_quality"] = report_integrity_summary(all_reports, effective_date)
+    result["agent_registry"] = public_agent_registry()
+    result["agent_count"] = AGENT_COUNT
+    result["specialist_count"] = SPECIALIST_COUNT
     status = "complete" if result["data_completeness"] >= 75 else "partial"
     run_id = database.save_analysis(effective_date, result, status)
     return {"run_id": run_id, "status": status, "result": result}
