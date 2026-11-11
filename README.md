@@ -24,7 +24,11 @@ The root `render.yaml` creates a free Python web service in Singapore. Add a str
 - Produces six transparent specialist analytics outputs and one master evidence summary.
 - Saves reports, daily index prices and analysis history locally.
 
-The app does not scrape NSE or automatically download NSE reports. The user downloads reports manually from NSE. It does not fabricate missing market values. Historical ML claims are withheld until sufficient valid history has been imported and walk-forward testing has been performed. Check NSE's data terms for the permitted use of downloaded reports. This is a personal research tool, not investment advice or order execution.
+A scheduled GitHub Actions collector fetches the official NSE F&O Participant-wise Trading Volumes CSV and FII Derivatives Statistics XLS archives after market hours. It validates file formats and tabular contents, retries temporary failures, records unavailable dates honestly, retains raw source files, and backfills a rolling 60-calendar-day window (typically enough for at least 20 trading sessions). The latest 20 available sessions are indexed in `data/nse_reports/manifest.json`.
+
+On Render startup, verified archived CSV/XLS reports are automatically imported into the analysis database; no manual upload is required for these two reports. Other reports remain importable manually. The collector does not fabricate missing market values. NSE publication delays or access blocks are reported as missing/error states and retried on the next scheduled run.
+
+GitHub is the durable raw archive. Render's free filesystem remains temporary, so the SQLite database and user-uploaded files can be lost after restart or redeploy; the committed NSE archive is retained in GitHub. Check NSE's data terms for the permitted use of downloaded reports. This is a personal research tool, not investment advice or order execution.
 
 ## Render build
 

@@ -1,5 +1,7 @@
 import hashlib
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 from .config import INCOMING_DIR, RAW_DIR
 from .database import add_report, update_report_status
@@ -27,17 +29,34 @@ def _wait_until_stable(path: Path, attempts=8):
     return path.exists() and path.stat().st_size > 0
 
 
-def import_path(path: Path, trading_date=None):
+def _date_from_filename(filename: str):
+    name = Path(filename).name
+    match = re.search(r"fao_participant_vol_(\d{2})(\d{2})(\d{4})", name, re.I)
+    if match:
+        try:
+            return datetime.strptime("".join(match.groups()), "%d%m%Y").date().isoformat()
+        except ValueError:
+            return None
+    match = re.search(r"fii_stats_(\d{2}-[A-Za-z]{3}-\d{4})", name, re.I)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%d-%b-%Y").date().isoformat()
+        except ValueError:
+            return None
+    return None
+
+
+def import_path(path: Path, trading_date=None, wait_stable=True):
     if not path.exists() or not path.is_file() or path.suffix.lower() not in ALLOWED:
         return None
-    if not _wait_until_stable(path):
+    if wait_stable and not _wait_until_stable(path):
         return None
     content = path.read_bytes()
     fp = fingerprint(content)
     report_type = identify_report(path.name)
     info = inspect_report(report_type, str(path))
     report_type = info.get("report_type", report_type)
-    date = info.get("trading_date") or trading_date
+    date = info.get("trading_date") or trading_date or _date_from_filename(path.name)
     item = {
         "fingerprint": fp,
         "original_name": path.name,
@@ -53,16 +72,21 @@ def import_path(path: Path, trading_date=None):
     return add_report(item)
 
 
-def scan_incoming(trading_date=None):
+def scan_directory(directory: Path, trading_date=None, wait_stable=True):
     added = []
-    if not INCOMING_DIR.exists():
+    directory = Path(directory)
+    if not directory.exists():
         return added
-    for path in INCOMING_DIR.rglob("*"):
+    for path in directory.rglob("*"):
         if path.is_file() and path.suffix.lower() in ALLOWED:
-            result = import_path(path, trading_date=trading_date)
+            result = import_path(path, trading_date=trading_date, wait_stable=wait_stable)
             if result:
                 added.append(result)
     return added
+
+
+def scan_incoming(trading_date=None):
+    return scan_directory(INCOMING_DIR, trading_date=trading_date)
 
 
 def store_upload(filename: str, content: bytes, trading_date=None):
