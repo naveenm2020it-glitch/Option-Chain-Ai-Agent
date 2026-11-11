@@ -179,6 +179,64 @@ def _summarize_option_pressure(strikes, available_fields):
         ]
     }
 
+def _extract_settlement_context(reports, trading_date, expiry):
+    trade_day, expiry_day = _as_date(trading_date), _as_date(expiry)
+    records, columns_seen, files_seen, row_count = {}, set(), 0, 0
+    warnings = []
+    for item in reports:
+        if item.get("report_type") != "fo_settlement":
+            continue
+        files_seen += 1
+        try:
+            tables = load_tables(item["file_path"])
+        except Exception as exc:
+            warnings.append("A settlement report could not be parsed: " + str(exc)[:160])
+            continue
+        for _, frame in tables:
+            df = norm_columns(frame)
+            columns_seen.update(str(x) for x in df.columns)
+            symbol = find_column(df, ["TckrSymb", "Symbol", "Underlying"])
+            option = find_column(df, ["OptnTp", "Option Type", "OptionType", "OptType"])
+            strike = find_column(df, ["StrkPric", "Strike Price", "StrikePrice"])
+            exp = find_column(df, ["XpryDt", "Expiry Date", "ExpiryDate"])
+            settle = find_column(df, ["SttlmPric", "SttlmPrice", "Settlement Price", "SettlementPrice", "SettlmPric", "SettlmPrice"])
+            if not settle:
+                warnings.append("Settlement price column was not recognized; no settlement values were inferred.")
+                continue
+            row_count += len(df)
+            if not all((option, strike, exp)):
+                warnings.append("Settlement file lacks one or more contract keys (option type, strike, expiry).")
+                continue
+            if symbol:
+                df = df[df[symbol].astype(str).str.upper().str.contains("NIFTY", na=False)]
+            exp_values = pd.to_datetime(df[exp], errors="coerce", dayfirst=True)
+            df = df[exp_values.dt.date == expiry_day] if expiry_day else df.iloc[0:0]
+            if df.empty:
+                continue
+            for _, row in df.iterrows():
+                opt = str(row[option]).strip().upper()
+                opt = {"CALL": "CE", "PUT": "PE"}.get(opt, opt)
+                if opt not in {"CE", "PE"}:
+                    continue
+                k = pd.to_numeric(row[strike], errors="coerce")
+                value = pd.to_numeric(row[settle], errors="coerce")
+                if pd.isna(k) or pd.isna(value):
+                    continue
+                records[f"{float(k):g}:{opt}"] = float(value)
+    matched = len(records)
+    status = "READY" if matched else ("PARTIAL" if files_seen and row_count else "INSUFFICIENT DATA")
+    if trade_day and expiry_day and expiry_day < trade_day:
+        status = "INVALID_EXPIRY_ALIGNMENT"
+    return {
+        "status": status, "report_files": files_seen, "rows_scanned": row_count,
+        "matched_contracts": matched, "settlement_prices": records,
+        "columns": sorted(columns_seen),
+        "trading_date": trade_day.isoformat() if trade_day else None,
+        "expiry": expiry_day.isoformat() if expiry_day else None,
+        "warnings": sorted(set(warnings)),
+        "limitation": "Only exact NIFTY option contracts with recognized expiry, strike, option type and settlement-price fields are matched. Missing contract keys are not guessed."
+    }
+
 def _expiry_context(trading_date, expiry):
     trade_day, expiry_day = _as_date(trading_date), _as_date(expiry)
     if not trade_day or not expiry_day:
@@ -706,13 +764,9 @@ def augment_analysis(result, reports, history_reports=None):
             "expiry_context": _expiry_context(result.get("trading_date"), option_evidence.get("expiry")),
             "strikes": option_evidence.get("strikes", []),
             "summary": option_evidence.get("pressure_analysis", {}),
-            "settlement_context": {
-                "status": "PARTIAL" if (result.get("settlement_report") or {}).get("readable") else "INSUFFICIENT DATA",
-                "report_files": (result.get("settlement_report") or {}).get("files", 0),
-                "report_rows": (result.get("settlement_report") or {}).get("rows", 0),
-                "columns": (result.get("settlement_report") or {}).get("columns", []),
-                "limitation": "Settlement report is detected, but contract-level settlement prices are not yet reconciled to each option strike and expiry."
-            },
+            "settlement_context": _extract_settlement_context(
+                reports, result.get("trading_date"), option_evidence.get("expiry")
+            ),
             "volatility_context": {
                 "status": "PARTIAL" if (result.get("volatility_reports") or {}).get("readable") or result.get("india_vix") is not None else "INSUFFICIENT DATA",
                 "india_vix_eod": result.get("india_vix"),
