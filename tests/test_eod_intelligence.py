@@ -121,3 +121,40 @@ def test_expiry_context_rejects_expiry_before_trading_date():
 
     result = _expiry_context("2026-11-11", "2026-11-10")
     assert result["status"] == "INVALID_EXPIRY_ALIGNMENT"
+
+
+def test_settlement_context_matches_nifty_contract_by_expiry(monkeypatch):
+    import pandas as pd
+    import nifty_ai.eod_intelligence as module
+
+    frame = pd.DataFrame([
+        {"TckrSymb": "NIFTY", "XpryDt": "12-Nov-2026", "StrkPric": 26000,
+         "OptnTp": "CE", "SttlmPric": 125.5},
+        {"TckrSymb": "BANKNIFTY", "XpryDt": "12-Nov-2026", "StrkPric": 56000,
+         "OptnTp": "CE", "SttlmPric": 200.0},
+        {"TckrSymb": "NIFTY", "XpryDt": "19-Nov-2026", "StrkPric": 26000,
+         "OptnTp": "PE", "SttlmPric": 99.0},
+    ])
+    monkeypatch.setattr(module, "load_tables", lambda _path: [("settlement", frame)])
+    result = module._extract_settlement_context(
+        [{"report_type": "fo_settlement", "file_path": "settlement.csv"}],
+        "2026-11-11", "2026-11-12"
+    )
+    assert result["status"] == "READY"
+    assert result["matched_contracts"] == 1
+    assert result["settlement_prices"]["26000:CE"] == 125.5
+
+
+def test_settlement_context_with_unrecognized_price_column_is_insufficient(monkeypatch):
+    import pandas as pd
+    import nifty_ai.eod_intelligence as module
+
+    frame = pd.DataFrame([{"TckrSymb": "NIFTY", "XpryDt": "12-Nov-2026",
+                           "StrkPric": 26000, "OptnTp": "CE", "LastPrice": 125.5}])
+    monkeypatch.setattr(module, "load_tables", lambda _path: [("settlement", frame)])
+    result = module._extract_settlement_context(
+        [{"report_type": "fo_settlement", "file_path": "settlement.csv"}],
+        "2026-11-11", "2026-11-12"
+    )
+    assert result["status"] == "INSUFFICIENT DATA"
+    assert result["matched_contracts"] == 0
