@@ -33,7 +33,7 @@ def identify_report(filename: str, member_name: str = "") -> str:
         ("india_vix", ["indiavix", "vixhistorical", "indiavixindex"]),
         ("fii_dii", ["fiidii", "fiifpi", "institutionaltradingactivity", "fpianddii"]),
         ("fo_bhavcopy", ["fo bhavcopy", "bhavcopynsefo", "fo_udiff", "fobhavcopy", "derivativesbhavcopy"]),
-        ("cm_bhavcopy", ["cmbhavcopy", "bhavcopycm", "cmudiff", "equitybhavcopy"]),
+        ("cm_bhavcopy", ["cmbhavcopy", "bhavcopycm", "bhavcopynsecm", "cmudiff", "equitybhavcopy"]),
         ("cm_delivery", ["deliverypositions", "securitywisedelivery", "deliverable", "mto_"]),
         ("participant_oi", ["participantoi", "participantwiseopeninterest", "fao_participant_oi"]),
         ("participant_volume", ["participantvol", "participantwisetradingvolumes", "fao_participant_vol"]),
