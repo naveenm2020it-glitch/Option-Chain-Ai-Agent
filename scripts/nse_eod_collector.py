@@ -60,7 +60,7 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
                                         encoding=encoding, header=header)
                     frame = frame.dropna(how="all")
                     columns = [str(c).strip() for c in frame.columns]
-                    if frame.empty or len(columns) < 4 or "Client Type" not in columns:
+                    if frame.empty or len(columns) < 2 or "Client Type" not in columns:
                         raise ValueError("CSV does not contain the NSE Client Type table header")
                     return int(len(frame)), columns
                 except Exception as exc:
