@@ -113,3 +113,37 @@ def test_session_does_not_depend_on_blocked_homepage(monkeypatch):
     assert session is fake
     assert session.calls == []
     assert session.headers["User-Agent"].startswith("Mozilla/")
+
+
+
+def test_participant_volume_parser_uses_second_row_as_header():
+    payload = (
+        b'""Participant wise Trading Volume as on Nov 09, 2026"",,,,,\n'
+        b'Client Type,Future Index Long,Future Index Short,Total Long Contracts,Total Short Contracts\n'
+        b'Client,100,90,200,190\nDII,20,10,30,20\nFII,50,40,90,80\nPro,30,50,80,100\nTOTAL,200,200,400,400\n'
+    )
+    rows, columns = collector._parse_report("participant_volume", payload)
+    assert rows == 5
+    assert "Client Type" in columns
+    assert "Future Index Long" in columns
+    assert not any(column.startswith("Unnamed") for column in columns)
+
+
+def test_fii_xls_parser_uses_second_row_as_header(monkeypatch):
+    import pandas as pd
+    observed = {}
+    frame = pd.DataFrame(
+        [["Index Futures", 100, 80], ["Index Options", 200, 150]],
+        columns=["Instrument", "Buy", "Sell"],
+    )
+
+    def fake_read_excel(*args, **kwargs):
+        observed.update(kwargs)
+        return {"Sheet1": frame}
+
+    monkeypatch.setattr(collector.pd, "read_excel", fake_read_excel)
+    payload = bytes.fromhex("D0CF11E0A1B11AE1") + b"\x00" * 64
+    rows, columns = collector._parse_report("fii_derivatives", payload)
+    assert observed["header"] == 1
+    assert rows == 2
+    assert columns == ["Instrument", "Buy", "Sell"]
