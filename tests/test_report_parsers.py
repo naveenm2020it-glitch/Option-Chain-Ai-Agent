@@ -35,5 +35,5 @@ def test_fii_derivatives_ingestion_uses_second_row_as_header(tmp_path, monkeypat
     path = tmp_path / "fii_stats_09-Nov-2026.xls"
     path.write_bytes(b"placeholder")
     tables = reports.load_tables(str(path))
-    assert observed["header"] == 1
+    assert observed["header"] == [1, 2]
     assert tables[0][1].columns.tolist() == ["Instrument", "Buy", "Sell"]
