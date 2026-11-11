@@ -1,4 +1,4 @@
-"""Rebuild the application source archive from the checked-in GitHub bundle parts."""
+"""Rebuild the checked-in source archive from GitHub's binary bundle parts."""
 from pathlib import Path
 import zipfile
 
