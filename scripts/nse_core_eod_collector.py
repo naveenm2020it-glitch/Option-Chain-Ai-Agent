@@ -130,10 +130,17 @@ def _record(dataset, day, status, **fields):
     dataset.setdefault("records", {})[day] = {"status": status, **fields}
 
 
+def _display_path(target):
+    try:
+        return target.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(target)
+
+
 def _archive_file(dataset, day, target, payload, rows, columns, url):
     _write(target, payload)
     _record(dataset, day, "available",
-            filename=target.relative_to(ROOT).as_posix(),
+            filename=_display_path(target),
             sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
             rows=int(rows), columns=[str(c) for c in columns][:60], source_url=url)
 
@@ -155,7 +162,7 @@ def _collect_date_reports(session, day, manifest, pause):
             try:
                 payload = target.read_bytes()
                 rows, columns = _parse_udiff_zip(payload, kind)
-                _record(ds, iso, "available", filename=target.relative_to(ROOT).as_posix(),
+                _record(ds, iso, "available", filename=_display_path(target),
                         sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
                         rows=rows, columns=columns, source_url=url)
                 continue
