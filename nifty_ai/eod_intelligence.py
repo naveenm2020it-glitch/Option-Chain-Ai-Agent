@@ -115,6 +115,16 @@ def _load_option_rows(reports, trading_date):
         row["pe_oi_share"] = row["pe_oi"] / total_pe if total_pe else 0.0
         row["ce_fresh_writing_proxy"] = row["ce_change"] > 0 and row["ce_premium_change_pct"] is not None and row["ce_premium_change_pct"] < 0
         row["pe_fresh_writing_proxy"] = row["pe_change"] > 0 and row["pe_premium_change_pct"] is not None and row["pe_premium_change_pct"] < 0
+    pain_values = {}
+    if rows and total_oi > 0:
+        strikes = [x["strike"] for x in rows]
+        for settlement in strikes:
+            pain_values[settlement] = sum(
+                max(0.0, settlement - x["strike"]) * x["ce_oi"] +
+                max(0.0, x["strike"] - settlement) * x["pe_oi"]
+                for x in rows
+            )
+    max_pain = min(pain_values, key=pain_values.get) if pain_values else None
     top_ce = max(rows, key=lambda x: x["ce_oi"]) if rows else None
     top_pe = max(rows, key=lambda x: x["pe_oi"]) if rows else None
     call_writers = sorted((x for x in rows if x["ce_fresh_writing_proxy"]), key=lambda x: (x["ce_change"], x["ce_oi"]), reverse=True)
@@ -123,6 +133,8 @@ def _load_option_rows(reports, trading_date):
         "available": bool(rows), "expiry": selected, "strikes": rows, "available_fields": sorted(available_fields),
         "ce_total_oi": total_ce, "pe_total_oi": total_pe,
         "pcr": total_pe / total_ce if total_ce else None,
+        "max_pain": max_pain,
+        "max_pain_method": "Nearest-expiry EOD CE/PE open-interest payout minimization; not a forecast.",
         "top_call_oi_strike": top_ce["strike"] if top_ce and top_ce["ce_oi"] else None,
         "top_put_oi_strike": top_pe["strike"] if top_pe and top_pe["pe_oi"] else None,
         "top_call_oi_share_pct": round(top_ce["ce_oi_share"] * 100, 2) if top_ce else None,
@@ -763,12 +775,14 @@ def augment_analysis(result, reports, history_reports=None):
             "expiry": option_evidence.get("expiry"),
             "expiry_context": _expiry_context(result.get("trading_date"), option_evidence.get("expiry")),
             "strikes": option_evidence.get("strikes", []),
+            "max_pain": option_evidence.get("max_pain"),
+            "max_pain_method": option_evidence.get("max_pain_method"),
             "summary": option_evidence.get("pressure_analysis", {}),
             "settlement_context": _extract_settlement_context(
                 reports, result.get("trading_date"), option_evidence.get("expiry")
             ),
             "volatility_context": {
-                "status": "PARTIAL" if (result.get("volatility_reports") or {}).get("readable") or result.get("india_vix") is not None else "INSUFFICIENT DATA",
+                "status": "READY" if any(k.endswith("_latest") for k in (result.get("volatility_reports") or {}).get("metrics", {})) else "PARTIAL" if result.get("india_vix") is not None or (result.get("volatility_reports") or {}).get("readable") else "INSUFFICIENT DATA",
                 "india_vix_eod": result.get("india_vix"),
                 "report_metrics": (result.get("volatility_reports") or {}).get("metrics", {}),
                 "report_files": (result.get("volatility_reports") or {}).get("files", 0),
