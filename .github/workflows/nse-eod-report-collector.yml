@@ -10,8 +10,11 @@ on:
       - tests/test_nse_extended_eod_collector.py
       - nifty_ai/reports.py
   schedule:
-    # 21:45 India time, after the NSE end-of-day report publication window.
+    # Recheck after market close to catch delayed NSE report publication.
+    # 21:45, 22:30 and 23:15 India time (UTC cron).
     - cron: "15 16 * * 1-5"
+    - cron: "0 17 * * 1-5"
+    - cron: "45 17 * * 1-5"
   workflow_dispatch:
     inputs:
       lookback_calendar_days:
