@@ -1,8 +1,7 @@
 name: Reconstruct bundled application source
 
 on:
-  push:
-    branches: [rebuild-eight-agent]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,7 +28,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git reset -q .github/workflows/tests.yml || true
+          git reset -q .github/workflows/tests.yml .github/workflows/validate-rebuild.yml || true
           if ! git diff --cached --quiet; then
             git commit -m "Reconstruct bundled application source"
             git push origin rebuild-eight-agent
