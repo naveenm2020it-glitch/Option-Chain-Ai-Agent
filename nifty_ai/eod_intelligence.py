@@ -557,7 +557,7 @@ def augment_analysis(result, reports, history_reports=None):
         "metrics": {"specialist_agents": 10, "available_specialists": len(usable),
                     "data_completeness_pct": round(completeness * 100, 1),
                     "weighted_score": round(master, 4), "probability": None},
-        "evidence": ["Evidence-weighted synthesis of ten specialists, including buyer/seller defence and independent accuracy review.",
+        "evidence": ["Agent 11 synthesises the ten specialist outputs, including buyer/seller defence and independent accuracy review.",
                      "This is not a calibrated probability; incomplete evidence and conflicting signals remain visible."]
     })
     result["direction"] = direction
