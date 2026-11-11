@@ -11,6 +11,7 @@ import re
 import pandas as pd
 
 from .reports import load_tables, norm_columns, find_column, numeric
+from .agent_registry import AGENT_COUNT, SPECIALIST_COUNT
 
 
 def _as_date(value):
@@ -656,26 +657,27 @@ def augment_analysis(result, reports, history_reports=None):
     usable = [x for x in specialists if x.get("status") not in {"missing_data", "insufficient_history"}]
     total_weight = sum(weights.get(x["name"], 0.25) for x in usable)
     master = sum(float(x.get("score") or 0) * weights.get(x["name"], 0.25) for x in usable) / total_weight if total_weight else 0.0
-    completeness = len(usable) / 12
+    completeness = len(usable) / SPECIALIST_COUNT
     direction = "BULLISH" if master > 0.15 else "BEARISH" if master < -0.15 else "NEUTRAL"
     if completeness < 0.5:
         direction = "INSUFFICIENT_DATA"
     result["agents"].append({
         "name": "Final Consensus", "status": "complete" if completeness >= 0.7 else "partial",
         "bias": direction, "score": round(master, 4), "confidence": None,
-        "metrics": {"specialist_agents": 12, "available_specialists": len(usable),
+        "metrics": {"specialist_agents": SPECIALIST_COUNT, "available_specialists": len(usable),
                     "data_completeness_pct": round(completeness * 100, 1),
                     "weighted_score": round(master, 4), "probability": None},
-        "evidence": ["Agent 13 synthesises twelve specialists, including regime classification, zone quality, institutional context and accuracy review.",
+        "evidence": [f"Final consensus synthesises {SPECIALIST_COUNT} registered specialists; the registry is the source of truth.",
                      "This is not a calibrated probability; incomplete evidence and conflicting signals remain visible."]
     })
     result["direction"] = direction
     result["master_score"] = round(master, 4)
     result["confidence"] = None
     result["data_completeness"] = round(completeness * 100, 1)
-    result["agent_count"] = 13
-    result["methodology"] = ("Ten specialist agents analyse daily price structure, nearest-expiry option positioning, "
-        "institutional context, volatility, historical patterns and retrospective zone tests. Agent 8 is final consensus. "
+    result["agent_count"] = AGENT_COUNT
+    result["specialist_count"] = SPECIALIST_COUNT
+    result["methodology"] = (f"{SPECIALIST_COUNT} registered specialist agents analyse NSE EOD evidence; "
+        "the final consensus agent synthesises their findings. Intraday-dependent capabilities are limited. "
         "Evidence scores are not probabilities; no pivot-derived support/resistance is used as AI discovery.")
     warnings = list(result.get("warnings", []))
     if not option_evidence.get("available"):
