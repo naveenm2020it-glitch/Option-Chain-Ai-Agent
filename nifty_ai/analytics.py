@@ -105,10 +105,9 @@ def extract_vix(reports):
 def extract_options(reports):
     total_ce = total_pe = 0.0
     chg_ce = chg_pe = 0.0
-    oi_by_strike = defaultdict(lambda: {"ce": 0.0, "pe": 0.0, "ce_change": 0.0, "pe_change": 0.0, "ce_volume": 0.0, "pe_volume": 0.0})
+    oi_by_strike = defaultdict(lambda: {"ce": 0.0, "pe": 0.0, "ce_change": 0.0, "pe_change": 0.0})
     expiries = set()
     contract_count = 0
-    total_ce_volume = total_pe_volume = 0.0
     latest_spot = None
     for item in reports:
         if item["report_type"] != "fo_bhavcopy":
@@ -126,7 +125,6 @@ def extract_options(reports):
             expiry = find_column(df, ["XpryDt", "Expiry Date", "ExpiryDate"])
             chg = find_column(df, ["ChngInOpnIntrst", "Change in OI", "ChangeInOI", "ChgOI"])
             underlying = find_column(df, ["UndrlygPric", "Underlying Price", "UnderlyingValue"])
-            volume = find_column(df, ["TtlTradgVol", "Total Traded Volume", "Volume", "TradedVolume"])
             if not all((opt, strike, oi)):
                 continue
             if sym:
@@ -139,7 +137,6 @@ def extract_options(reports):
             df["_strike"] = numeric(df[strike])
             df["_oi"] = numeric(df[oi]).fillna(0)
             df["_change"] = numeric(df[chg]).fillna(0) if chg else 0
-            df["_volume"] = numeric(df[volume]).fillna(0) if volume else 0
             df["_type"] = df[opt].astype(str).str.upper().str.strip().replace({"CALL":"CE", "PUT":"PE"})
             if expiry:
                 exp_vals = pd.to_datetime(df[expiry], errors="coerce", dayfirst=True).dropna()
@@ -151,12 +148,10 @@ def extract_options(reports):
                 k = float(row["_strike"])
                 typ = "ce" if row["_type"] == "CE" else "pe"
                 oi_value, chg_value = max(0.0, float(row["_oi"])), float(row["_change"])
-                vol_value = max(0.0, float(row.get("_volume", 0) or 0))
                 oi_by_strike[k][typ] += oi_value
                 oi_by_strike[k][typ + "_change"] += chg_value
-                oi_by_strike[k][typ + "_volume"] += vol_value
-                if typ == "ce": total_ce += oi_value; chg_ce += chg_value; total_ce_volume += vol_value
-                else: total_pe += oi_value; chg_pe += chg_value; total_pe_volume += vol_value
+                if typ == "ce": total_ce += oi_value; chg_ce += chg_value
+                else: total_pe += oi_value; chg_pe += chg_value
                 contract_count += 1
     if contract_count == 0:
         return {"available": False, "reason": "No readable NIFTY CE/PE contracts were found in the F&O Bhavcopy."}
@@ -171,16 +166,11 @@ def extract_options(reports):
             put_pain = sum(max(0, k-settle) * v["pe"] for k,v in oi_by_strike.items())
             pain[settle] = call_pain + put_pain
         max_pain = min(pain, key=pain.get)
-    strike_distribution = [{"strike": k, **oi_by_strike[k]} for k in strikes]
-    dominant_volume = max(strike_distribution, key=lambda x: x["ce_volume"] + x["pe_volume"]) if strike_distribution else None
     return {"available": True, "contract_count": contract_count, "ce_oi": total_ce, "pe_oi": total_pe,
             "pcr": total_pe / total_ce if total_ce else None, "ce_change_oi": chg_ce, "pe_change_oi": chg_pe,
-            "ce_volume": total_ce_volume, "pe_volume": total_pe_volume,
             "highest_ce_oi_strike": max_ce, "highest_pe_oi_strike": max_pe, "max_pain": max_pain,
-            "dominant_volume_strike": dominant_volume.get("strike") if dominant_volume and (total_ce_volume + total_pe_volume) > 0 else None,
-            "volume_available": (total_ce_volume + total_pe_volume) > 0,
             "expiries": sorted(expiries), "underlying_price": latest_spot,
-            "strike_distribution": strike_distribution}
+            "strike_distribution": [{"strike": k, **oi_by_strike[k]} for k in strikes]}
 
 
 def extract_fii_dii(reports):
@@ -336,102 +326,6 @@ def _agent(name, status, bias="NEUTRAL", score=0, confidence=None, metrics=None,
             "metrics": metrics or {}, "evidence": notes or []}
 
 
-def discover_ai_levels(price_history, options):
-    """Discover independent price-action/OI zones. These are not classic pivots."""
-    candidates = {"support": [], "resistance": []}
-    rows = [r for r in price_history if all(r.get(k) is not None for k in ("high", "low", "close"))]
-    for i in range(1, len(rows) - 1):
-        prev, cur, nxt = rows[i - 1], rows[i], rows[i + 1]
-        if cur["high"] >= prev["high"] and cur["high"] >= nxt["high"]:
-            candidates["resistance"].append({"price": float(cur["high"]), "date": cur.get("date"), "source": "swing_high", "weight": 1.0})
-        if cur["low"] <= prev["low"] and cur["low"] <= nxt["low"]:
-            candidates["support"].append({"price": float(cur["low"]), "date": cur.get("date"), "source": "swing_low", "weight": 1.0})
-    if options.get("available"):
-        if options.get("highest_pe_oi_strike") is not None:
-            candidates["support"].append({"price": float(options["highest_pe_oi_strike"]), "date": None, "source": "put_oi_wall", "weight": 1.15})
-        if options.get("highest_ce_oi_strike") is not None:
-            candidates["resistance"].append({"price": float(options["highest_ce_oi_strike"]), "date": None, "source": "call_oi_wall", "weight": 1.15})
-    spot = rows[-1]["close"] if rows else None
-    tolerance = max(20.0, float(spot or 20000) * 0.001)
-    result = {"support": [], "resistance": [], "tolerance_points": round(tolerance, 2),
-              "method": "Three-candle swing pivots clustered with corroborating option OI walls; independent of PDC/pivot formulas."}
-    for kind in ("support", "resistance"):
-        items = sorted(candidates[kind], key=lambda x: x["price"])
-        clusters = []
-        for item in items:
-            if not clusters or item["price"] - clusters[-1][-1]["price"] > tolerance:
-                clusters.append([item])
-            else:
-                clusters[-1].append(item)
-        zones = []
-        for cluster in clusters:
-            weights = [x["weight"] for x in cluster]
-            center = sum(x["price"] * x["weight"] for x in cluster) / sum(weights)
-            sources = sorted(set(x["source"] for x in cluster))
-            touches = sum(1 for x in cluster if x["source"].startswith("swing_"))
-            oi_confirmed = any("oi_wall" in x["source"] for x in cluster)
-            score = min(95, 35 + touches * 12 + (15 if oi_confirmed else 0))
-            zones.append({"center": round(center, 2), "zone_low": round(min(x["price"] for x in cluster) - tolerance / 2, 2),
-                          "zone_high": round(max(x["price"] for x in cluster) + tolerance / 2, 2),
-                          "evidence_count": len(cluster), "historical_swing_touches": touches,
-                          "oi_confirmation": oi_confirmed, "sources": sources, "evidence_score": score,
-                          "strength": "STRONG" if score >= 70 else "MODERATE" if score >= 50 else "EARLY"})
-        zones.sort(key=lambda x: (x["evidence_score"], x["evidence_count"]), reverse=True)
-        result[kind] = zones[:5]
-    return result
-
-
-def _trend_metrics(price_history, flows, breadth):
-    closes = [float(x["close"]) for x in price_history if x.get("close") is not None]
-    metrics = {"sessions": len(closes), "fii_dii_available": bool(flows.get("available")),
-               "market_breadth_available": bool(breadth.get("available"))}
-    if len(closes) < 3:
-        return "NEUTRAL", 0.0, metrics, ["At least three NIFTY 50 closes are required to assess trend structure."]
-    series = pd.Series(closes, dtype="float64")
-    ema5 = float(series.ewm(span=5, adjust=False).mean().iloc[-1])
-    ema20 = float(series.ewm(span=20, adjust=False).mean().iloc[-1]) if len(series) >= 20 else None
-    change5 = float(series.iloc[-1] / series.iloc[-min(6, len(series))] - 1)
-    metrics.update({"last_close": closes[-1], "ema5": ema5, "ema20": ema20, "five_session_change_pct": change5 * 100})
-    score = max(-1.0, min(1.0, change5 * 20))
-    if ema20 is not None and ema5 > ema20: score += 0.15
-    elif ema20 is not None and ema5 < ema20: score -= 0.15
-    if flows.get("available"):
-        score += 0.10 if flows.get("bias") == "BULLISH" else -0.10 if flows.get("bias") == "BEARISH" else 0
-    if breadth.get("available"):
-        score += 0.10 if breadth.get("bias") == "BULLISH" else -0.10 if breadth.get("bias") == "BEARISH" else 0
-    score = max(-1.0, min(1.0, score))
-    bias = "BULLISH" if score > 0.12 else "BEARISH" if score < -0.12 else "NEUTRAL"
-    return bias, score, metrics, ["Trend uses uploaded NIFTY 50 closes, short/long EMA structure, FII/DII and breadth where available.",
-                                  "Institutional and breadth data are corroboration, not NIFTY-only positioning."]
-
-
-def _pattern_metrics(price_history):
-    rows = [r for r in price_history if all(r.get(k) is not None for k in ("open", "high", "low", "close"))]
-    if len(rows) < 3:
-        return "insufficient_history", "NEUTRAL", 0.0, {}, ["Three complete OHLC sessions are required for candle-pattern recognition."]
-    prev, cur = rows[-2], rows[-1]
-    body = abs(cur["close"] - cur["open"])
-    span = max(cur["high"] - cur["low"], 0.01)
-    lower_wick = min(cur["open"], cur["close"]) - cur["low"]
-    upper_wick = cur["high"] - max(cur["open"], cur["close"])
-    pattern = "NEUTRAL_CANDLE"
-    score = 0.0
-    if lower_wick / span >= 0.5 and cur["close"] > cur["open"]:
-        pattern, score = "BULLISH_REJECTION", 0.25
-    elif upper_wick / span >= 0.5 and cur["close"] < cur["open"]:
-        pattern, score = "BEARISH_REJECTION", -0.25
-    elif cur["high"] <= prev["high"] and cur["low"] >= prev["low"]:
-        pattern = "INSIDE_DAY"
-    elif cur["close"] > prev["high"] and cur["close"] > cur["open"]:
-        pattern, score = "BULLISH_RANGE_BREAK", 0.3
-    elif cur["close"] < prev["low"] and cur["close"] < cur["open"]:
-        pattern, score = "BEARISH_RANGE_BREAK", -0.3
-    bias = "BULLISH" if score > 0 else "BEARISH" if score < 0 else "NEUTRAL"
-    return "baseline_ready", bias, score, {"pattern": pattern, "body_points": round(body, 2),
-            "range_points": round(span, 2), "lower_wick_ratio": round(lower_wick / span, 3),
-            "upper_wick_ratio": round(upper_wick / span, 3)}, ["Transparent candle-structure rules are used; no trained model or unvalidated probability is claimed."]
-
-
 def run_analysis(trading_date: str, reports):
     price_history = extract_spot_history(reports)
     price = price_history[-1] if price_history else None
@@ -444,115 +338,87 @@ def run_analysis(trading_date: str, reports):
     settlement = report_quality_summary(reports, ["fo_settlement"])
     breadth = extract_breadth(reports)
     pivots = _pivots(price)
-    ai_levels = discover_ai_levels(price_history, options)
     agents = []
 
     if price and pivots:
         hist = database.get_session_prices(limit=60)
         prior = [x for x in hist if x.get("trading_date") < (price.get("date") or trading_date) and x.get("close") is not None]
         bias = "BULLISH" if price["close"] > pivots["pivot"] else "BEARISH" if price["close"] < pivots["pivot"] else "NEUTRAL"
-        rng = price["high"] - price["low"] if price["high"] is not None and price["low"] is not None else None
-        agents.append(_agent("Price Action", "complete", bias, 1 if bias == "BULLISH" else -1 if bias == "BEARISH" else 0,
-            metrics={**pivots, "day_range": rng, "historical_sessions": len(prior),
-                     "ai_support_zones": len(ai_levels["support"]), "ai_resistance_zones": len(ai_levels["resistance"])},
-            notes=["Traditional pivot references are kept separate from AI-discovered swing/OI zones.",
-                   "AI zones are clustered from historical swing highs/lows and corroborating option OI walls."]))
+        rng = (price["high"] - price["low"]) if price["high"] is not None and price["low"] is not None else None
+        agents.append(_agent("Price Action", "complete", bias, 1 if bias=="BULLISH" else -1 if bias=="BEARISH" else 0,
+                             metrics={**pivots, "day_range": rng, "historical_sessions":len(prior)},
+                             notes=["Pivot and CPR levels were calculated from the uploaded NIFTY OHLC report.", "Direction is a close-versus-pivot observation, not a forecast guarantee."]))
         for historical_row in price_history:
             database.save_session_price(historical_row["date"], historical_row, historical_row.get("source", ""))
     else:
-        agents.append(_agent("Price Action", "missing_data", notes=["A readable NIFTY 50 OHLC report is required."]))
+        agents.append(_agent("Price Action", "missing_data", notes=["A readable NIFTY 50 OHLC row with high, low and close is required."]))
 
     if options.get("available"):
         pcr = options.get("pcr")
-        bias = "BULLISH" if pcr and pcr > 1.05 else "BEARISH" if pcr and pcr < 0.95 else "NEUTRAL"
-        score = 0.55 if bias == "BULLISH" else -0.55 if bias == "BEARISH" else 0
-        if options.get("pe_change_oi", 0) > options.get("ce_change_oi", 0): score += 0.15
-        elif options.get("ce_change_oi", 0) > options.get("pe_change_oi", 0): score -= 0.15
-        agents.append(_agent("Option Chain", "complete", bias, score,
-            metrics={k: v for k, v in options.items() if k != "strike_distribution"},
-            notes=["OI, change in OI, PCR and Max Pain are derived from uploaded NSE F&O contracts.",
-                   "OI walls are evidence candidates, not guaranteed support or resistance."]))
+        obias = "BULLISH" if pcr and pcr > 1.05 else "BEARISH" if pcr and pcr < 0.95 else "NEUTRAL"
+        score = 0.55 if obias=="BULLISH" else -0.55 if obias=="BEARISH" else 0
+        if options.get("pe_change_oi",0) > options.get("ce_change_oi",0): score += 0.15
+        elif options.get("ce_change_oi",0) > options.get("pe_change_oi",0): score -= 0.15
+        agents.append(_agent("Options Intelligence", "complete", obias, score,
+                             metrics={**{k:v for k,v in options.items() if k != "strike_distribution"}, "settlement_report_rows":settlement["rows"], "participant_oi_files":participant["files"]},
+                             notes=["OI concentration and Max Pain are derived from the uploaded F&O contracts.", "Daily settlement and participant OI files are checked as corroborating inputs; individual field mappings are shown in the data audit.", "PCR is an aggregate of the contracts parsed; check expiry coverage before relying on it."]))
     else:
-        agents.append(_agent("Option Chain", "missing_data", notes=[options.get("reason", "F&O bhavcopy data unavailable.")]))
+        agents.append(_agent("Options Intelligence", "missing_data", notes=[options.get("reason", "F&O data unavailable.")]))
 
-    if options.get("available") and options.get("volume_available"):
-        distribution = options.get("strike_distribution", [])
-        top = sorted(distribution, key=lambda x: x.get("ce_volume", 0) + x.get("pe_volume", 0), reverse=True)[:5]
-        agents.append(_agent("Volume Profile", "partial", "NEUTRAL", 0,
-            metrics={"ce_volume": options.get("ce_volume"), "pe_volume": options.get("pe_volume"),
-                     "dominant_volume_strike": options.get("dominant_volume_strike"),
-                     "top_volume_strikes": [{"strike": x["strike"], "volume": x["ce_volume"] + x["pe_volume"]} for x in top]},
-            notes=["This is an options strike-activity profile from NSE traded-volume fields, not a full intraday price-by-volume profile.",
-                   "POC/VAH/VAL are withheld because daily bhavcopy does not contain intraday price-level volume distribution."]))
+    if flows.get("available"):
+        fbias=flows["bias"]; fscore=.7 if fbias=="BULLISH" else -.7 if fbias=="BEARISH" else 0
+        agents.append(_agent("Institutional Flow", "partial", fbias, fscore, metrics={"net_total":flows["net_total"],"rows":flows["rows"],"participant_files":participant["files"],"participant_rows":participant["rows"],"recognized_numeric_fields":sum(len(v.get("numeric_fields",[])) for v in participant["sources"].values())}, notes=["FII/DII cash activity was parsed where recognized.","Participant-wise OI, participant volumes and FII derivatives statistics are independently ingested and audited.","Broad participant categories are not interpreted as exact NIFTY-only exposure."]))
     else:
-        agents.append(_agent("Volume Profile", "missing_data", notes=["Recognized NIFTY option traded-volume fields are required; no volume profile is fabricated."]))
+        agents.append(_agent("Institutional Flow", "partial", notes=["No recognized FII/DII net activity rows were found. Other participant reports may still be present but need schema mapping."]))
 
-    trend_bias, trend_score, trend_metrics, trend_notes = _trend_metrics(price_history, flows, breadth)
-    agents.append(_agent("Trend", "complete" if len(price_history) >= 3 else "missing_data", trend_bias, trend_score,
-        metrics={**trend_metrics, "fii_dii_net_total": flows.get("net_total"),
-                 "breadth_advances": breadth.get("advances"), "breadth_declines": breadth.get("declines"),
-                 "participant_files": participant.get("files"), "delivery_files": delivery.get("files")},
-        notes=trend_notes))
+    if breadth.get("available"):
+        bbias=breadth["bias"]; bscore=.6 if bbias=="BULLISH" else -.6 if bbias=="BEARISH" else 0
+        agents.append(_agent("Market Breadth", "complete", bbias, bscore, metrics={**breadth, "delivery_files":delivery["files"], "delivery_rows":delivery["rows"], **delivery.get("metrics",{})}, notes=["Advance/decline breadth is calculated from CM Bhavcopy rows with close and previous-close fields.","Security-wise delivery participation is also ingested and summarized when the report columns are recognized."]))
+    else:
+        agents.append(_agent("Market Breadth", "missing_data", notes=["CM Bhavcopy did not contain recognized close and previous-close columns."]))
 
     if vix is not None:
-        vbias = "NEUTRAL" if 12 <= vix <= 22 else "BEARISH" if vix > 22 else "BULLISH"
-        agents.append(_agent("Volatility", "partial", vbias, -0.25 if vix > 22 else 0.15 if vix < 12 else 0,
-            metrics={"india_vix_close": vix, "daily_volatility_files": volatility_reports["files"],
-                     "daily_volatility_rows": volatility_reports["rows"], **volatility_reports.get("metrics", {})},
-            notes=["India VIX and daily volatility reports describe risk regime, not direction by themselves."]))
+        vbias="NEUTRAL" if 12 <= vix <= 22 else "BEARISH" if vix > 22 else "BULLISH"
+        agents.append(_agent("Volatility", "partial", vbias, -.25 if vix > 22 else .15 if vix < 12 else 0,
+                             metrics={"india_vix_close":vix,"daily_volatility_files":volatility_reports["files"],"daily_volatility_rows":volatility_reports["rows"],**volatility_reports.get("metrics",{})}, notes=["India VIX is an uncertainty/volatility context indicator; it does not independently determine direction.","CM and F&O daily volatility reports are ingested and their recognized volatility fields are summarized separately."]))
     else:
-        agents.append(_agent("Volatility", "missing_data", notes=["India VIX close was not found in the uploaded reports."]))
+        agents.append(_agent("Volatility", "missing_data", notes=["India VIX close was not found in the uploaded report."]))
 
-    pattern_status, pattern_bias, pattern_score, pattern_metrics, pattern_notes = _pattern_metrics(price_history)
-    agents.append(_agent("Pattern Recognition", pattern_status, pattern_bias, pattern_score,
-                         metrics=pattern_metrics, notes=pattern_notes))
-
-    valid_hist = [x for x in database.get_session_prices(limit=1000) if x.get("close") is not None]
-    if len(valid_hist) >= 30:
-        agents.append(_agent("Historical Validation", "partial", "NEUTRAL", 0,
-            metrics={"stored_sessions": len(valid_hist), "forecast_outcomes_recorded": 0,
-                     "validation_status": "AWAITING_OUTCOME_MATCHING"},
-            notes=["Historical sample is present, but no matched forecast-versus-actual outcome set is available.",
-                   "Walk-forward accuracy and support/resistance hit rates are withheld until forecasts are stored and evaluated."]))
+    history = database.get_session_prices(limit=250)
+    valid_hist = [x for x in history if x.get("close") is not None]
+    returns = []
+    for prev, cur in zip(valid_hist, valid_hist[1:]):
+        if prev["close"]: returns.append((cur["close"] / prev["close"])-1)
+    if len(returns) >= 20:
+        mu = float(np.mean(returns)); sigma = float(np.std(returns, ddof=1))
+        ml_score = max(-1.0, min(1.0, mu/(sigma or 1e-9)))
+        regime = "HIGH_VOLATILITY" if sigma > .012 else "LOW_VOLATILITY" if sigma < .006 else "NORMAL_VOLATILITY"
+        agents.append(_agent("ML Pattern Engine", "baseline_ready", "BULLISH" if ml_score>.15 else "BEARISH" if ml_score<-.15 else "NEUTRAL",
+                             ml_score*.35, metrics={"historical_sessions":len(valid_hist),"mean_daily_return":mu,"daily_return_std":sigma,"regime":regime},
+                             notes=["Historical baseline is calculated from stored daily index closes.","A trained classifier and walk-forward metrics are withheld until sufficient clean history is available."]))
     else:
-        agents.append(_agent("Historical Validation", "insufficient_history", "NEUTRAL", 0,
-            metrics={"stored_sessions": len(valid_hist), "minimum_sessions_for_review": 30},
-            notes=["At least 30 dated NIFTY sessions are required before historical validation begins."]))
+        agents.append(_agent("ML Pattern Engine", "insufficient_history", notes=[f"Only {len(valid_hist)} valid daily index closes are stored; at least 21 sessions are required for the initial historical baseline."]))
 
-    specialist = agents[:]
-    usable = [x for x in specialist if x["status"] not in {"missing_data", "insufficient_history"}]
-    weights = {"Price Action": 1.2, "Option Chain": 1.3, "Volume Profile": 0.7, "Trend": 1.1,
-               "Volatility": 0.6, "Pattern Recognition": 0.8, "Historical Validation": 0.5}
-    weight_sum = sum(weights.get(x["name"], 1.0) for x in usable)
-    master_score = sum(x["score"] * weights.get(x["name"], 1.0) for x in usable) / weight_sum if weight_sum else 0.0
-    completeness = len(usable) / 7
-    direction = "BULLISH" if master_score > 0.18 else "BEARISH" if master_score < -0.18 else "NEUTRAL"
-    if completeness < 0.5:
-        direction = "INSUFFICIENT_DATA"
-    agents.append(_agent("Final Consensus", "complete" if completeness >= 0.7 else "partial", direction, master_score,
-        metrics={"specialist_agents": 7, "available_specialists": len(usable),
-                 "data_completeness_pct": round(completeness * 100, 1), "weighted_score": round(master_score, 4),
-                 "confidence": None},
-        notes=["Evidence-weighted synthesis across seven specialist agents.",
-               "No calibrated probability is shown; conflicting or missing evidence reduces readiness."]))
+    ready = [a for a in agents if a["status"] not in {"missing_data", "insufficient_history"}]
+    scores = [a["score"] for a in ready]
+    master_score = float(np.mean(scores)) if scores else 0.0
+    direction = "BULLISH" if master_score > .18 else "BEARISH" if master_score < -.18 else "NEUTRAL"
+    completeness = len(ready) / len(agents)
+    if completeness < .5: direction = "INSUFFICIENT_DATA"
+    confidence = round(min(85, 35 + completeness*35 + min(15, abs(master_score)*15)), 1) if completeness >= .5 else None
     warnings = []
-    if not price:
-        warnings.append("NIFTY spot OHLC is missing; AI swing zones and traditional pivots cannot be published.")
-    if not options.get("available"):
-        warnings.append("F&O option contracts were not parsed; option-chain evidence and OI corroboration are unavailable.")
-    if not options.get("volume_available"):
-        warnings.append("The imported bhavcopy did not expose recognized traded-volume fields; volume-profile analysis is withheld.")
-    if len(valid_hist) < 30:
-        warnings.append("Historical validation is not ready; at least 30 dated sessions are required.")
+    if not price: warnings.append("NIFTY spot OHLC is missing; pivot levels cannot be published.")
+    if not options.get("available"): warnings.append("F&O option chain was not parsed; OI support/resistance and Max Pain are unavailable.")
+    if len(valid_hist) < 21: warnings.append("Historical sample is insufficient for a trained ML prediction.")
+    if len(ready) < 6: warnings.append("One or more agents have incomplete inputs; treat the consolidated view as partial.")
     next_trading_date = None
-    result = {"trading_date": trading_date, "generated_at": datetime.now(timezone.utc).isoformat(),
-              "direction": direction, "master_score": round(master_score, 4), "confidence": None,
-              "data_completeness": round(completeness * 100, 1), "agents": agents,
-              "levels": pivots, "traditional_levels": pivots, "ai_support_resistance": ai_levels,
-              "spot": price, "price_history_rows": len(price_history), "options": options,
-              "institutional": flows, "participant_reports": participant, "delivery_reports": delivery,
-              "volatility_reports": volatility_reports, "settlement_report": settlement, "breadth": breadth,
-              "india_vix": vix, "warnings": warnings,
-              "source_reports": [{"name": x["original_name"], "type": x["report_type"], "status": x["status"]} for x in reports],
-              "methodology": "Seven specialist analyses discover price-action/OI zones and a separate eighth final-consensus agent combines evidence. Traditional pivots remain reference-only. No missing values, probabilities or historical accuracy are fabricated."}
+    levels = pivots
+    if options.get("available"):
+        levels = {**levels, "oi_support_candidate":options.get("highest_pe_oi_strike"),"oi_resistance_candidate":options.get("highest_ce_oi_strike"),"max_pain":options.get("max_pain")}
+    result = {"trading_date":trading_date,"generated_at":datetime.now(timezone.utc).isoformat(),
+              "direction":direction,"master_score":round(master_score,4),"confidence":confidence,
+              "data_completeness":round(completeness*100,1),"agents":agents,"levels":levels,
+              "spot":price,"price_history_rows":len(price_history),"options":options,"institutional":flows,"participant_reports":participant,"delivery_reports":delivery,"volatility_reports":volatility_reports,"settlement_report":settlement,"breadth":breadth,"india_vix":vix,
+              "warnings":warnings,"source_reports":[{"name":r["original_name"],"type":r["report_type"],"status":r["status"]} for r in reports],
+              "methodology":"Deterministic specialist analytics with a transparent evidence aggregator. No synthetic or missing market values are substituted. A probability forecast is not claimed until walk-forward calibration is available."}
     return result
