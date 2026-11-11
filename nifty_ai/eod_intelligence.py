@@ -688,6 +688,7 @@ def augment_analysis(result, reports, history_reports=None):
     option_evidence = _load_option_rows(reports, result.get("trading_date"))
     if option_evidence.get("available"):
         result["option_positioning"] = {k: v for k, v in option_evidence.items() if k != "strikes"}
+        result["option_pressure"] = {"expiry": option_evidence.get("expiry"), "strikes": option_evidence.get("strikes", []), "summary": option_evidence.get("pressure_analysis", {})}
         # Replace the coarse all-expiry OI walls with nearest-expiry evidence for the defence map.
         options_for_map = {
             "available": True,
