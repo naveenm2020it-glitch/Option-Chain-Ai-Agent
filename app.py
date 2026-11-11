@@ -353,8 +353,18 @@ def report_tables(trade_date: str | None = None):
         key = row["report_type"]
         if key == "unclassified":
             continue
-        if key not in grouped:
-            grouped[key] = table_from_file(Path(row["stored_path"]), key)
+        loaded = table_from_file(Path(row["stored_path"]), key)
+        if key in ("nifty50", "india_vix"):
+            grouped.setdefault(key, []).extend(loaded)
+        elif key not in grouped:
+            grouped[key] = loaded
+    # Preserve multi-session history for the index and volatility agents.
+    for key in ("nifty50", "india_vix"):
+        pieces = grouped.get(key, [])
+        frames = [piece[2] for piece in pieces if len(piece) >= 3 and not piece[2].empty]
+        if len(frames) > 1:
+            combined = pd.concat(frames, ignore_index=True).drop_duplicates()
+            grouped[key] = [(key + "_combined_history", key, combined)]
     return grouped, rows
 
 
