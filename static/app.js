@@ -29,8 +29,8 @@ function switchView(name){
   const target=document.getElementById('view-'+name);
   if(!target){console.error('NIFTY navigation target missing:',name);toast('This page is temporarily unavailable. Refresh and try again.','error');return;}
   APP.currentView=name;
-  $('.view').forEach(v=>{v.classList.toggle('active',v===target);v.setAttribute('aria-hidden',v===target?'false':'true');});
-  $('.nav-item').forEach(b=>{const active=b.dataset.view===name;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');});
+  $$('.view').forEach(v=>{v.classList.toggle('active',v===target);v.setAttribute('aria-hidden',v===target?'false':'true');});
+  $$('.nav-item').forEach(b=>{const active=b.dataset.view===name;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');});
   const pageName=document.getElementById('page-name');
   if(pageName) pageName.textContent=({overview:'Overview',data:'Data centre',agents:'AI analysis',levels:'Market levels',history:'Forecast history',settings:'Settings'})[name]||'Overview';
   if(name==='history') loadHistory();
