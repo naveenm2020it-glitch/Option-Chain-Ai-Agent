@@ -7,6 +7,7 @@ on:
       - scripts/nse_eod_collector.py
       - scripts/nse_core_eod_collector.py
       - scripts/nse_extended_eod_collector.py
+      - tests/test_nse_extended_eod_collector.py
       - nifty_ai/reports.py
   schedule:
     # 21:45 India time, after the NSE end-of-day report publication window.
