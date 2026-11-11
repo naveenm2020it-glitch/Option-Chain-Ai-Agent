@@ -23,7 +23,18 @@ async function api(path, options={}) {
 }
 function openLogin(){ $('#login-modal').classList.add('open'); $('#login-modal').setAttribute('aria-hidden','false'); }
 function closeLogin(){ $('#login-modal').classList.remove('open'); $('#login-modal').setAttribute('aria-hidden','true'); }
-function switchView(name){ APP.currentView=name; $$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`)); $$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===name)); $('#page-name').textContent=({overview:'Overview',data:'Data centre',agents:'AI analysis',levels:'Market levels',history:'Forecast history',settings:'Settings'})[name]||'Overview'; if(name==='history') loadHistory(); }
+function switchView(name){
+  const allowed=['overview','data','agents','levels','history','settings'];
+  if(!allowed.includes(name)) return;
+  const target=document.getElementById('view-'+name);
+  if(!target){console.error('NIFTY navigation target missing:',name);toast('This page is temporarily unavailable. Refresh and try again.','error');return;}
+  APP.currentView=name;
+  $('.view').forEach(v=>{v.classList.toggle('active',v===target);v.setAttribute('aria-hidden',v===target?'false':'true');});
+  $('.nav-item').forEach(b=>{const active=b.dataset.view===name;b.classList.toggle('active',active);b.setAttribute('aria-current',active?'page':'false');});
+  const pageName=document.getElementById('page-name');
+  if(pageName) pageName.textContent=({overview:'Overview',data:'Data centre',agents:'AI analysis',levels:'Market levels',history:'Forecast history',settings:'Settings'})[name]||'Overview';
+  if(name==='history') loadHistory();
+}
 function bindNavigation(){ const themeButton=$('#theme-toggle'); if(themeButton){themeButton.textContent=document.documentElement.dataset.theme==='light'?'☾':'☀';themeButton.addEventListener('click',()=>{const next=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=next;localStorage.setItem('nifty_theme_v2',next);themeButton.textContent=next==='light'?'☾':'☀';themeButton.title=next==='light'?'Switch to dark theme':'Switch to light theme';});} $$('.nav-item').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view))); $$('[data-view-link]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.viewLink))); $$('[data-action="open-upload"]').forEach(b=>b.addEventListener('click',openUpload)); $$('[data-action="close-upload"]').forEach(b=>b.addEventListener('click',closeUpload)); $('#notice-close').addEventListener('click',()=>$('#storage-notice').style.display='none'); $('#refresh-button').addEventListener('click',refreshAll); }
 function openUpload(){ $('#upload-modal').classList.add('open'); $('#upload-modal').setAttribute('aria-hidden','false'); }
 function closeUpload(){ $('#upload-modal').classList.remove('open'); $('#upload-modal').setAttribute('aria-hidden','true'); }
@@ -122,5 +133,15 @@ function downloadBlob(content,name,type){const a=document.createElement('a');con
 async function refreshAll(){try{const data=await api('/api/state');APP.state=data;renderChecklist(data);const recent=data.latest_analysis?.result;if(recent)renderAnalysis(recent);else{renderAgents([]);renderLevels({});}const prices=await api('/api/prices?limit=180');drawChart(prices.items||[]);$('#today-label').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});renderGlobalStatus(data,recent||null);if(data.storage_mode==='render-ephemeral'){$('#storage-notice-text').textContent='Render mode: upload your reports through this page. Free Render storage is temporary and may reset on restart or redeploy; keep your original reports and backups on your PC.';}else{$('#storage-notice-text').textContent='Local mode: place NSE files in the incoming folder or import them here. The local folder watcher detects new files automatically.';} }catch(e){if(!e.message.includes('password'))toast(e.message,'error');}}
 async function runAnalysis(){const date=$('#data-date').dataset.date||'';const form=new FormData();if(date)form.append('trading_date',date);const button=$('#run-analysis');const old=button.innerHTML;button.disabled=true;button.innerHTML='◌ Analysing…';try{const data=await api('/api/analyze',{method:'POST',body:form});renderAnalysis(data.result);toast(`Analysis saved · ${data.status}`,'success');await loadHistory();switchView('overview');}catch(e){toast(e.message,'error');}finally{button.disabled=false;button.innerHTML=old;}}
 
-async function boot(){bindNavigation();setupUploads();const h=await fetch('/api/health').then(r=>r.json()).catch(()=>null);if(h?.auth_required&&!APP.password){openLogin();return;}if(h&&!h.auth_required){const lock=$('#lock-button');if(lock)lock.style.display='none';}await refreshAll();window.addEventListener('resize',()=>{if(APP.state)api('/api/prices?limit=180').then(d=>drawChart(d.items||[])).catch(()=>{});});setInterval(()=>{if(APP.currentView==='data')refreshAll();},30000);}
+function installNavigationFallback(){
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('.nav-item[data-view], [data-view-link]');
+    if(!button) return;
+    const name=button.dataset.view||button.dataset.viewLink;
+    if(!name) return;
+    event.preventDefault();
+    switchView(name);
+  },true);
+}
+async function boot(){installNavigationFallback();bindNavigation();setupUploads();const h=await fetch('/api/health').then(r=>r.json()).catch(()=>null);if(h?.auth_required&&!APP.password){openLogin();return;}if(h&&!h.auth_required){const lock=$('#lock-button');if(lock)lock.style.display='none';}await refreshAll();window.addEventListener('resize',()=>{if(APP.state)api('/api/prices?limit=180').then(d=>drawChart(d.items||[])).catch(()=>{});});setInterval(()=>{if(APP.currentView==='data')refreshAll();},30000);}
 boot();
