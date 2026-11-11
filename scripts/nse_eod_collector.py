@@ -70,7 +70,7 @@ def _parse_report(kind: str, payload: bytes) -> tuple[int, list[str]]:
     # NSE publishes this report as legacy Excel .xls. Refuse HTML/CSV error pages.
     if not payload.startswith(bytes.fromhex("D0CF11E0A1B11AE1")):
         raise ValueError("FII report is not a genuine XLS/OLE workbook")
-    book = pd.read_excel(BytesIO(payload), sheet_name=None, engine="xlrd", header=1)
+    book = pd.read_excel(BytesIO(payload), sheet_name=None, engine="xlrd", header=[1, 2])
     frames = [frame.dropna(how="all") for frame in book.values() if isinstance(frame, pd.DataFrame)]
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
