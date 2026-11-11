@@ -16,7 +16,7 @@ def test_dashboard_navigation_and_primary_views():
         for view in ("data", "agents", "levels", "history", "settings", "overview"):
             page.locator(f'.nav-item[data-view="{view}"]').click()
             page.locator(f"#view-{view}.active").wait_for(state="visible", timeout=5000)
-        page.locator('[data-view-link="levels"]').click()
+        page.get_by_role("button", name="Open detailed market levels ↗").click()
         page.locator("#view-levels.active").wait_for(state="visible", timeout=5000)
 
         # Exercise the real archived NSE EOD dataset; do not inject synthetic market values.
