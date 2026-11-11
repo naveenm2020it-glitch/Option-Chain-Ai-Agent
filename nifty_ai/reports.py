@@ -51,11 +51,26 @@ def identify_report(filename: str, member_name: str = "") -> str:
 def _read_bytes(name: str, content: bytes):
     ext = Path(name).suffix.lower()
     if ext in {".xls", ".xlsx"}:
-        book = pd.read_excel(io.BytesIO(content), sheet_name=None)
+        # NSE FII statistics workbooks start with a merged report-title row;
+        # the second row contains the actual table headings.
+        header = 1 if "fiistats" in compact(name) else 0
+        book = pd.read_excel(io.BytesIO(content), sheet_name=None, header=header)
         return [(str(k), v.dropna(how="all")) for k, v in book.items()
                 if isinstance(v, pd.DataFrame) and not v.empty]
     if ext in {".csv", ".txt", ".dat"}:
         errors = []
+        if "participantvol" in compact(name):
+            for encoding in ("utf-8-sig", "latin1"):
+                try:
+                    df = pd.read_csv(io.BytesIO(content), header=1, encoding=encoding,
+                                     on_bad_lines="skip").dropna(how="all")
+                    if not df.empty and "Client Type" in [str(x).strip() for x in df.columns]:
+                        df.columns = [str(x).strip() for x in df.columns]
+                        return [(name, df)]
+                except Exception as exc:
+                    errors.append(str(exc))
+            raise ValueError("Unable to parse NSE participant-volume CSV after its title row: " +
+                             (errors[-1] if errors else "expected Client Type header was not found"))
         for encoding in ("utf-8-sig", "latin1"):
             for sep in (None, ",", ";", "\\t", "|"):
                 try:
