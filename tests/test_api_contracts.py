@@ -41,7 +41,7 @@ def test_read_only_api_contracts_return_expected_shapes(client):
 
 
 def test_analysis_without_imported_reports_returns_clear_client_error(client):
-    response = client.post("/api/analyze")
+    response = client.post("/api/analyze", data={"trading_date": "1900-01-01"})
     assert response.status_code == 400
     assert "No reports found" in response.json()["detail"]
 
