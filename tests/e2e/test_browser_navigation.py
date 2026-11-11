@@ -18,5 +18,23 @@ def test_dashboard_navigation_and_primary_views():
             page.locator(f"#view-{view}.active").wait_for(state="visible", timeout=5000)
         page.locator('[data-view-link="levels"]').click()
         page.locator("#view-levels.active").wait_for(state="visible", timeout=5000)
+
+        # Exercise the real archived NSE EOD dataset; do not inject synthetic market values.
+        page.locator('.nav-item[data-view="overview"]').click()
+        page.locator("#view-overview.active").wait_for(state="visible", timeout=5000)
+        with page.expect_response(
+            lambda response: response.url.endswith("/api/analyze")
+            and response.request.method == "POST",
+            timeout=120000,
+        ) as analysis_response:
+            page.locator("#run-analysis").click()
+        response = analysis_response.value
+        assert response.status == 200, response.text()
+        payload = response.json()
+        assert payload.get("status") in ("complete", "partial")
+        result = payload.get("result") or {}
+        assert result.get("agent_count") == 13
+        assert "eod_price_action" in result
+        assert result["eod_price_action"].get("intraday_status") == "LIMITED — EOD DATA ONLY"
         assert not errors, "Browser JavaScript errors: " + "; ".join(errors)
         browser.close()
