@@ -216,11 +216,11 @@ def _extract_settlement_context(reports, trading_date, expiry):
                 warnings.append("Settlement price column was not recognized; no settlement values were inferred.")
                 continue
             row_count += len(df)
-            if not all((option, strike, exp)):
-                warnings.append("Settlement file lacks one or more contract keys (option type, strike, expiry).")
+            if not all((symbol, option, strike, exp)):
+                warnings.append("Settlement file lacks symbol or one or more contract keys (option type, strike, expiry); NIFTY contracts cannot be isolated safely.")
                 continue
-            if symbol:
-                df = df[df[symbol].astype(str).str.upper().str.contains("NIFTY", na=False)]
+            symbol_values = df[symbol].astype(str).str.upper().str.replace(r"[^A-Z0-9]", "", regex=True)
+            df = df[symbol_values.isin(["NIFTY", "NIFTY50"])]
             exp_values = pd.to_datetime(df[exp], errors="coerce", dayfirst=True)
             df = df[exp_values.dt.date == expiry_day] if expiry_day else df.iloc[0:0]
             if df.empty:
