@@ -53,6 +53,32 @@ def history_catalog() -> dict[str, Any]:
     return read_catalog()
 
 
+def read_collection_manifest(collection_date: str) -> dict[str, Any]:
+    """Read one archived NSE collection manifest from B2."""
+    from datetime import date
+    date.fromisoformat(collection_date)  # strict YYYY-MM-DD validation
+    client = b2_client()
+    response = client.get_object(
+        Bucket=os.environ["B2_BUCKET_NAME"],
+        Key=f"nse/daily/{collection_date}/manifest.json",
+    )
+    return json.loads(response["Body"].read().decode("utf-8"))
+
+
+def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
+    """Create a short-lived URL for downloading an archived report ZIP."""
+    from datetime import date
+    date.fromisoformat(collection_date)
+    return b2_client().generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": os.environ["B2_BUCKET_NAME"],
+            "Key": f"nse/daily/{collection_date}/reports.zip",
+        },
+        ExpiresIn=expires_in,
+    )
+
+
 def upload_collection(directory, collection_date: str) -> dict[str, Any]:
     from pathlib import Path
     import hashlib
