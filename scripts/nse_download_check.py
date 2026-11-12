@@ -87,6 +87,56 @@ def fetch_report(session: requests.Session, name: str, path: str, kind: str):
     raise RuntimeError("all official URL variants failed: " + " | ".join(failures))
 
 
+CORE_REPORT_NAMES = (
+    "fo_udiff_bhavcopy",
+    "fo_participant_oi",
+    "fo_participant_volume",
+    "fo_market_activity",
+)
+
+
+def save_report(output: Path, name: str, day: date, spec, payload: bytes, meta: dict):
+    """Persist one validated report and extract index activity files when present."""
+    extension = {"zip": "zip", "gzip": "csv.gz", "csv": "csv"}[spec[2]]
+    filename = f"{name}_{day.isoformat()}.{extension}"
+    (output / filename).write_bytes(payload)
+    result = {"report_date": day.isoformat(), "file": filename, **meta}
+
+    if name == "fo_market_activity":
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            wanted = {
+                f"futidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_futidx_activity",
+                f"optidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_optidx_activity",
+            }
+            extracted = set()
+            for member in archive.namelist():
+                member_name = Path(member).name.lower()
+                if member_name in wanted:
+                    derived = wanted[member_name]
+                    derived_file = f"{derived}_{day.isoformat()}.csv"
+                    content = archive.read(member)
+                    validate_payload(derived, content, "csv")
+                    (output / derived_file).write_bytes(content)
+                    results_entry = {
+                        "status": "extracted",
+                        "report_date": day.isoformat(),
+                        "file": derived_file,
+                        "source_archive": filename,
+                        "bytes": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                    extracted.add(derived)
+                    yield derived, results_entry
+            for derived in ("fo_futidx_activity", "fo_optidx_activity"):
+                if derived not in extracted:
+                    yield derived, {
+                        "status": "not_in_archive",
+                        "report_date": day.isoformat(),
+                        "source_archive": filename,
+                    }
+    yield name, result
+
+
 def run(output: Path, end: date, lookback_days: int = 7):
     output.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
@@ -102,67 +152,78 @@ def run(output: Path, end: date, lookback_days: int = 7):
 
     results = {}
     errors = []
-    for name in [s[0] for s in report_specs(end)]:
-        for day in candidate_dates(end, lookback_days):
-            spec = next(s for s in report_specs(day) if s[0] == name)
+    specs_by_name = {spec[0]: spec for spec in report_specs(end)}
+
+    # Download all four required derivatives reports from ONE candidate
+    # trading session. Never combine independently-found dates.
+    aligned_day = None
+    for day in candidate_dates(end, lookback_days):
+        staged = {}
+        day_errors = []
+        for name in CORE_REPORT_NAMES:
+            spec = next(item for item in report_specs(day) if item[0] == name)
             try:
                 payload, meta = fetch_report(session, *spec)
-                extension = {"zip": "zip", "gzip": "csv.gz", "csv": "csv"}[spec[2]]
-                filename = f"{name}_{day.isoformat()}.{extension}"
-                (output / filename).write_bytes(payload)
-                results[name] = {"report_date": day.isoformat(), "file": filename, **meta}
-                if name == "fo_market_activity":
-                    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-                        wanted = {
-                            f"futidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_futidx_activity",
-                            f"optidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_optidx_activity",
-                        }
-                        extracted = set()
-                        for member in archive.namelist():
-                            member_name = Path(member).name.lower()
-                            if member_name in wanted:
-                                derived = wanted[member_name]
-                                derived_file = f"{derived}_{day.isoformat()}.csv"
-                                content = archive.read(member)
-                                validate_payload(derived, content, "csv")
-                                (output / derived_file).write_bytes(content)
-                                results[derived] = {
-                                    "status": "extracted",
-                                    "report_date": day.isoformat(),
-                                    "file": derived_file,
-                                    "source_archive": filename,
-                                    "bytes": len(content),
-                                    "sha256": hashlib.sha256(content).hexdigest(),
-                                }
-                                extracted.add(derived)
-                        for derived in ("fo_futidx_activity", "fo_optidx_activity"):
-                            if derived not in extracted:
-                                results[derived] = {
-                                    "status": "not_in_archive",
-                                    "report_date": day.isoformat(),
-                                    "source_archive": filename,
-                                }
+                staged[name] = (spec, payload, meta)
+            except Exception as exc:
+                day_errors.append({
+                    "report": name,
+                    "date": day.isoformat(),
+                    "error": str(exc),
+                    "group": "core_session_alignment",
+                })
+        if len(staged) == len(CORE_REPORT_NAMES):
+            aligned_day = day
+            for name, (spec, payload, meta) in staged.items():
+                for result_name, result in save_report(output, name, day, spec, payload, meta):
+                    results[result_name] = result
+            break
+        errors.extend(day_errors)
+
+    if aligned_day is None:
+        for name in CORE_REPORT_NAMES:
+            results[name] = {
+                "status": "no_common_session",
+                "report_date": None,
+                "checked_days": lookback_days,
+            }
+
+    # Ancillary reports are useful context but do not determine whether the
+    # core NIFTY derivatives set is session-aligned.
+    for name, end_spec in specs_by_name.items():
+        if name in CORE_REPORT_NAMES:
+            continue
+        for day in candidate_dates(end, lookback_days):
+            spec = next(item for item in report_specs(day) if item[0] == name)
+            try:
+                payload, meta = fetch_report(session, *spec)
+                for result_name, result in save_report(output, name, day, spec, payload, meta):
+                    results[result_name] = result
                 break
             except Exception as exc:
-                errors.append({"report": name, "date": day.isoformat(), "error": str(exc)})
+                errors.append({
+                    "report": name,
+                    "date": day.isoformat(),
+                    "error": str(exc),
+                    "group": "ancillary",
+                })
         if name not in results:
             results[name] = {"status": "not_found", "checked_days": lookback_days}
 
-    # Index activity CSVs are members of the Market Activity ZIP, not standalone
-    # files on the public archive paths.
     for derived in ("fo_futidx_activity", "fo_optidx_activity"):
         results.setdefault(derived, {"status": "not_found", "checked_days": lookback_days})
 
     manifest = {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "requested_end_date": end.isoformat(),
+        "core_session_date": aligned_day.isoformat() if aligned_day else None,
+        "core_session_status": "aligned" if aligned_day else "blocked_no_common_session",
         "nse_homepage_status": homepage_status,
         "results": results,
         "errors": errors,
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Verify and download official NSE EOD report files.")
