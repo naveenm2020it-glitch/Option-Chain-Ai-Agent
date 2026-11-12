@@ -29,11 +29,21 @@ def report_specs(day: date):
     dmy = day.strftime("%d%m%Y")
     ymd = day.strftime("%Y%m%d")
     return [
+        # Core NIFTY derivatives data
         ("fo_udiff_bhavcopy", f"/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
         ("fo_participant_oi", f"/nsccl/fao_participant_oi_{dmy}.csv", "csv"),
         ("fo_participant_volume", f"/nsccl/fao_participant_vol_{dmy}.csv", "csv"),
         ("fo_market_activity", f"/fo/fo{dmy}.zip", "zip"),
+        ("fo_futidx_activity", f"/fo/futidx{dmy}.csv", "csv"),
+        ("fo_optidx_activity", f"/fo/optidx{dmy}.csv", "csv"),
+        ("fo_settlement_prices", f"/archives/nsccl/fo/FOSett_prce_{dmy}.csv", "csv"),
+        ("fo_daily_volatility", f"/archives/nsccl/volt/FOVOLT_{dmy}.csv", "csv"),
+        ("fo_top10_cm_volume", f"/nsccl/fao_top10cm_to_{dmy}.csv", "csv"),
+        ("fo_contract_delta", f"/fo/Contract_Delta_{dmy}.csv", "csv"),
+        ("fo_contract_master", f"/fo/NSE_FO_contract_{dmy}.csv.gz", "gzip"),
+        # NIFTY cash/index context
         ("cm_udiff_bhavcopy", f"/cm/BhavCopy_NSE_CM_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
+        ("nifty_index_close_all", f"/indices/ind_close_all_{dmy}.csv", "csv"),
     ]
 
 
@@ -52,7 +62,8 @@ def validate_payload(name: str, payload: bytes, kind: str) -> dict:
             if len(first) < 10:
                 raise ValueError("ZIP member is empty")
             return {"members": members[:5], "uncompressed_first_member_bytes": len(first)}
-    text = payload[:4096].decode("utf-8-sig", errors="replace")
+    raw = gzip.decompress(payload) if kind == "gzip" else payload
+    text = raw[:4096].decode("utf-8-sig", errors="replace")
     if "<html" in text.lower() or "<!doctype" in text.lower():
         raise ValueError("received an HTML page instead of CSV")
     if "," not in text and ";" not in text:
@@ -70,6 +81,7 @@ def fetch_report(session: requests.Session, name: str, path: str, kind: str):
         urls.extend([
             f"https://archives.nseindia.com/content/fo/{filename}",
             f"https://nseindia.com/content/fo/{filename}",
+            f"https://nsearchives.nseindia.com/archives/fo/{filename}",
         ])
     failures = []
     for url in dict.fromkeys(urls):
@@ -106,7 +118,7 @@ def run(output: Path, end: date, lookback_days: int = 7):
             spec = next(s for s in report_specs(day) if s[0] == name)
             try:
                 payload, meta = fetch_report(session, *spec)
-                extension = "zip" if spec[2] == "zip" else "csv"
+                extension = {"zip": "zip", "gzip": "csv.gz", "csv": "csv"}[spec[2]]
                 filename = f"{name}_{day.isoformat()}.{extension}"
                 (output / filename).write_bytes(payload)
                 results[name] = {"report_date": day.isoformat(), "file": filename, **meta}
