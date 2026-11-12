@@ -72,7 +72,7 @@ def validate_payload(name: str, payload: bytes, kind: str) -> dict:
 
 
 def fetch_report(session: requests.Session, name: str, path: str, kind: str):
-    urls = [BASE + path]
+    urls = [("https://nsearchives.nseindia.com" + path) if path.startswith("/archives/") else (BASE + path)]
     # NSE serves some daily report archives from a different archive host
     # even though the report listing is on nseindia.com. Try both official
     # archive hosts before marking the report unavailable.
