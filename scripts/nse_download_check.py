@@ -148,6 +148,11 @@ def run(output: Path, end: date, lookback_days: int = 7):
         if name not in results:
             results[name] = {"status": "not_found", "checked_days": lookback_days}
 
+    # Index activity CSVs are members of the Market Activity ZIP, not standalone
+    # files on the public archive paths.
+    for derived in ("fo_futidx_activity", "fo_optidx_activity"):
+        results.setdefault(derived, {"status": "not_found", "checked_days": lookback_days})
+
     manifest = {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "requested_end_date": end.isoformat(),
