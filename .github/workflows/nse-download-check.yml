@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - "scripts/nse_download_check.py"
-      - "scripts/archive_to_r2.py"
+      - "scripts/archive_to_b2.py"
       - "storage.py"
       - "requirements.txt"
       - ".github/workflows/nse-download-check.yml"
@@ -26,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,12 +39,12 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Download latest available NSE EOD reports
         run: python scripts/nse_download_check.py --lookback-days 7 --output data/nse_reports
-      - name: Upload durable archive to Cloudflare R2
-        if: ${{ env.R2_ENDPOINT_URL != '' && env.R2_ACCESS_KEY_ID != '' && env.R2_SECRET_ACCESS_KEY != '' && env.R2_BUCKET_NAME != '' }}
-        run: python scripts/archive_to_r2.py --directory data/nse_reports --collection-date "$(date -u +%F)"
+      - name: Upload durable archive to Backblaze B2
+        if: ${{ env.B2_ENDPOINT_URL != '' && env.B2_APPLICATION_KEY_ID != '' && env.B2_APPLICATION_KEY != '' && env.B2_BUCKET_NAME != '' }}
+        run: python scripts/archive_to_b2.py --directory data/nse_reports --collection-date "$(date -u +%F)"
       - name: Explain skipped durable archive
-        if: ${{ env.R2_ENDPOINT_URL == '' || env.R2_ACCESS_KEY_ID == '' || env.R2_SECRET_ACCESS_KEY == '' || env.R2_BUCKET_NAME == '' }}
-        run: echo "R2 credentials are not configured. The temporary 7-day GitHub artifact will still be uploaded."
+        if: ${{ env.B2_ENDPOINT_URL == '' || env.B2_APPLICATION_KEY_ID == '' || env.B2_APPLICATION_KEY == '' || env.B2_BUCKET_NAME == '' }}
+        run: echo "Backblaze B2 credentials are not configured. The temporary 7-day GitHub artifact will still be uploaded."
       - name: Upload temporary diagnostic artifact
         uses: actions/upload-artifact@v4
         with:
