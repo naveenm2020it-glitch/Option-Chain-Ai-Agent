@@ -1,0 +1,72 @@
+name: NIFTY Two-Year Historical Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "First date (YYYY-MM-DD)"
+        required: true
+        default: "2024-11-12"
+        type: string
+      end_date:
+        description: "Last date (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-12"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nifty-historical-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify B2 configuration (without printing secrets)
+        run: |
+          python - <<'PY'
+          import os
+          required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
+          missing = [name for name in required if not os.getenv(name)]
+          if missing:
+              raise SystemExit("Missing GitHub Actions repository secrets: " + ", ".join(missing))
+          print("All four Backblaze B2 settings are present.")
+          PY
+
+      - name: Run resumable historical backfill
+        run: |
+          python scripts/nse_historical_backfill.py \
+            --start "${{ inputs.start_date }}" \
+            --end "${{ inputs.end_date }}" \
+            --output data/historical_backfill
+
+      - name: Upload coverage report to workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-historical-backfill-coverage
+          path: data/historical_backfill/coverage.json
+          if-no-files-found: ignore
+          retention-days: 30
