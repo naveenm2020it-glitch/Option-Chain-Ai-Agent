@@ -3,12 +3,12 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from data_quality import assess_manifest
-from storage import history_catalog, b2_configured
+from storage import history_catalog, b2_configured, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
@@ -69,3 +69,37 @@ def history():
         return {"configured": False, "storage": "backblaze_b2", "collections": [],
                 "message": "Historical archive storage is not configured yet."}
     return {"configured": True, "storage": "backblaze_b2", **history_catalog()}
+
+@app.get("/api/history/{collection_date}")
+def history_manifest(collection_date: str):
+    """Return report-level dates and metadata for one archived collection."""
+    if not b2_configured():
+        raise HTTPException(status_code=503, detail="Backblaze B2 is not configured.")
+    try:
+        return {"collection_date": collection_date,
+                "manifest": read_collection_manifest(collection_date)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must use YYYY-MM-DD.")
+    except Exception as exc:
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            raise HTTPException(status_code=404, detail="Archived collection not found.")
+        raise HTTPException(status_code=502, detail="Could not read archive manifest from B2.")
+
+
+@app.get("/api/history/{collection_date}/download")
+def history_download(collection_date: str):
+    """Return a 15-minute signed download URL; bucket remains private."""
+    if not b2_configured():
+        raise HTTPException(status_code=503, detail="Backblaze B2 is not configured.")
+    try:
+        return {"collection_date": collection_date,
+                "expires_in_seconds": 900,
+                "download_url": archive_download_url(collection_date)}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date must use YYYY-MM-DD.")
+    except Exception as exc:
+        code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            raise HTTPException(status_code=404, detail="Archived collection not found.")
+        raise HTTPException(status_code=502, detail="Could not create archive download link.")
