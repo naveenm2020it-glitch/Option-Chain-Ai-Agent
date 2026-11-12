@@ -186,10 +186,12 @@ def run(start: date, end: date, output_root: Path, delay: float):
     summary["earliest_validated_session"] = validated_dates[0] if validated_dates else None
     summary["latest_validated_session"] = validated_dates[-1] if validated_dates else None
     summary["validated_session_count"] = len(validated_dates)
+    summary["calendar_validation_required"] = True
+    summary["model_training_allowed"] = False
     if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350:
         summary["status"] = "partial_needs_review"
     else:
-        summary["status"] = "complete_for_detected_trading_sessions"
+        summary["status"] = "uploaded_needs_exchange_calendar_validation"
     key = f"nse/backfill/coverage-{start.isoformat()}-to-{end.isoformat()}.json"
     client.put_object(
         Bucket=bucket,
