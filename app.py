@@ -68,4 +68,4 @@ def history():
     if not b2_configured():
         return {"configured": False, "storage": "backblaze_b2", "collections": [],
                 "message": "Historical archive storage is not configured yet."}
-    return {"configured": True, "storage": "cloudflare_r2", **history_catalog()}
+    return {"configured": True, "storage": "backblaze_b2", **history_catalog()}
