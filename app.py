@@ -8,13 +8,14 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from data_quality import assess_manifest
+from seller_engine import analyze_seller_market
 from storage import history_catalog, b2_configured, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-app = FastAPI(title="NIFTY 50 Next-Day Market Intelligence", version="0.2.0",
-              description="Evidence-led research dashboard. Not investment advice.")
+app = FastAPI(title="NIFTY 50 Next-Day Market Intelligence", version="0.3.0",
+              description="Seller-first evidence-led research dashboard. Not investment advice.")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
@@ -57,9 +58,34 @@ def status():
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
-        "message": ("Core NSE reports are aligned. Forecast engine is not enabled yet."
+        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False},
+        "message": ("Core NSE reports are aligned. Seller analysis code is implemented; "
+                    "raw NSE report adapters and live forecast are not enabled yet."
                     if ready else
                     "Prediction blocked: core NSE reports must be present and from one trading session."),
+    }
+
+
+@app.post("/api/engine/analyze")
+def engine_analyze(payload: dict):
+    """Run seller ensemble on a validated, normalized snapshot; not raw NSE files."""
+    try:
+        return analyze_seller_market(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/engine/models")
+def engine_models():
+    return {
+        "orientation": "seller_first",
+        "parallel_subprocesses": [
+            "CE seller", "PE seller", "OI/PCR", "seller strength",
+            "futures confirmation", "participant positioning",
+            "volatility risk", "seller trap risk",
+        ],
+        "master_engine": "weighted consensus with data-quality, disagreement and risk gates",
+        "live_data_connected": False,
     }
 
 
@@ -85,7 +111,6 @@ def history_manifest(collection_date: str):
         if code in {"NoSuchKey", "404", "NotFound"}:
             raise HTTPException(status_code=404, detail="Archived collection not found.")
         raise HTTPException(status_code=502, detail="Could not read archive manifest from B2.")
-
 
 @app.get("/api/history/{collection_date}/download")
 def history_download(collection_date: str):
