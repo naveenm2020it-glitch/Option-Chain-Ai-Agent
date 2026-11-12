@@ -37,6 +37,7 @@ def archived_and_valid(client, bucket: str, day: date) -> bool:
     try:
         response = client.get_object(Bucket=bucket, Key=key)
         manifest = json.loads(response["Body"].read().decode("utf-8"))
+        client.head_object(Bucket=bucket, Key=f"nse/daily/{day.isoformat()}/reports.zip")
     except Exception:
         return False
     if manifest.get("core_session_status") != "aligned":
@@ -160,6 +161,14 @@ def run(start: date, end: date, output_root: Path, delay: float):
             continue
 
         entry = upload_collection(day_dir, day_text)
+        # Confirm both objects are readable from B2 before counting this date as archived.
+        client.head_object(Bucket=bucket, Key=f"nse/daily/{day_text}/reports.zip")
+        remote_manifest = client.get_object(
+            Bucket=bucket, Key=f"nse/daily/{day_text}/manifest.json"
+        )
+        verified_manifest = json.loads(remote_manifest["Body"].read().decode("utf-8"))
+        if verified_manifest.get("core_session_status") != "aligned":
+            raise RuntimeError(f"B2 manifest verification failed for {day_text}")
         summary["uploaded_sessions"].append({
             "date": day_text,
             "report_count": entry.get("report_count", 0),
@@ -169,8 +178,18 @@ def run(start: date, end: date, output_root: Path, delay: float):
         print(f"UPLOADED {day_text}: {entry.get('report_count')} reports", flush=True)
 
     summary["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
-    summary["validated_session_count"] = len(summary["uploaded_sessions"]) + len(summary["skipped_existing_sessions"])
-    summary["status"] = "complete_for_detected_trading_sessions" if not summary["incomplete_session_dates"] else "partial_needs_review"
+    validated_dates = sorted(
+        [item["date"] for item in summary["uploaded_sessions"]]
+        + summary["skipped_existing_sessions"]
+    )
+    summary["validated_dates"] = validated_dates
+    summary["earliest_validated_session"] = validated_dates[0] if validated_dates else None
+    summary["latest_validated_session"] = validated_dates[-1] if validated_dates else None
+    summary["validated_session_count"] = len(validated_dates)
+    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350:
+        summary["status"] = "partial_needs_review"
+    else:
+        summary["status"] = "complete_for_detected_trading_sessions"
     key = f"nse/backfill/coverage-{start.isoformat()}-to-{end.isoformat()}.json"
     client.put_object(
         Bucket=bucket,
@@ -189,7 +208,7 @@ def run(start: date, end: date, output_root: Path, delay: float):
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
-    if summary["incomplete_session_dates"]:
+    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350:
         return 2
     return 0
 
