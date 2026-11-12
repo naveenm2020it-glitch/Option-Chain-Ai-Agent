@@ -30,8 +30,8 @@ def report_specs(day: date):
     ymd = day.strftime("%Y%m%d")
     return [
         ("fo_udiff_bhavcopy", f"/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
-        ("fo_participant_oi", f"/fo/fao_participant_oi_{dmy}.csv", "csv"),
-        ("fo_participant_volume", f"/fo/fao_participant_vol_{dmy}.csv", "csv"),
+        ("fo_participant_oi", f"/nsccl/fao_participant_oi_{dmy}.csv", "csv"),
+        ("fo_participant_volume", f"/nsccl/fao_participant_vol_{dmy}.csv", "csv"),
         ("fo_market_activity", f"/fo/fo{dmy}.zip", "zip"),
         ("cm_udiff_bhavcopy", f"/cm/BhavCopy_NSE_CM_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
     ]
