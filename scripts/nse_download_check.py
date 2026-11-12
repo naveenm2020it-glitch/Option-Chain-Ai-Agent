@@ -75,8 +75,14 @@ def run(output: Path, end: date, lookback_days: int = 7):
     output.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     session.headers.update(HEADERS)
-    home = session.get("https://www.nseindia.com/", timeout=TIMEOUT)
-    home.raise_for_status()
+    # NSE's homepage may return HTTP 403 to cloud runners. Archive hosts can
+    # still serve public files directly, so record the homepage result but do
+    # not make it a prerequisite for downloading.
+    try:
+        home = session.get("https://www.nseindia.com/", timeout=TIMEOUT)
+        homepage_status = home.status_code
+    except requests.RequestException as exc:
+        homepage_status = f"unavailable: {exc}"
 
     results = {}
     errors = []
@@ -98,6 +104,7 @@ def run(output: Path, end: date, lookback_days: int = 7):
     manifest = {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "requested_end_date": end.isoformat(),
+        "nse_homepage_status": homepage_status,
         "results": results,
         "errors": errors,
     }
