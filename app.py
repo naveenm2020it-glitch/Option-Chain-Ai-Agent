@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from data_quality import assess_manifest
-from storage import history_catalog, r2_configured
+from storage import history_catalog, b2_configured
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
@@ -55,7 +55,7 @@ def status():
         "data_mode": "validated_eod" if ready else "blocked_data_quality",
         "report_files": sum(p.is_file() for p in files),
         "data_quality": quality,
-        "historical_storage": "cloudflare_r2_configured" if r2_configured() else "not_configured",
+        "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
         "message": ("Core NSE reports are aligned. Forecast engine is not enabled yet."
                     if ready else
@@ -65,7 +65,7 @@ def status():
 
 @app.get("/api/history")
 def history():
-    if not r2_configured():
-        return {"configured": False, "storage": "cloudflare_r2", "collections": [],
+    if not b2_configured():
+        return {"configured": False, "storage": "backblaze_b2", "collections": [],
                 "message": "Historical archive storage is not configured yet."}
     return {"configured": True, "storage": "cloudflare_r2", **history_catalog()}
