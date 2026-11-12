@@ -2,32 +2,43 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 
-def r2_configured() -> bool:
-    required = ("R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME")
+def b2_configured() -> bool:
+    required = ("B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME")
     return all(os.getenv(key) for key in required)
 
 
-def r2_client():
-    if not r2_configured():
-        raise RuntimeError("R2 is not configured; set R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME")
+def b2_client():
+    if not b2_configured():
+        raise RuntimeError(
+            "Backblaze B2 is not configured; set B2_ENDPOINT_URL, "
+            "B2_APPLICATION_KEY_ID, B2_APPLICATION_KEY and B2_BUCKET_NAME"
+        )
     import boto3
+    from botocore.config import Config
 
+    endpoint = os.environ["B2_ENDPOINT_URL"].rstrip("/")
+    match = re.fullmatch(r"https://s3\.([a-z0-9-]+)\.backblazeb2\.com", endpoint)
+    if not match:
+        raise RuntimeError("B2_ENDPOINT_URL must match https://s3.<region>.backblazeb2.com")
+    region = match.group(1)
     return boto3.client(
         "s3",
-        endpoint_url=os.environ["R2_ENDPOINT_URL"],
-        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-        region_name="auto",
+        endpoint_url=endpoint,
+        aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
+        aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
+        region_name=region,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
 
 
 def read_catalog(client=None) -> dict[str, Any]:
-    client = client or r2_client()
-    bucket = os.environ["R2_BUCKET_NAME"]
+    client = client or b2_client()
+    bucket = os.environ["B2_BUCKET_NAME"]
     try:
         response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
         return json.loads(response["Body"].read().decode("utf-8"))
@@ -51,8 +62,6 @@ def upload_collection(directory, collection_date: str) -> dict[str, Any]:
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError("manifest.json is required before archiving")
-    # The collection date identifies when this batch was collected. Individual
-    # reports retain their own report_date; it is not assumed to be the session date.
     archive_path = root.parent / f"nse-eod-{collection_date}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.iterdir()):
@@ -61,8 +70,8 @@ def upload_collection(directory, collection_date: str) -> dict[str, Any]:
 
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     prefix = f"nse/daily/{collection_date}"
-    bucket = os.environ["R2_BUCKET_NAME"]
-    client = r2_client()
+    bucket = os.environ["B2_BUCKET_NAME"]
+    client = b2_client()
     client.upload_file(str(archive_path), bucket, f"{prefix}/reports.zip",
                        ExtraArgs={"ContentType": "application/zip"})
     client.upload_file(str(manifest_path), bucket, f"{prefix}/manifest.json",
