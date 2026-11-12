@@ -32,6 +32,16 @@ def test_dashboard_loads():
     assert "NIFTY 50 Intelligence" in response.text
 
 
+def test_history_api_explains_unconfigured_storage(monkeypatch):
+    for key in ("R2_ENDPOINT_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"):
+        monkeypatch.delenv(key, raising=False)
+    response = client.get("/api/history")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["configured"] is False
+    assert payload["collections"] == []
+
+
 def make_manifest(dates):
     return {
         "results": {
