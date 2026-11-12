@@ -34,13 +34,11 @@ def report_specs(day: date):
         ("fo_udiff_bhavcopy", f"/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
         ("fo_participant_oi", f"/nsccl/fao_participant_oi_{dmy}.csv", "csv"),
         ("fo_participant_volume", f"/nsccl/fao_participant_vol_{dmy}.csv", "csv"),
-        ("fo_market_activity", f"/fo/fo{dmy}.zip", "zip"),
-        ("fo_futidx_activity", f"/fo/futidx{dmy}.csv", "csv"),
-        ("fo_optidx_activity", f"/fo/optidx{dmy}.csv", "csv"),
-        ("fo_settlement_prices", f"/archives/nsccl/fo/FOSett_prce_{dmy}.csv", "csv"),
+        ("fo_market_activity", f"/archives/fo/mkt/fo{dmy}.zip", "zip"),
+        ("fo_settlement_prices", f"/archives/nsccl/sett/FOSett_prce_{dmy}.csv", "csv"),
         ("fo_daily_volatility", f"/archives/nsccl/volt/FOVOLT_{dmy}.csv", "csv"),
         ("fo_top10_cm_volume", f"/nsccl/fao_top10cm_to_{dmy}.csv", "csv"),
-        ("fo_contract_delta", f"/fo/Contract_Delta_{dmy}.csv", "csv"),
+        ("fo_contract_delta", f"/nsccl/Contract_Delta_{dmy}.csv", "csv"),
         ("fo_contract_master", f"/fo/NSE_FO_contract_{dmy}.csv.gz", "gzip"),
         # NIFTY cash/index context
         ("cm_udiff_bhavcopy", f"/cm/BhavCopy_NSE_CM_0_0_0_{ymd}_F_0000.csv.zip", "zip"),
@@ -74,16 +72,6 @@ def validate_payload(name: str, payload: bytes, kind: str) -> dict:
 
 def fetch_report(session: requests.Session, name: str, path: str, kind: str):
     urls = [("https://nsearchives.nseindia.com" + path) if path.startswith("/archives/") else (BASE + path)]
-    # NSE serves some daily report archives from a different archive host
-    # even though the report listing is on nseindia.com. Try both official
-    # archive hosts before marking the report unavailable.
-    if name == "fo_market_activity":
-        filename = path.rsplit("/", 1)[-1]
-        urls.extend([
-            f"https://archives.nseindia.com/content/fo/{filename}",
-            f"https://nseindia.com/content/fo/{filename}",
-            f"https://nsearchives.nseindia.com/archives/fo/{filename}",
-        ])
     failures = []
     for url in dict.fromkeys(urls):
         try:
@@ -123,6 +111,37 @@ def run(output: Path, end: date, lookback_days: int = 7):
                 filename = f"{name}_{day.isoformat()}.{extension}"
                 (output / filename).write_bytes(payload)
                 results[name] = {"report_date": day.isoformat(), "file": filename, **meta}
+                if name == "fo_market_activity":
+                    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                        wanted = {
+                            f"futidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_futidx_activity",
+                            f"optidx{day.strftime('%d%m%Y')}.csv".lower(): "fo_optidx_activity",
+                        }
+                        extracted = set()
+                        for member in archive.namelist():
+                            member_name = Path(member).name.lower()
+                            if member_name in wanted:
+                                derived = wanted[member_name]
+                                derived_file = f"{derived}_{day.isoformat()}.csv"
+                                content = archive.read(member)
+                                validate_payload(derived, content, "csv")
+                                (output / derived_file).write_bytes(content)
+                                results[derived] = {
+                                    "status": "extracted",
+                                    "report_date": day.isoformat(),
+                                    "file": derived_file,
+                                    "source_archive": filename,
+                                    "bytes": len(content),
+                                    "sha256": hashlib.sha256(content).hexdigest(),
+                                }
+                                extracted.add(derived)
+                        for derived in ("fo_futidx_activity", "fo_optidx_activity"):
+                            if derived not in extracted:
+                                results[derived] = {
+                                    "status": "not_in_archive",
+                                    "report_date": day.isoformat(),
+                                    "source_archive": filename,
+                                }
                 break
             except Exception as exc:
                 errors.append({"report": name, "date": day.isoformat(), "error": str(exc)})
