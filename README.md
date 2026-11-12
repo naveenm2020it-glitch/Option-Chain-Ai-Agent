@@ -1,13 +1,29 @@
-# NIFTY Next-Day Market Intelligence
+# NIFTY 50 Next-Day AI Market Intelligence
 
-Fresh rebuild started. This repository is being rebuilt from a clean baseline.
+A mobile-first, evidence-led research dashboard for **NIFTY 50** and **NIFTY index options only**.
 
-## Project goals
-- Free, verifiable NSE data sources
-- Daily next-session market outlook
-- Option-seller positioning analysis with transparent evidence
-- Buyer-side CE / PE / no-trade decision support
-- Frozen next-day predictions and chronological PASS / FAIL validation
-- Mobile-first dashboard and cloud deployment
+## Current status
+Phase 1 foundation committed: FastAPI backend, mobile dashboard, health/status API, architecture document and CI smoke tests. The app intentionally shows **no prediction** until real source data has been collected and validated.
 
-No prediction is guaranteed. Open interest alone does not identify buyer or seller intent.
+## Run
+Install dependencies: pip install -r requirements.txt
+Start server: uvicorn app:app --host 0.0.0.0 --port 8000
+Open http://localhost:8000.
+
+## API
+- GET /api/health — service health
+- GET /api/status — selected market, report count and data readiness
+
+## Deployment
+Render build command: pip install -r requirements.txt
+Render start command: uvicorn app:app --host 0.0.0.0 --port $PORT
+
+## Principles
+- Free data sources where possible; source provenance and file hashes retained.
+- No fabricated or stale data presented as current.
+- Open interest alone does not identify who bought or sold.
+- Forecasts are frozen before the next session and scored without hindsight.
+- Directional accuracy is distinct from options trading profitability.
+- Research support only, not financial advice.
+
+See docs/ARCHITECTURE.md for the architecture.
