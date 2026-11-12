@@ -1,4 +1,4 @@
-name: NSE report download verification
+name: NSE report download and durable archive
 # Scheduled NIFTY-focused NSE report collection and archive validation.
 
 on:
@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - "scripts/nse_download_check.py"
+      - "scripts/archive_to_r2.py"
+      - "storage.py"
+      - "requirements.txt"
       - ".github/workflows/nse-download-check.yml"
   workflow_dispatch:
   schedule:
@@ -14,20 +17,35 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nse-eod-collection
+  cancel-in-progress: false
+
 jobs:
   download-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install downloader dependency
-        run: python -m pip install requests
+      - name: Install application dependencies
+        run: python -m pip install -r requirements.txt
       - name: Download latest available NSE EOD reports
         run: python scripts/nse_download_check.py --lookback-days 7 --output data/nse_reports
-      - name: Upload report files and integrity manifest
+      - name: Upload durable archive to Cloudflare R2
+        if: ${{ secrets.R2_ENDPOINT_URL != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.R2_BUCKET_NAME != '' }}
+        env:
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python scripts/archive_to_r2.py --directory data/nse_reports --collection-date "$(date -u +%F)"
+      - name: Explain skipped durable archive
+        if: ${{ secrets.R2_ENDPOINT_URL == '' || secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '' || secrets.R2_BUCKET_NAME == '' }}
+        run: echo "R2 credentials are not configured. The temporary 7-day GitHub artifact will still be uploaded."
+      - name: Upload temporary diagnostic artifact
         uses: actions/upload-artifact@v4
         with:
           name: nse-eod-report-download-${{ github.run_id }}
