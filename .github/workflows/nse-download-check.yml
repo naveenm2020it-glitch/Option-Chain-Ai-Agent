@@ -1,5 +1,5 @@
 name: NSE report download verification
-# Validate alternate official archive hosts for F&O market activity downloads.
+# Scheduled NIFTY-focused NSE report collection and archive validation.
 
 on:
   push:
