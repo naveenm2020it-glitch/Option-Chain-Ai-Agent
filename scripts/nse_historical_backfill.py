@@ -73,8 +73,10 @@ def build_session(day: date, session: requests.Session, output: Path, delay: flo
             for result_name, result in save_report(output, name, day, spec, payload, meta):
                 results[result_name] = result
         status = "aligned"
+        day_type = "trading_session"
     else:
         status = "blocked_no_common_session"
+        day_type = "incomplete_session" if "fo_udiff_bhavcopy" in staged else "non_trading_or_archive_unavailable"
         for name in CORE_REPORT_NAMES:
             results.setdefault(name, {
                 "status": "not_found",
@@ -88,6 +90,7 @@ def build_session(day: date, session: requests.Session, output: Path, delay: flo
         "core_session_date": day.isoformat() if status == "aligned" else None,
         "core_session_status": status,
         "backfill": True,
+        "day_type": day_type,
         "results": results,
         "errors": errors,
     }
@@ -130,7 +133,8 @@ def run(start: date, end: date, output_root: Path, delay: float):
         "processed_weekdays": 0,
         "uploaded_sessions": [],
         "skipped_existing_sessions": [],
-        "no_common_session_dates": [],
+        "non_trading_or_unavailable_dates": [],
+        "incomplete_session_dates": [],
         "errors": [],
     }
 
@@ -146,9 +150,13 @@ def run(start: date, end: date, output_root: Path, delay: float):
         day_dir.mkdir(parents=True, exist_ok=True)
         manifest = build_session(day, session, day_dir, delay)
         if manifest["core_session_status"] != "aligned":
-            summary["no_common_session_dates"].append(day_text)
-            summary["errors"].extend(manifest["errors"])
-            print(f"NO ALIGNED CORE SESSION {day_text}", flush=True)
+            if manifest.get("day_type") == "incomplete_session":
+                summary["incomplete_session_dates"].append(day_text)
+                summary["errors"].extend(manifest["errors"])
+                print(f"INCOMPLETE CORE SESSION {day_text}", flush=True)
+            else:
+                summary["non_trading_or_unavailable_dates"].append(day_text)
+                print(f"NO FO BHAVCOPY (holiday or archive unavailable) {day_text}", flush=True)
             continue
 
         entry = upload_collection(day_dir, day_text)
@@ -162,7 +170,7 @@ def run(start: date, end: date, output_root: Path, delay: float):
 
     summary["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
     summary["validated_session_count"] = len(summary["uploaded_sessions"]) + len(summary["skipped_existing_sessions"])
-    summary["status"] = "complete_for_requested_range" if not summary["no_common_session_dates"] else "partial_needs_review"
+    summary["status"] = "complete_for_detected_trading_sessions" if not summary["incomplete_session_dates"] else "partial_needs_review"
     key = f"nse/backfill/coverage-{start.isoformat()}-to-{end.isoformat()}.json"
     client.put_object(
         Bucket=bucket,
@@ -181,7 +189,7 @@ def run(start: date, end: date, output_root: Path, delay: float):
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
-    if summary["no_common_session_dates"]:
+    if summary["incomplete_session_dates"]:
         return 2
     return 0
 
