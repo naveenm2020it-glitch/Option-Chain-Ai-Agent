@@ -61,14 +61,29 @@ def validate_payload(name: str, payload: bytes, kind: str) -> dict:
 
 
 def fetch_report(session: requests.Session, name: str, path: str, kind: str):
-    url = BASE + path
-    response = session.get(url, timeout=TIMEOUT)
-    response.raise_for_status()
-    details = validate_payload(name, response.content, kind)
-    return response.content, {"url": url, "http_status": response.status_code,
-                              "bytes": len(response.content),
-                              "sha256": hashlib.sha256(response.content).hexdigest(),
-                              **details}
+    urls = [BASE + path]
+    # NSE serves some daily report archives from a different archive host
+    # even though the report listing is on nseindia.com. Try both official
+    # archive hosts before marking the report unavailable.
+    if name == "fo_market_activity":
+        filename = path.rsplit("/", 1)[-1]
+        urls.extend([
+            f"https://archives.nseindia.com/content/fo/{filename}",
+            f"https://nseindia.com/content/fo/{filename}",
+        ])
+    failures = []
+    for url in dict.fromkeys(urls):
+        try:
+            response = session.get(url, timeout=TIMEOUT)
+            response.raise_for_status()
+            details = validate_payload(name, response.content, kind)
+            return response.content, {"url": url, "http_status": response.status_code,
+                                      "bytes": len(response.content),
+                                      "sha256": hashlib.sha256(response.content).hexdigest(),
+                                      **details}
+        except Exception as exc:
+            failures.append(f"{url}: {exc}")
+    raise RuntimeError("all official URL variants failed: " + " | ".join(failures))
 
 
 def run(output: Path, end: date, lookback_days: int = 7):
