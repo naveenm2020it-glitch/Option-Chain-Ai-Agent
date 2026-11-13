@@ -128,3 +128,13 @@ def history_download(collection_date: str):
         if code in {"NoSuchKey", "404", "NotFound"}:
             raise HTTPException(status_code=404, detail="Archived collection not found.")
         raise HTTPException(status_code=502, detail="Could not create archive download link.")
+
+
+@app.get("/api/performance")
+def performance(from_date: str | None = None, to_date: str | None = None):
+    """Prediction outcome feed placeholder; populated after daily forecasts are persisted and evaluated."""
+    return {
+        "available": False,
+        "records": [],
+        "message": "Prediction outcomes are not being stored/evaluated yet. The heatmap is ready; green/red results will appear after daily predictions are recorded and compared with the next session's actual NIFTY outcome.",
+    }
