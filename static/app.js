@@ -50,7 +50,22 @@ async function loadPerformance(){
  }catch(e){note.textContent="Could not load evaluated prediction history. No results are being fabricated.";}
 }
 function initHeatmap(){const today=new Date(),from=new Date(today);from.setDate(from.getDate()-364);byId("heat-from").value=isoDate(from);byId("heat-to").value=isoDate(today);byId("heat-apply").addEventListener("click",loadPerformance);loadPerformance();}
+function initMotionAndNavigation(){
+ const navLinks=[...document.querySelectorAll(".bottom-nav a")];
+ const targets=navLinks.map(link=>document.querySelector(link.getAttribute("href"))).filter(Boolean);
+ const activate=id=>navLinks.forEach(link=>link.classList.toggle("active",link.getAttribute("href")==="#"+id));
+ navLinks.forEach(link=>link.addEventListener("click",event=>{
+  const target=document.querySelector(link.getAttribute("href"));if(!target)return;
+  event.preventDefault();target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+  activate(target.id||"top");
+ }));
+ if("IntersectionObserver" in window){
+  const motionObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add("is-visible");motionObserver.unobserve(entry.target);}}),{threshold:.08,rootMargin:"0px 0px -35px 0px"});
+  document.querySelectorAll(".section-block").forEach(section=>{section.classList.add("reveal-ready");motionObserver.observe(section);});
+  const navObserver=new IntersectionObserver(entries=>{const visible=entries.filter(entry=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(visible)activate(visible.target.id||"top");},{rootMargin:"-25% 0px -60% 0px",threshold:[0,.1,.25,.5]});
+  targets.forEach(target=>navObserver.observe(target));
+ }
+}
 function refresh(){loadStatus();loadHistory();}
 byId("refresh")?.addEventListener("click",refresh);byId("quick-refresh")?.addEventListener("click",refresh);
-document.querySelectorAll(".bottom-nav a").forEach(link=>link.addEventListener("click",()=>{document.querySelectorAll(".bottom-nav a").forEach(a=>a.classList.remove("active"));link.classList.add("active");}));
-refresh();initHeatmap();
+refresh();initHeatmap();initMotionAndNavigation();
