@@ -23,11 +23,18 @@ from scripts.nse_download_check import (  # noqa: E402
 from storage import b2_client, read_catalog, upload_collection  # noqa: E402
 
 
+# NSE F&O special sessions that fall outside the normal Monday-Friday calendar.
+# Keep these explicit and source them from official NSE circulars.
+SPECIAL_TRADING_SESSIONS = {
+    date(2026, 11, 8),  # Diwali Laxmi Pujan / Muhurat Trading (Sunday)
+}
+
+
 def dates_between(start: date, end: date):
     current = start
     while current <= end:
-        # NSE cash/derivatives reports are not published on weekends.
-        if current.weekday() < 5:
+        # Include regular weekdays and explicitly declared weekend special sessions.
+        if current.weekday() < 5 or current in SPECIAL_TRADING_SESSIONS:
             yield current
         current += timedelta(days=1)
 
