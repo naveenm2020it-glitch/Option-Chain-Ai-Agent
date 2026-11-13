@@ -101,11 +101,15 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
                     continue
                 if Path(filename).name != filename or filename not in members:
                     return False, f"manifest_file_missing_or_unsafe:{report_name}"
+                if item.get("report_date") != day.isoformat():
+                    return False, f"report_session_date_mismatch:{report_name}"
                 payload = archive.read(filename)
                 if not payload:
                     return False, f"empty_report_payload:{report_name}"
                 expected_report_hash = item.get("sha256")
-                if expected_report_hash and hashlib.sha256(payload).hexdigest().lower() != str(expected_report_hash).lower():
+                if not expected_report_hash:
+                    return False, f"report_sha256_missing:{report_name}"
+                if hashlib.sha256(payload).hexdigest().lower() != str(expected_report_hash).lower():
                     return False, f"report_sha256_mismatch:{report_name}"
                 kind = specs.get(report_name, "csv")
                 validate_payload(report_name, payload, kind)
