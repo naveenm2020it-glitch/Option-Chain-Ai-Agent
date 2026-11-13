@@ -58,9 +58,7 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
     """Download and fully validate one archived session before trusting it."""
     prefix = f"nse/daily/{day.isoformat()}"
     try:
-        if manifest is None:
-            response = client.get_object(Bucket=bucket, Key=f"{prefix}/manifest.json")
-            manifest = json.loads(response["Body"].read().decode("utf-8"))
+        # One B2 GET per session: manifest.json is already embedded in reports.zip.
         response = client.get_object(Bucket=bucket, Key=f"{prefix}/reports.zip")
         archive_bytes = response["Body"].read()
         if not archive_bytes:
@@ -72,17 +70,9 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
         digest = hashlib.sha256(archive_bytes).hexdigest()
         if not expected_hash or digest.lower() != str(expected_hash).lower():
             return False, "archive_sha256_mismatch_or_missing_catalog_hash"
-        if manifest.get("core_session_status") != "aligned":
-            return False, "manifest_not_aligned"
-        if manifest.get("core_session_date") != day.isoformat():
-            return False, "manifest_session_date_mismatch"
 
         specs = {item[0]: item[2] for item in report_specs(day)}
         required = set(CORE_REPORT_NAMES)
-        results = manifest.get("results", {})
-        if not required.issubset(results):
-            return False, "core_manifest_entries_missing"
-
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
             bad_member = archive.testzip()
             if bad_member:
@@ -90,6 +80,19 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
             members = set(archive.namelist())
             if len(members) != len(archive.namelist()):
                 return False, "duplicate_archive_member_names"
+            if "manifest.json" not in members:
+                return False, "embedded_manifest_missing"
+            try:
+                manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+            except Exception as exc:
+                return False, f"embedded_manifest_invalid:{type(exc).__name__}"
+            if manifest.get("core_session_status") != "aligned":
+                return False, "manifest_not_aligned"
+            if manifest.get("core_session_date") != day.isoformat():
+                return False, "manifest_session_date_mismatch"
+            results = manifest.get("results", {})
+            if not required.issubset(results):
+                return False, "core_manifest_entries_missing"
             for name in required:
                 item = results.get(name, {})
                 if item.get("report_date") != day.isoformat() or not item.get("file"):
@@ -245,13 +248,8 @@ def run(start: date, end: date, output_root: Path, delay: float):
             continue
 
         entry = upload_collection(day_dir, day_text)
-        # Download the just-uploaded objects and verify archive bytes, hashes, CRC,
-        # every manifest-listed file, and all core report payloads before counting it.
-        remote_manifest = client.get_object(
-            Bucket=bucket, Key=f"nse/daily/{day_text}/manifest.json"
-        )
-        verified_manifest = json.loads(remote_manifest["Body"].read().decode("utf-8"))
-        valid, reason = validate_remote_archive(client, bucket, day, entry, verified_manifest)
+        # Verify the uploaded ZIP; embedded manifest avoids a second B2 GET.
+        valid, reason = validate_remote_archive(client, bucket, day, entry)
         if not valid:
             summary["archive_integrity_failures"].append({"date": day_text, "reason": reason})
             raise RuntimeError(f"B2 ZIP integrity verification failed for {day_text}: {reason}")
