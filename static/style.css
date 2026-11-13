@@ -51,3 +51,23 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Navigation transition: a short soft slide/fade when a bottom tab is opened */
+@media (prefers-reduced-motion: no-preference) {
+  .section-block.tab-transition, .hero-card.tab-transition {
+    animation: tab-arrive .62s cubic-bezier(.16,1,.3,1) both !important;
+  }
+  .bottom-nav a.tab-tapped span {
+    animation: tab-icon-pop .42s cubic-bezier(.16,1,.3,1);
+  }
+}
+@keyframes tab-arrive {
+  0% { opacity:.35; transform:translate3d(0,18px,0) scale(.99); filter:blur(2px); }
+  65% { opacity:1; transform:translate3d(0,-2px,0) scale(1.002); filter:blur(0); }
+  100% { opacity:1; transform:translate3d(0,0,0) scale(1); filter:blur(0); }
+}
+@keyframes tab-icon-pop {
+  0% { transform:scale(.88) translateY(2px); }
+  55% { transform:scale(1.18) translateY(-3px); }
+  100% { transform:scale(1.04) translateY(-2px); }
+}
