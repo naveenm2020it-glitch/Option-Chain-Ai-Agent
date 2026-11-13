@@ -32,6 +32,39 @@
       <article class="feature-card"><div class="feature-heading"><span class="metric-icon mint">↔</span><div><strong>Prediction vs actual</strong><small>Previous call compared with next session</small></div></div><div class="compare-grid"><div><small>Previous prediction</small><b>—</b></div><div><small>Actual outcome</small><b>—</b></div></div><p>Daily predictions must be saved and evaluated first.</p></article>
       <article class="feature-card alert-feature"><div class="feature-heading"><span class="metric-icon peach">!</span><div><strong>No-trade alert</strong><small>Protect seller capital in uncertain conditions</small></div></div><strong class="feature-status">WAITING FOR DATA</strong><p>If data quality fails, models conflict, or risk is high, the engine will prefer NO TRADE.</p></article>
     </div>
+
+    <div class="section-title sub-feature-title"><div><p class="eyebrow">DECISION EXPLAINABILITY</p><h2>Why this decision?</h2></div><span class="soft-tag">Engine reasoning</span></div>
+    <article class="feature-card explain-card">
+      <div class="decision-banner"><span class="decision-wait">WAITING FOR VALIDATED DATA</span><strong>Final decision: NO TRADE</strong></div>
+      <p class="explain-intro">When the engine produces a CE Writing, PE Writing or NO TRADE result, the reasons will be shown here instead of displaying only a signal.</p>
+      <div class="reason-list">
+        <div><span>01</span><section><b>Seller-side evidence</b><small>CE / PE writing evidence, premium movement and strike concentration.</small></section><em>Pending</em></div>
+        <div><span>02</span><section><b>Market confirmation</b><small>Spot structure, futures, OI/PCR and participant positioning.</small></section><em>Pending</em></div>
+        <div><span>03</span><section><b>Risk and disagreement checks</b><small>IV, expiry risk, seller traps, missing inputs and model conflicts.</small></section><em>Pending</em></div>
+      </div>
+      <p class="feature-note">NO TRADE is preferred when data validation fails, model disagreement is high, risk is elevated or evidence is insufficient.</p>
+    </article>
+
+    <div class="section-title sub-feature-title"><div><p class="eyebrow">PREMIUM &amp; VOLATILITY</p><h2>Option seller advantage</h2></div><span class="soft-tag">Seller edge</span></div>
+    <div class="feature-grid advantage-grid">
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon lilac">IV</span><div><strong>Implied volatility</strong><small>ATM IV · IV percentile</small></div></div><div class="compare-grid"><div><small>ATM IV</small><b>—</b></div><div><small>IV percentile</small><b>—</b></div></div><p>Premium richness cannot be assessed until validated option-chain IV data is connected.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon mint">θ</span><div><strong>Time decay opportunity</strong><small>Theta and days to expiry</small></div></div><div class="level-line"><span>Theta profile</span><b>—</b></div><div class="level-line"><span>Days to expiry</span><b>—</b></div><p>Theta is not a guaranteed profit; gamma and sudden moves can outweigh decay.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon yellow">↕</span><div><strong>Expected move</strong><small>Implied range for the selected expiry</small></div></div><div class="level-line"><span>Upper range</span><b>—</b></div><div class="level-line"><span>Lower range</span><b>—</b></div><p>Range will be calculated only from a validated ATM option snapshot and expiry.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon peach">!</span><div><strong>Expiry &amp; gamma risk</strong><small>Fast premium expansion warning</small></div></div><strong class="feature-status">NOT YET RATED</strong><p>Expiry proximity, IV expansion and spot acceleration must be checked before considering short options.</p></article>
+    </div>
+
+    <div class="section-title sub-feature-title"><div><p class="eyebrow">MARKET EVENTS</p><h2>Event &amp; risk calendar</h2></div><span class="soft-tag">NIFTY events</span></div>
+    <article class="feature-card calendar-card">
+      <div class="calendar-state"><span class="metric-icon peach">▦</span><div><strong>Official event feed not connected</strong><small>Upcoming events will appear after calendar-source integration.</small></div></div>
+      <div class="calendar-categories">
+        <div><b>RBI / monetary policy</b><span>Awaiting verified dates</span></div>
+        <div><b>Inflation &amp; macro data</b><span>Awaiting verified dates</span></div>
+        <div><b>Budget / major announcements</b><span>Awaiting verified dates</span></div>
+        <div><b>NIFTY expiry &amp; NSE holidays</b><span>Awaiting official calendar sync</span></div>
+        <div><b>Global market risk</b><span>Awaiting event feed</span></div>
+      </div>
+      <p class="feature-note">No event dates are being guessed. Calendar alerts should be verified against official exchange and government sources before use.</p>
+    </article>
   </section>
   <section class="section-block" id="history">
     <div class="section-title"><div><p class="eyebrow">PERFORMANCE TRACKER</p><h2>Prediction history</h2></div><span class="soft-tag">1-year heatmap</span></div>
