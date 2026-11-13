@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f2edf3"><title>NIFTY 50 Intelligence — Seller Intelligence</title>
-<link rel="stylesheet" href="/static/style.css?v=20261113-alignment5">
+<link rel="stylesheet" href="/static/style.css?v=20261113-reports6">
 </head>
 <body>
 <main class="app-shell" id="top">
@@ -89,11 +89,45 @@
       <p class="heatmap-note" id="heatmap-note">Prediction outcome history is not connected yet. Grey squares mean no evaluated result, not a failed prediction.</p>
     </div>
   </section>
-  <section class="section-block" id="reports">
-    <div class="section-title"><div><p class="eyebrow">RESEARCH VAULT</p><h2>Reports &amp; system</h2></div><span class="soft-tag">Archive</span></div>
-    <div class="history-card"><div class="history-head"><span class="history-icon">▤</span><div><strong>Historical NSE archive</strong><small id="history-note">Loading saved collections…</small></div><span class="chevron">›</span></div><div id="history-list"></div><div class="archive-foot"><span class="status-dot"></span> Archive integrity audit is still in progress</div></div>
-    <div class="section-title report-subtitle"><div><p class="eyebrow">ADMIN / INTERNAL</p><h2>System health</h2></div><span class="soft-tag">Technical</span></div>
-    <div class="system-card"><div class="system-line"><span>API connection</span><b id="api-state">Checking</b></div><div class="system-line"><span>Live NSE data adapter</span><b class="pending">Not connected</b></div><div class="system-line"><span>AI model training</span><b class="pending">OFF</b></div><div class="system-line"><span>Detected report files</span><b id="reports">—</b></div></div>
+  <section class="section-block reports-dashboard" id="reports">
+    <div class="section-title"><div><p class="eyebrow">RESEARCH VAULT</p><h2>Reports centre</h2><small class="section-caption">Your daily NIFTY seller intelligence, saved history and system records</small></div><span class="soft-tag">Reports</span></div>
+
+    <article class="report-hero">
+      <div class="report-hero-top"><span class="report-hero-icon">▤</span><span class="report-live-label">DAILY REPORT</span></div>
+      <h3>Market intelligence report</h3>
+      <p>One place for the final seller decision, supporting evidence, risk checks and next-session review.</p>
+      <div class="report-hero-status"><span class="report-status-dot"></span><div><strong>Waiting for validated market data</strong><small>Daily report will be available after the analysis pipeline completes.</small></div></div>
+    </article>
+
+    <div class="report-stat-grid">
+      <article class="report-stat"><span class="report-stat-icon lavender">▧</span><small>Saved report files</small><strong id="reports-count">—</strong><span>Archive inventory</span></article>
+      <article class="report-stat"><span class="report-stat-icon mint">◷</span><small>Latest report</small><strong>—</strong><span>Not generated yet</span></article>
+      <article class="report-stat"><span class="report-stat-icon peach">✓</span><small>Evaluation status</small><strong>Pending</strong><span>Next-session outcome</span></article>
+    </div>
+
+    <div class="report-section-heading"><div><p class="eyebrow">REPORT LIBRARY</p><h3>Saved reports &amp; archives</h3></div><span class="soft-tag">Cloud storage</span></div>
+    <article class="report-panel archive-panel">
+      <div class="report-panel-heading"><span class="report-panel-icon lavender">▤</span><div><strong>Historical NSE archive</strong><small id="history-note">Loading saved collections…</small></div></div>
+      <div id="history-list" class="report-archive-list"><div class="report-empty">Loading archived collections…</div></div>
+      <div class="archive-integrity"><span class="integrity-indicator"></span><div><strong>Archive integrity audit</strong><small>Full ZIP verification is not yet complete. Model training remains OFF.</small></div><span class="integrity-state">IN PROGRESS</span></div>
+    </article>
+
+    <div class="report-section-heading"><div><p class="eyebrow">DAILY REPORT CONTENTS</p><h3>What each report will include</h3></div></div>
+    <div class="report-content-grid">
+      <article class="report-content-card"><span class="report-content-icon peach">⌁</span><div><strong>Seller decision summary</strong><small>CE writing / PE writing / NO TRADE with reasons and confidence.</small></div></article>
+      <article class="report-content-card"><span class="report-content-icon lavender">▥</span><div><strong>Option chain &amp; volatility</strong><small>OI changes, seller evidence, IV, theta and expiry risk.</small></div></article>
+      <article class="report-content-card"><span class="report-content-icon mint">↗</span><div><strong>Strategy &amp; risk review</strong><small>Defined-risk scenarios, invalidation levels and risk warnings.</small></div></article>
+      <article class="report-content-card"><span class="report-content-icon yellow">▦</span><div><strong>Prediction vs actual</strong><small>Previous call, next-session outcome and measured performance.</small></div></article>
+    </div>
+
+    <div class="report-section-heading"><div><p class="eyebrow">ADMIN / INTERNAL</p><h3>System health</h3></div><span class="soft-tag">Technical status</span></div>
+    <article class="report-panel system-report-panel">
+      <div class="system-report-head"><span class="report-panel-icon mint">⌘</span><div><strong>Engine connectivity</strong><small>Service and data readiness</small></div><span id="api-state" class="system-pill">Checking</span></div>
+      <div class="system-line"><span>Live NSE data adapter</span><b class="pending">Not connected</b></div>
+      <div class="system-line"><span>AI model training</span><b class="pending">OFF</b></div>
+      <div class="system-line"><span>Historical archive validation</span><b class="pending">In progress</b></div>
+      <div class="system-line"><span>Prediction outcome evaluator</span><b class="pending">Not connected</b></div>
+    </article>
   </section>
   <footer>Research support only · Options involve substantial risk. Signals are not guarantees.</footer>
 </main>
