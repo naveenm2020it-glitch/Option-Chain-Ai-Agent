@@ -306,6 +306,8 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
     summary["model_training_allowed"] = False
     if not summary["batch_complete"]:
         summary["status"] = "batch_incomplete_continue_from_next_unprocessed_date"
+    elif max_sessions is not None:
+        summary["status"] = "batch_complete_global_validation_pending"
     elif summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         summary["status"] = "partial_needs_review"
     else:
@@ -328,7 +330,9 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
-    if not summary["batch_complete"]:
+    # Batch runs are intentionally non-final: a separate cumulative audit must
+    # reconcile all batch artifacts before the training gate can ever be opened.
+    if max_sessions is not None:
         return 0
     if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         return 2
