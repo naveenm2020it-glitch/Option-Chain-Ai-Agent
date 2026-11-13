@@ -56,8 +56,18 @@ function initMotionAndNavigation(){
  const activate=id=>navLinks.forEach(link=>link.classList.toggle("active",link.getAttribute("href")==="#"+id));
  navLinks.forEach(link=>link.addEventListener("click",event=>{
   const target=document.querySelector(link.getAttribute("href"));if(!target)return;
-  event.preventDefault();target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"});
+  event.preventDefault();
+  const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({behavior:reduce?"auto":"smooth",block:"start"});
   activate(target.id||"top");
+  if(!reduce){
+   document.querySelectorAll(".tab-transition").forEach(node=>node.classList.remove("tab-transition"));
+   void target.offsetWidth;
+   target.classList.add("tab-transition");
+   link.classList.remove("tab-tapped");void link.offsetWidth;link.classList.add("tab-tapped");
+   window.setTimeout(()=>target.classList.remove("tab-transition"),700);
+   window.setTimeout(()=>link.classList.remove("tab-tapped"),500);
+  }
  }));
  if("IntersectionObserver" in window){
   const motionObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add("is-visible");motionObserver.unobserve(entry.target);}}),{threshold:.08,rootMargin:"0px 0px -35px 0px"});
