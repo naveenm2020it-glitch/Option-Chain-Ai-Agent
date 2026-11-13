@@ -54,13 +54,25 @@ def validate_payload(name: str, payload: bytes, kind: str) -> dict:
             bad_member = archive.testzip()
             if bad_member:
                 raise ValueError(f"corrupt ZIP member: {bad_member}")
-            members = archive.namelist()
-            if not members:
+            files = [info for info in archive.infolist() if not info.is_dir()]
+            if not files:
                 raise ValueError("ZIP contains no files")
-            first = archive.read(members[0])
-            if len(first) < 10:
-                raise ValueError("ZIP member is empty")
-            return {"members": members[:5], "uncompressed_first_member_bytes": len(first)}
+            nonempty = []
+            empty = []
+            for info in files:
+                size = info.file_size
+                if size >= 10:
+                    nonempty.append({"name": info.filename, "bytes": size})
+                else:
+                    empty.append(info.filename)
+            if not nonempty:
+                raise ValueError("ZIP contains no non-empty data files")
+            return {
+                "members": [item["name"] for item in nonempty[:10]],
+                "nonempty_member_count": len(nonempty),
+                "empty_member_names": empty[:10],
+                "uncompressed_nonempty_bytes": sum(item["bytes"] for item in nonempty),
+            }
     raw = gzip.decompress(payload) if kind == "gzip" else payload
     text = raw[:4096].decode("utf-8-sig", errors="replace")
     if "<html" in text.lower() or "<!doctype" in text.lower():
