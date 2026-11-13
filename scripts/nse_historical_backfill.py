@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
+from botocore.exceptions import ClientError
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -117,6 +118,11 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
             if checked_files < len(required):
                 return False, "not_all_core_payloads_checked"
         return True, f"verified_{checked_files}_report_files"
+    except ClientError:
+        # B2 service errors (especially account download/transaction caps) are
+        # operational failures, not evidence of a corrupt archive. Stop the run
+        # immediately instead of re-downloading NSE data and attempting uploads.
+        raise
     except Exception as exc:
         return False, f"archive_validation_error:{type(exc).__name__}:{str(exc)[:300]}"
 
