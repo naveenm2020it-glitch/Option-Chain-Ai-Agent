@@ -4,7 +4,7 @@ async function loadStatus(){
  try{
   const [h,s]=await Promise.all([fetch("/api/health",{cache:"no-store"}).then(r=>r.json()),fetch("/api/status",{cache:"no-store"}).then(r=>r.json())]);
   const online=h.status==="ok";health.textContent=online?"API connected":"API unavailable";api.textContent=online?"Online":"Offline";
-  byId("reports").textContent=s.report_files??"—";byId("bias-note").textContent=s.message||"Waiting for validated market data.";
+  byId("reports-count").textContent=s.report_files??"—";byId("bias-note").textContent=s.message||"Waiting for validated market data.";
   byId("bias").textContent=s.prediction?.market_bias||"WAIT";byId("decision").textContent=s.prediction?.decision||"NO SIGNAL";
   if(s.prediction?.ce_seller_strength!==undefined)byId("ce-strength").textContent=s.prediction.ce_seller_strength;
   if(s.prediction?.pe_seller_strength!==undefined)byId("pe-strength").textContent=s.prediction.pe_seller_strength;
