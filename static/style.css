@@ -71,3 +71,17 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
   55% { transform:scale(1.18) translateY(-3px); }
   100% { transform:scale(1.04) translateY(-2px); }
 }
+
+/* Additional seller insight panels — same pastel glass-card language */
+.feature-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+.feature-card{padding:15px;border:1px solid #ffffffc4;background:var(--white);backdrop-filter:blur(14px);box-shadow:0 8px 24px #55475b0b;border-radius:21px;min-width:0}
+.feature-heading{display:flex;align-items:center;gap:10px;margin-bottom:13px}.feature-heading .metric-icon{flex:none;margin:0}.feature-heading strong{display:block;font-size:12px}.feature-heading small{display:block;font-size:9px;color:#89838c;margin-top:3px}
+.strength-track{height:9px;border-radius:99px;overflow:hidden;background:#e7e4e9;display:flex;gap:2px}.strength-track span:first-child{width:50%;background:#e7a17f}.strength-track span:last-child{width:50%;background:#75b992}
+.feature-pair{display:flex;justify-content:space-between;margin-top:8px;font-size:10px;color:#77717a}.feature-card>p{font-size:9px;color:#89838c;line-height:1.5;margin:11px 0 0}
+.level-line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:10px}.level-line:last-of-type{border:0}.level-line span{color:#89838c}
+.risk-track{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin:6px 0}.risk-track i{height:8px;border-radius:99px;background:#e7e4e9}.risk-track i:first-child{background:#75b992}.risk-track i:nth-child(2){background:#e9c477}.risk-track i:nth-child(3){background:#dc8585}.risk-caption{display:flex;justify-content:space-between;color:#89838c;font-size:8px}
+.feature-status{display:block;font-size:10px;letter-spacing:.05em;color:#9a8157;margin-top:10px}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.compare-grid>div{padding:10px;border-radius:12px;background:#f4f0f4}.compare-grid small{display:block;color:#89838c;font-size:8px}.compare-grid b{display:block;margin-top:4px;font-size:16px}
+.alert-feature{background:linear-gradient(135deg,rgba(255,255,255,.8),rgba(250,235,222,.72))}
+.report-subtitle{margin-top:22px}
+@media(min-width:560px){.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.alert-feature{grid-column:span 2}}
