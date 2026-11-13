@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
 import sys
 import time
+import zipfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,6 +22,7 @@ from scripts.nse_download_check import (  # noqa: E402
     fetch_report,
     report_specs,
     save_report,
+    validate_payload,
 )
 from storage import b2_client, read_catalog, upload_collection  # noqa: E402
 
@@ -39,23 +43,86 @@ def dates_between(start: date, end: date):
         current += timedelta(days=1)
 
 
-def archived_and_valid(client, bucket: str, day: date) -> bool:
-    key = f"nse/daily/{day.isoformat()}/manifest.json"
-    try:
-        response = client.get_object(Bucket=bucket, Key=key)
-        manifest = json.loads(response["Body"].read().decode("utf-8"))
-        client.head_object(Bucket=bucket, Key=f"nse/daily/{day.isoformat()}/reports.zip")
-    except Exception:
+def archived_and_valid(client, bucket: str, day: date, catalog_entry: dict | None = None) -> bool:
+    if not catalog_entry:
         return False
-    if manifest.get("core_session_status") != "aligned":
-        return False
-    results = manifest.get("results", {})
-    return all(
-        results.get(name, {}).get("report_date") == day.isoformat()
-        and results.get(name, {}).get("file")
-        for name in CORE_REPORT_NAMES
-    )
+    valid, reason = validate_remote_archive(client, bucket, day, catalog_entry)
+    if not valid:
+        print(f"ARCHIVE REVALIDATION REQUIRED {day.isoformat()}: {reason}", flush=True)
+    return valid
 
+
+
+def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict, manifest: dict | None = None) -> tuple[bool, str]:
+    """Download and fully validate one archived session before trusting it."""
+    prefix = f"nse/daily/{day.isoformat()}"
+    try:
+        if manifest is None:
+            response = client.get_object(Bucket=bucket, Key=f"{prefix}/manifest.json")
+            manifest = json.loads(response["Body"].read().decode("utf-8"))
+        response = client.get_object(Bucket=bucket, Key=f"{prefix}/reports.zip")
+        archive_bytes = response["Body"].read()
+        if not archive_bytes:
+            return False, "empty_archive"
+        expected_size = catalog_entry.get("archive_bytes")
+        expected_hash = catalog_entry.get("archive_sha256")
+        if not expected_size or len(archive_bytes) != int(expected_size):
+            return False, "archive_size_mismatch_or_missing_catalog_size"
+        digest = hashlib.sha256(archive_bytes).hexdigest()
+        if not expected_hash or digest.lower() != str(expected_hash).lower():
+            return False, "archive_sha256_mismatch_or_missing_catalog_hash"
+        if manifest.get("core_session_status") != "aligned":
+            return False, "manifest_not_aligned"
+        if manifest.get("core_session_date") != day.isoformat():
+            return False, "manifest_session_date_mismatch"
+
+        specs = {item[0]: item[2] for item in report_specs(day)}
+        required = set(CORE_REPORT_NAMES)
+        results = manifest.get("results", {})
+        if not required.issubset(results):
+            return False, "core_manifest_entries_missing"
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            bad_member = archive.testzip()
+            if bad_member:
+                return False, f"zip_crc_failure:{bad_member}"
+            members = set(archive.namelist())
+            if len(members) != len(archive.namelist()):
+                return False, "duplicate_archive_member_names"
+            for name in required:
+                item = results.get(name, {})
+                if item.get("report_date") != day.isoformat() or not item.get("file"):
+                    return False, f"core_manifest_date_or_file_invalid:{name}"
+
+            checked_files = 0
+            for report_name, item in results.items():
+                filename = item.get("file")
+                if not filename:
+                    continue
+                if Path(filename).name != filename or filename not in members:
+                    return False, f"manifest_file_missing_or_unsafe:{report_name}"
+                payload = archive.read(filename)
+                if not payload:
+                    return False, f"empty_report_payload:{report_name}"
+                expected_report_hash = item.get("sha256")
+                if expected_report_hash and hashlib.sha256(payload).hexdigest().lower() != str(expected_report_hash).lower():
+                    return False, f"report_sha256_mismatch:{report_name}"
+                kind = specs.get(report_name, "csv")
+                validate_payload(report_name, payload, kind)
+                checked_files += 1
+            if checked_files < len(required):
+                return False, "not_all_core_payloads_checked"
+        return True, f"verified_{checked_files}_report_files"
+    except Exception as exc:
+        return False, f"archive_validation_error:{type(exc).__name__}:{str(exc)[:300]}"
+
+
+def catalog_entries_by_date(catalog: dict) -> dict[str, dict]:
+    return {
+        item.get("collection_date"): item
+        for item in catalog.get("collections", [])
+        if item.get("collection_date")
+    }
 
 def build_session(day: date, session: requests.Session, output: Path, delay: float):
     results = {}
@@ -113,11 +180,8 @@ def run(start: date, end: date, output_root: Path, delay: float):
     client = b2_client()
     bucket = __import__("os").environ["B2_BUCKET_NAME"]
     catalog = read_catalog(client)
-    catalog_dates = {
-        item.get("collection_date")
-        for item in catalog.get("collections", [])
-        if item.get("collection_date")
-    }
+    catalog_entries = catalog_entries_by_date(catalog)
+    catalog_dates = set(catalog_entries)
 
     output_root.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
@@ -144,14 +208,17 @@ def run(start: date, end: date, output_root: Path, delay: float):
         "non_trading_or_unavailable_dates": [],
         "incomplete_session_dates": [],
         "errors": [],
+        "archive_integrity_verified": [],
+        "archive_integrity_failures": [],
     }
 
     for day in dates_between(start, end):
         day_text = day.isoformat()
         summary["processed_weekdays"] += 1
-        if day_text in catalog_dates and archived_and_valid(client, bucket, day):
+        if day_text in catalog_dates and archived_and_valid(client, bucket, day, catalog_entries.get(day_text)):
             summary["skipped_existing_sessions"].append(day_text)
-            print(f"SKIP existing validated session {day_text}", flush=True)
+            summary["archive_integrity_verified"].append(day_text)
+            print(f"SKIP existing ZIP-integrity-verified session {day_text}", flush=True)
             continue
 
         day_dir = output_root / day_text
@@ -168,21 +235,25 @@ def run(start: date, end: date, output_root: Path, delay: float):
             continue
 
         entry = upload_collection(day_dir, day_text)
-        # Confirm both objects are readable from B2 before counting this date as archived.
-        client.head_object(Bucket=bucket, Key=f"nse/daily/{day_text}/reports.zip")
+        # Download the just-uploaded objects and verify archive bytes, hashes, CRC,
+        # every manifest-listed file, and all core report payloads before counting it.
         remote_manifest = client.get_object(
             Bucket=bucket, Key=f"nse/daily/{day_text}/manifest.json"
         )
         verified_manifest = json.loads(remote_manifest["Body"].read().decode("utf-8"))
-        if verified_manifest.get("core_session_status") != "aligned":
-            raise RuntimeError(f"B2 manifest verification failed for {day_text}")
+        valid, reason = validate_remote_archive(client, bucket, day, entry, verified_manifest)
+        if not valid:
+            summary["archive_integrity_failures"].append({"date": day_text, "reason": reason})
+            raise RuntimeError(f"B2 ZIP integrity verification failed for {day_text}: {reason}")
+        summary["archive_integrity_verified"].append(day_text)
         summary["uploaded_sessions"].append({
             "date": day_text,
             "report_count": entry.get("report_count", 0),
             "archive_bytes": entry.get("archive_bytes", 0),
         })
         catalog_dates.add(day_text)
-        print(f"UPLOADED {day_text}: {entry.get('report_count')} reports", flush=True)
+        catalog_entries[day_text] = entry
+        print(f"UPLOADED and ZIP-verified {day_text}: {entry.get('report_count')} reports", flush=True)
 
     summary["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
     validated_dates = sorted(
@@ -193,9 +264,11 @@ def run(start: date, end: date, output_root: Path, delay: float):
     summary["earliest_validated_session"] = validated_dates[0] if validated_dates else None
     summary["latest_validated_session"] = validated_dates[-1] if validated_dates else None
     summary["validated_session_count"] = len(validated_dates)
+    summary["archive_integrity_verified_count"] = len(summary["archive_integrity_verified"])
+    summary["archive_integrity_validation_required"] = True
     summary["calendar_validation_required"] = True
     summary["model_training_allowed"] = False
-    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350:
+    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         summary["status"] = "partial_needs_review"
     else:
         summary["status"] = "uploaded_needs_exchange_calendar_validation"
@@ -217,7 +290,7 @@ def run(start: date, end: date, output_root: Path, delay: float):
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
-    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350:
+    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         return 2
     return 0
 
