@@ -27,7 +27,6 @@ def test_unlisted_sunday_is_not_included():
     assert days == []
 
 
-
 def _valid_archive_fixture(day_text="2026-11-12"):
     files = {}
     manifest_results = {}
@@ -39,7 +38,8 @@ def _valid_archive_fixture(day_text="2026-11-12"):
             payload = inner.getvalue()
         else:
             payload = b"symbol,price,volume\nNIFTY,24000,1000\n"
-        filename = f"{name}_{day_text}.{'zip' if name in {'fo_udiff_bhavcopy', 'fo_market_activity'} else 'csv'}"
+        extension = "zip" if name in {"fo_udiff_bhavcopy", "fo_market_activity"} else "csv"
+        filename = f"{name}_{day_text}.{extension}"
         files[filename] = payload
         manifest_results[name] = {
             "report_date": day_text,
