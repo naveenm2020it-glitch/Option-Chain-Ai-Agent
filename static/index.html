@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f2edf3"><title>NIFTY — Seller Intelligence</title>
-<link rel="stylesheet" href="/static/style.css?v=20261113-strategy4">
+<link rel="stylesheet" href="/static/style.css?v=20261113-alignment5">
 </head>
 <body>
 <main class="app-shell" id="top">
@@ -35,12 +35,12 @@
 
     <div class="section-title sub-feature-title"><div><p class="eyebrow">DECISION EXPLAINABILITY</p><h2>Why this decision?</h2></div><span class="soft-tag">Engine reasoning</span></div>
     <article class="feature-card explain-card">
-      <div class="decision-banner"><span class="decision-wait">WAITING FOR VALIDATED DATA</span><strong>Final decision: NO TRADE</strong></div>
+      <div class="decision-banner"><div class="decision-wait">WAITING FOR VALIDATED DATA</div><div class="decision-result">Final decision: <strong>NO TRADE</strong></div></div>
       <p class="explain-intro">When the engine produces a CE Writing, PE Writing or NO TRADE result, the reasons will be shown here instead of displaying only a signal.</p>
       <div class="reason-list">
-        <div><span>01</span><section><b>Seller-side evidence</b><small>CE / PE writing evidence, premium movement and strike concentration.</small></section><em>Pending</em></div>
-        <div><span>02</span><section><b>Market confirmation</b><small>Spot structure, futures, OI/PCR and participant positioning.</small></section><em>Pending</em></div>
-        <div><span>03</span><section><b>Risk and disagreement checks</b><small>IV, expiry risk, seller traps, missing inputs and model conflicts.</small></section><em>Pending</em></div>
+        <div class="reason-item"><span class="reason-number">01</span><div class="reason-copy"><strong>Seller-side evidence</strong><p>CE / PE writing evidence, premium movement and strike concentration.</p></div><em>Pending</em></div>
+        <div class="reason-item"><span class="reason-number">02</span><div class="reason-copy"><strong>Market confirmation</strong><p>Spot structure, futures, OI/PCR and participant positioning.</p></div><em>Pending</em></div>
+        <div class="reason-item"><span class="reason-number">03</span><div class="reason-copy"><strong>Risk and disagreement checks</strong><p>IV, expiry risk, seller traps, missing inputs and model conflicts.</p></div><em>Pending</em></div>
       </div>
       <p class="feature-note">NO TRADE is preferred when data validation fails, model disagreement is high, risk is elevated or evidence is insufficient.</p>
     </article>
@@ -55,13 +55,13 @@
 
     <div class="section-title sub-feature-title"><div><p class="eyebrow">MARKET EVENTS</p><h2>Event &amp; risk calendar</h2></div><span class="soft-tag">NIFTY events</span></div>
     <article class="feature-card calendar-card">
-      <div class="calendar-state"><span class="metric-icon peach">▦</span><div><strong>Official event feed not connected</strong><small>Upcoming events will appear after calendar-source integration.</small></div></div>
+      <div class="calendar-state"><span class="metric-icon peach">▦</span><div class="calendar-state-copy"><strong>Official event feed not connected</strong><small>Upcoming events will appear after calendar-source integration.</small></div></div>
       <div class="calendar-categories">
-        <div><b>RBI / monetary policy</b><span>Awaiting verified dates</span></div>
-        <div><b>Inflation &amp; macro data</b><span>Awaiting verified dates</span></div>
-        <div><b>Budget / major announcements</b><span>Awaiting verified dates</span></div>
-        <div><b>NIFTY expiry &amp; NSE holidays</b><span>Awaiting official calendar sync</span></div>
-        <div><b>Global market risk</b><span>Awaiting event feed</span></div>
+        <div class="calendar-event"><strong>RBI / monetary policy</strong><span>Awaiting verified dates</span></div>
+        <div class="calendar-event"><strong>Inflation &amp; macro data</strong><span>Awaiting verified dates</span></div>
+        <div class="calendar-event"><strong>Budget / major announcements</strong><span>Awaiting verified dates</span></div>
+        <div class="calendar-event"><strong>NIFTY expiry &amp; NSE holidays</strong><span>Awaiting official calendar sync</span></div>
+        <div class="calendar-event"><strong>Global market risk</strong><span>Awaiting event feed</span></div>
       </div>
       <p class="feature-note">No event dates are being guessed. Calendar alerts should be verified against official exchange and government sources before use.</p>
     </article>
