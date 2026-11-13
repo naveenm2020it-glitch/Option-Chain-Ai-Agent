@@ -85,3 +85,41 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
 .alert-feature{background:linear-gradient(135deg,rgba(255,255,255,.8),rgba(250,235,222,.72))}
 .report-subtitle{margin-top:22px}
 @media(min-width:560px){.feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.alert-feature{grid-column:span 2}}
+
+
+/* Mobile layout polish: consistent feature cards and readable content hierarchy */
+.feature-grid{align-items:stretch;gap:12px;margin-top:14px}
+.feature-card{
+  display:flex;flex-direction:column;gap:0;
+  padding:17px 16px 16px;
+  border:1px solid rgba(255,255,255,.88);
+  border-radius:22px;
+  background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(255,255,255,.68));
+  box-shadow:0 10px 28px rgba(72,58,75,.075);
+  min-height:0;
+}
+.feature-heading{align-items:center;gap:11px;margin:0 0 14px;min-height:38px}
+.feature-heading>div{min-width:0;flex:1}
+.feature-heading strong{display:block;font-size:13px;line-height:1.3;letter-spacing:-.015em;color:#242129}
+.feature-heading small{display:block;font-size:10px;line-height:1.4;color:#817b85;margin-top:4px}
+.feature-card .feature-pair,.feature-card .level-line,.feature-card .risk-track,
+.feature-card .risk-caption,.feature-card .compare-grid{width:100%}
+.feature-card>p{font-size:10px;line-height:1.55;color:#77717a;margin:13px 0 0}
+.feature-card .feature-status{font-size:10px;line-height:1.4;margin-top:12px}
+.level-line{padding:8px 0;font-size:11px}
+.feature-pair{font-size:11px;margin-top:9px}
+.compare-grid>div{min-width:0;padding:11px;border:1px solid rgba(255,255,255,.7)}
+.alert-feature{background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(250,235,222,.82))}
+.section-block{scroll-margin-top:18px}
+#history,#reports{scroll-margin-bottom:150px}
+.app-shell{padding-bottom:calc(156px + env(safe-area-inset-bottom))}
+.bottom-nav{bottom:calc(12px + env(safe-area-inset-bottom))}
+.floating-action{bottom:calc(82px + env(safe-area-inset-bottom))}
+@media(min-width:560px){
+  .feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .alert-feature{grid-column:span 2}
+}
+@media(max-width:559px){
+  .feature-card{border-radius:20px}
+  .feature-heading strong{font-size:13px}
+}
