@@ -65,7 +65,8 @@ jobs:
           python scripts/nse_historical_backfill.py \
             --start "${{ inputs.start_date }}" \
             --end "${{ inputs.end_date }}" \
-            --output data/historical_backfill
+            --output data/historical_backfill \
+            --max-sessions "${{ inputs.max_sessions }}"
 
       - name: Upload coverage report to workflow artifacts
         if: always()
