@@ -48,15 +48,16 @@ def _valid_archive_fixture(day_text="2026-11-12"):
         }
 
     archive_buffer = io.BytesIO()
-    with zipfile.ZipFile(archive_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for filename, payload in files.items():
-            zf.writestr(filename, payload)
-    archive_bytes = archive_buffer.getvalue()
     manifest = {
         "core_session_status": "aligned",
         "core_session_date": day_text,
         "results": manifest_results,
     }
+    with zipfile.ZipFile(archive_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for filename, payload in files.items():
+            zf.writestr(filename, payload)
+        zf.writestr("manifest.json", json.dumps(manifest))
+    archive_bytes = archive_buffer.getvalue()
     catalog_entry = {
         "archive_bytes": len(archive_bytes),
         "archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
@@ -70,9 +71,12 @@ def _valid_archive_fixture(day_text="2026-11-12"):
             return self.data
 
     class Client:
+        def __init__(self):
+            self.get_count = 0
+
         def get_object(self, Bucket, Key):
-            if Key.endswith("manifest.json"):
-                return {"Body": Body(json.dumps(manifest).encode())}
+            self.get_count += 1
+            assert Key.endswith("reports.zip")
             return {"Body": Body(archive_bytes)}
 
     return Client(), catalog_entry, manifest
@@ -85,6 +89,7 @@ def test_remote_archive_integrity_checks_hash_crc_and_manifest_files():
     )
     assert valid is True
     assert reason.startswith("verified_4_report_files")
+    assert client.get_count == 1
 
 
 def test_remote_archive_rejects_catalog_hash_mismatch():
