@@ -163,3 +163,87 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
 .strategy-performance{margin-top:12px}
 .strategy-metrics{margin-top:14px}
 @media(min-width:560px){.strategy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* Explicit mobile-first alignment for newly added seller intelligence sections */
+.explain-card,.calendar-card,.strategy-card{
+  display:block!important;
+  width:100%;
+  box-sizing:border-box;
+  padding:18px!important;
+  border:1px solid rgba(255,255,255,.9)!important;
+  border-radius:22px!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.94),rgba(250,246,250,.86))!important;
+  box-shadow:0 10px 26px rgba(76,62,82,.075)!important;
+}
+.decision-banner{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  width:100%;
+  box-sizing:border-box;
+  padding:15px!important;
+  border-radius:16px!important;
+  background:linear-gradient(115deg,#f8e9e1 0%,#f0eafa 100%)!important;
+}
+.decision-wait{display:block!important;width:100%;font-size:9px;line-height:1.4;letter-spacing:.09em;font-weight:800;color:#9a7959}
+.decision-result{display:block!important;width:100%;font-size:15px;line-height:1.4;color:#302b34;overflow-wrap:anywhere}
+.decision-result strong{font-weight:800}
+.explain-intro{display:block;font-size:11px;line-height:1.65;color:#77717a;margin:14px 0!important}
+.reason-list{display:flex!important;flex-direction:column!important;gap:0!important;width:100%}
+.reason-item{
+  display:grid!important;
+  grid-template-columns:30px minmax(0,1fr);
+  grid-template-rows:auto auto;
+  column-gap:11px!important;
+  row-gap:3px!important;
+  align-items:start!important;
+  padding:14px 0!important;
+  border-bottom:1px solid #eee8ef!important;
+}
+.reason-item:last-child{border-bottom:0!important}
+.reason-number{
+  grid-column:1;grid-row:1 / span 2;
+  display:grid!important;place-items:center;
+  width:28px;height:28px;border-radius:10px;
+  background:#eee8f6;color:#79699b;
+  font-size:10px;font-weight:800;
+}
+.reason-copy{grid-column:2;grid-row:1 / span 2;display:block!important;min-width:0}
+.reason-copy strong{display:block!important;font-size:12px;line-height:1.45;color:#302b34}
+.reason-copy p{display:block!important;margin:4px 0 0!important;font-size:10px;line-height:1.6;color:#817b85;overflow-wrap:anywhere}
+.reason-item em{grid-column:2;grid-row:3;display:block!important;margin-top:3px;font-size:9px;font-style:normal;font-weight:750;color:#a18a69}
+.feature-note{display:block;font-size:10px;line-height:1.65;color:#77717a;margin:13px 0 0!important}
+.calendar-state{
+  display:flex!important;flex-direction:row!important;align-items:flex-start!important;
+  gap:12px!important;padding:0 0 15px!important;
+  border-bottom:1px solid #eee8ef!important;
+}
+.calendar-state .metric-icon{margin:0!important;flex:none}
+.calendar-state-copy{display:flex!important;flex-direction:column!important;gap:5px!important;min-width:0;flex:1}
+.calendar-state-copy strong{display:block!important;font-size:12px;line-height:1.45;color:#302b34}
+.calendar-state-copy small{display:block!important;font-size:10px;line-height:1.55;color:#817b85}
+.calendar-categories{display:flex!important;flex-direction:column!important;width:100%;margin-top:4px}
+.calendar-event{
+  display:flex!important;flex-direction:column!important;align-items:flex-start!important;
+  gap:4px!important;padding:12px 0!important;
+  border-bottom:1px solid #eee8ef!important;
+}
+.calendar-event:last-child{border-bottom:0!important}
+.calendar-event strong{display:block!important;font-size:11px;line-height:1.45;color:#39343c}
+.calendar-event span{display:block!important;font-size:9px;line-height:1.45;color:#9a8a72;text-align:left!important}
+.advantage-grid .feature-card,.strategy-card{min-width:0}
+.strategy-grid{align-items:stretch}
+.strategy-card .feature-heading{display:flex!important;align-items:center!important;gap:11px!important;margin-bottom:13px!important}
+.strategy-card .level-line{display:flex!important;justify-content:space-between!important;gap:12px;padding:9px 0!important}
+.strategy-performance{display:block!important;margin-top:13px}
+.sub-feature-title{margin-top:26px!important;margin-bottom:13px!important}
+.sub-feature-title h2{line-height:1.2}
+@media(max-width:559px){
+  .explain-card,.calendar-card,.strategy-card{padding:16px!important;border-radius:20px!important}
+  .reason-item{grid-template-columns:28px minmax(0,1fr);column-gap:9px!important}
+  .calendar-event{padding:11px 0!important}
+  .decision-result{font-size:14px}
+}
