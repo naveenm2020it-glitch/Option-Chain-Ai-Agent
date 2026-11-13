@@ -13,6 +13,11 @@ on:
         required: true
         default: "2026-11-12"
         type: string
+      max_sessions:
+        description: "Maximum dates to process in this batch (use next_unprocessed_date from the artifact for the next run)"
+        required: true
+        default: "25"
+        type: string
 
 permissions:
   contents: read
