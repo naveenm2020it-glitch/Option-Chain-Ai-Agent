@@ -186,17 +186,35 @@ def build_session(day: date, session: requests.Session, output: Path, delay: flo
     return manifest
 
 
-def run(start: date, end: date, output_root: Path, delay: float):
+def run(start: date, end: date, output_root: Path, delay: float, max_sessions: int | None = None):
     if end < start:
         raise ValueError("end date must be on or after start date")
 
+    output_root.mkdir(parents=True, exist_ok=True)
     client = b2_client()
     bucket = __import__("os").environ["B2_BUCKET_NAME"]
-    catalog = read_catalog(client)
+    try:
+        catalog = read_catalog(client)
+    except ClientError as exc:
+        error = exc.response.get("Error", {})
+        code = error.get("Code", "Unknown")
+        message = error.get("Message", str(exc))
+        if "cap exceeded" not in message.lower() and code not in {"AccessDenied", "403"}:
+            raise
+        blocked = {
+            "status": "blocked_b2_class_b_cap",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "model_training_allowed": False,
+            "archive_integrity_validation_required": True,
+            "error": {"code": code, "message": message[:500]},
+            "next_step": "Wait for the B2 daily cap reset or reduce other Class B reads; do not mark archives verified.",
+        }
+        (output_root / "coverage.json").write_text(json.dumps(blocked, indent=2), encoding="utf-8")
+        print(json.dumps(blocked, indent=2), flush=True)
+        return 3
     catalog_entries = catalog_entries_by_date(catalog)
     catalog_dates = set(catalog_entries)
-
-    output_root.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
     session.headers.update(HEADERS)
     retry = Retry(
@@ -223,9 +241,18 @@ def run(start: date, end: date, output_root: Path, delay: float):
         "errors": [],
         "archive_integrity_verified": [],
         "archive_integrity_failures": [],
+        "max_sessions_per_run": max_sessions,
+        "batch_complete": True,
     }
 
+    batch_sessions = 0
+    next_unprocessed_date = None
     for day in dates_between(start, end):
+        if max_sessions is not None and batch_sessions >= max_sessions:
+            summary["batch_complete"] = False
+            next_unprocessed_date = day.isoformat()
+            break
+        batch_sessions += 1
         day_text = day.isoformat()
         summary["processed_weekdays"] += 1
         if day_text in catalog_dates and archived_and_valid(client, bucket, day, catalog_entries.get(day_text)):
@@ -263,6 +290,7 @@ def run(start: date, end: date, output_root: Path, delay: float):
         catalog_entries[day_text] = entry
         print(f"UPLOADED and ZIP-verified {day_text}: {entry.get('report_count')} reports", flush=True)
 
+    summary["next_unprocessed_date"] = next_unprocessed_date
     summary["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
     validated_dates = sorted(
         [item["date"] for item in summary["uploaded_sessions"]]
@@ -276,7 +304,9 @@ def run(start: date, end: date, output_root: Path, delay: float):
     summary["archive_integrity_validation_required"] = True
     summary["calendar_validation_required"] = True
     summary["model_training_allowed"] = False
-    if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
+    if not summary["batch_complete"]:
+        summary["status"] = "batch_incomplete_continue_from_next_unprocessed_date"
+    elif summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         summary["status"] = "partial_needs_review"
     else:
         summary["status"] = "uploaded_needs_exchange_calendar_validation"
@@ -298,6 +328,8 @@ def run(start: date, end: date, output_root: Path, delay: float):
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
+    if not summary["batch_complete"]:
+        return 0
     if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
         return 2
     return 0
@@ -309,6 +341,9 @@ if __name__ == "__main__":
     parser.add_argument("--end", default="2026-11-12", help="Last date, YYYY-MM-DD")
     parser.add_argument("--output", default="data/historical_backfill")
     parser.add_argument("--delay", type=float, default=0.8, help="Seconds between NSE report requests")
+    parser.add_argument("--max-sessions", type=int, default=25, help="Maximum calendar candidate dates to process in one run; use the reported next_unprocessed_date for the next batch")
     args = parser.parse_args()
-    code = run(date.fromisoformat(args.start), date.fromisoformat(args.end), Path(args.output), args.delay)
+    if args.max_sessions < 1:
+        parser.error("--max-sessions must be at least 1")
+    code = run(date.fromisoformat(args.start), date.fromisoformat(args.end), Path(args.output), args.delay, args.max_sessions)
     raise SystemExit(code)
