@@ -18,3 +18,36 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
 .heatmap-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.heatmap-summary>div{min-width:0}.heatmap-summary small{display:block;color:#89838c;font-size:8px}.heatmap-summary strong{display:block;font-size:17px;letter-spacing:-.04em;margin-top:3px}.good-text{color:#258454}.bad-text{color:#c44c52}
 .heatmap-scroll{overflow-x:auto;padding:13px 0 8px;scrollbar-width:thin}.heatmap-months{display:grid;grid-auto-flow:column;grid-auto-columns:13px;gap:3px;padding-left:27px;margin-bottom:6px;min-width:max-content;height:13px}.heatmap-months span{font-size:8px;color:#89838c;white-space:nowrap;overflow:visible}.heatmap-layout{display:flex;gap:6px;align-items:start}.weekday-labels{display:grid;grid-template-rows:repeat(7,11px);gap:3px;flex:none;width:21px}.weekday-labels span{font-size:8px;color:#8b858d;line-height:11px}.heatmap-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,11px);grid-auto-columns:11px;gap:3px;min-width:max-content}.heat-cell{width:11px;height:11px;border-radius:3px;background:#e4e5e8;display:block;flex:none;border:0;padding:0}.heat-cell.pass{background:#35a66d}.heat-cell.fail{background:#d95860}.heat-cell.no-data{background:#e1e3e7}.heat-cell.future{background:transparent;border:1px dashed #e3dfe5}.heat-cell[title]{cursor:default}.heatmap-legend{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#89838c;font-size:8px;margin-top:8px}.heatmap-legend .heat-cell{width:10px;height:10px}.legend-gap{flex-basis:100%;height:0}.legend-key{display:flex;align-items:center;gap:4px;font-size:8px;font-weight:600;color:#77717a}.legend-dot{width:8px;height:8px;border-radius:2px;display:inline-block}.legend-dot.pass{background:#35a66d}.legend-dot.fail{background:#d95860}.legend-dot.no-data{background:#e1e3e7}.heatmap-note{font-size:9px;line-height:1.5;color:#89838c;margin:11px 0 0}
 @media(min-width:700px){.heatmap-card{padding:20px}.heatmap-grid{grid-auto-columns:12px;grid-template-rows:repeat(7,12px)}.heat-cell{width:12px;height:12px}.heatmap-months{grid-auto-columns:14px}}
+
+/* Subtle scroll-in motion; preserves the existing layout and color theme */
+@media (prefers-reduced-motion: no-preference) {
+  .section-block, .hero-card, .app-header {
+    animation: soft-enter .65s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .section-block.reveal-ready {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity .65s ease, transform .65s cubic-bezier(.2,.7,.2,1);
+    animation: none;
+  }
+  .section-block.reveal-ready.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .metric-card, .engine-row, .history-card, .system-card, .heatmap-card {
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .metric-card:hover, .engine-row:hover {
+    transform: translateY(-2px);
+  }
+  .bottom-nav a span {
+    transition: transform .22s ease, background .22s ease;
+  }
+  .bottom-nav a.active span {
+    transform: translateY(-2px) scale(1.04);
+  }
+}
+@keyframes soft-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
