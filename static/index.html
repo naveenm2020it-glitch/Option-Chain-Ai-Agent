@@ -17,9 +17,22 @@
   <section class="section-block"><div class="section-title"><div><p class="eyebrow">YOUR MARKET SNAPSHOT</p><h2>Today at a glance</h2></div><span class="soft-tag">NIFTY 50</span></div><div class="metric-grid">
     <article class="metric-card"><span class="metric-icon peach">◎</span><small>OI / PCR</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon lilac">↗</span><small>FUTURES</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon mint">⌁</span><small>INDIA VIX</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon yellow">◷</span><small>EXPIRY RISK</small><strong>—</strong><em>Awaiting feed</em></article>
   </div></section>
-  <section class="section-block" id="engines"><div class="section-title"><div><p class="eyebrow">MULTI-ENGINE ANALYSIS</p><h2>Seller intelligence</h2></div><span class="soft-tag">8 engines</span></div><div class="engine-card">
-    <div class="engine-row"><span class="engine-symbol peach">CE</span><div><strong>Call seller analysis</strong><small>Resistance · call writing · squeeze risk</small></div><b>—</b></div><div class="engine-row"><span class="engine-symbol mint">PE</span><div><strong>Put seller analysis</strong><small>Support · put writing · downside risk</small></div><b>—</b></div><div class="engine-row"><span class="engine-symbol lilac">OI</span><div><strong>Positioning &amp; confirmation</strong><small>OI/PCR · futures · participants</small></div><b>—</b></div><div class="engine-row"><span class="engine-symbol yellow">!</span><div><strong>Risk &amp; seller trap</strong><small>Volatility · expiry · breakout warning</small></div><b>—</b></div>
-  </div></section>
+  <section class="section-block" id="analysis">
+    <div class="section-title"><div><p class="eyebrow">MULTI-ENGINE ANALYSIS</p><h2>Seller intelligence</h2></div><span class="soft-tag">8 engines</span></div>
+    <div class="engine-card">
+      <div class="engine-row"><span class="engine-symbol peach">CE</span><div><strong>Call seller analysis</strong><small>Resistance · call writing · squeeze risk</small></div><b>—</b></div>
+      <div class="engine-row"><span class="engine-symbol mint">PE</span><div><strong>Put seller analysis</strong><small>Support · put writing · downside risk</small></div><b>—</b></div>
+      <div class="engine-row"><span class="engine-symbol lilac">OI</span><div><strong>Positioning &amp; confirmation</strong><small>OI/PCR · futures · participants</small></div><b>—</b></div>
+      <div class="engine-row"><span class="engine-symbol yellow">!</span><div><strong>Risk &amp; seller trap</strong><small>Volatility · expiry · breakout warning</small></div><b>—</b></div>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon peach">⇄</span><div><strong>Seller strength</strong><small>CE vs PE writing balance</small></div></div><div class="strength-track"><span></span><span></span></div><div class="feature-pair"><b>CE —</b><b>PE —</b></div><p>Waiting for validated option-chain data.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon lilac">⌖</span><div><strong>Support &amp; resistance</strong><small>Important NIFTY levels</small></div></div><div class="level-line"><span>Resistance</span><b>—</b></div><div class="level-line"><span>Spot reference</span><b>—</b></div><div class="level-line"><span>Support</span><b>—</b></div><p>Levels appear after same-session data validation.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon yellow">◉</span><div><strong>Seller risk meter</strong><small>Trap and volatility risk</small></div></div><div class="risk-track"><i></i><i></i><i></i></div><div class="risk-caption"><span>Low</span><span>Medium</span><span>High</span></div><strong class="feature-status">NOT YET RATED</strong><p>No risk score until required inputs are available.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon mint">↔</span><div><strong>Prediction vs actual</strong><small>Previous call compared with next session</small></div></div><div class="compare-grid"><div><small>Previous prediction</small><b>—</b></div><div><small>Actual outcome</small><b>—</b></div></div><p>Daily predictions must be saved and evaluated first.</p></article>
+      <article class="feature-card alert-feature"><div class="feature-heading"><span class="metric-icon peach">!</span><div><strong>No-trade alert</strong><small>Protect seller capital in uncertain conditions</small></div></div><strong class="feature-status">WAITING FOR DATA</strong><p>If data quality fails, models conflict, or risk is high, the engine will prefer NO TRADE.</p></article>
+    </div>
+  </section>
   <section class="section-block" id="history">
     <div class="section-title"><div><p class="eyebrow">PERFORMANCE TRACKER</p><h2>Prediction history</h2></div><span class="soft-tag">1-year heatmap</span></div>
     <div class="heatmap-card">
@@ -31,11 +44,15 @@
       <p class="heatmap-note" id="heatmap-note">Prediction outcome history is not connected yet. Grey squares mean no evaluated result, not a failed prediction.</p>
     </div>
   </section>
-  <section class="section-block"><div class="section-title"><div><p class="eyebrow">RESEARCH VAULT</p><h2>Historical data</h2></div><span class="soft-tag">B2 archive</span></div><div class="history-card"><div class="history-head"><span class="history-icon">▤</span><div><strong>Historical NSE archive</strong><small id="history-note">Loading saved collections…</small></div><span class="chevron">›</span></div><div id="history-list"></div><div class="archive-foot"><span class="status-dot"></span> Archive integrity audit is still in progress</div></div></section>
-  <section class="section-block" id="system"><div class="section-title"><div><p class="eyebrow">SYSTEM HEALTH</p><h2>Build status</h2></div><span class="soft-tag">Phase 1</span></div><div class="system-card"><div class="system-line"><span>API connection</span><b id="api-state">Checking</b></div><div class="system-line"><span>Live NSE data adapter</span><b class="pending">Not connected</b></div><div class="system-line"><span>AI model training</span><b class="pending">OFF</b></div><div class="system-line"><span>Detected report files</span><b id="reports">—</b></div></div></section>
+  <section class="section-block" id="reports">
+    <div class="section-title"><div><p class="eyebrow">RESEARCH VAULT</p><h2>Reports &amp; system</h2></div><span class="soft-tag">Archive</span></div>
+    <div class="history-card"><div class="history-head"><span class="history-icon">▤</span><div><strong>Historical NSE archive</strong><small id="history-note">Loading saved collections…</small></div><span class="chevron">›</span></div><div id="history-list"></div><div class="archive-foot"><span class="status-dot"></span> Archive integrity audit is still in progress</div></div>
+    <div class="section-title report-subtitle"><div><p class="eyebrow">ADMIN / INTERNAL</p><h2>System health</h2></div><span class="soft-tag">Technical</span></div>
+    <div class="system-card"><div class="system-line"><span>API connection</span><b id="api-state">Checking</b></div><div class="system-line"><span>Live NSE data adapter</span><b class="pending">Not connected</b></div><div class="system-line"><span>AI model training</span><b class="pending">OFF</b></div><div class="system-line"><span>Detected report files</span><b id="reports">—</b></div></div>
+  </section>
   <footer>Research support only · Options involve substantial risk. Signals are not guarantees.</footer>
 </main>
-<nav class="bottom-nav" aria-label="Main navigation"><a class="active" href="#top"><span>◉</span>Overview</a><a href="#engines"><span>☷</span>Engines</a><a href="#history"><span>▦</span>History</a><a href="#system"><span>◌</span>System</a></nav>
+<nav class="bottom-nav" aria-label="Main navigation"><a class="active" href="#top"><span>◉</span>Overview</a><a href="#analysis"><span>⌁</span>Analysis</a><a href="#history"><span>▦</span>History</a><a href="#reports"><span>▤</span>Reports</a></nav>
 <button class="floating-action" id="quick-refresh" aria-label="Refresh data">↻</button>
 <script src="/static/app.js"></script>
 </body></html>
