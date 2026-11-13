@@ -123,3 +123,34 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
   .feature-card{border-radius:20px}
   .feature-heading strong{font-size:13px}
 }
+
+
+/* Decision reasoning, seller edge and event calendar panels */
+.sub-feature-title{margin-top:22px}
+.explain-card{margin-top:12px}
+.decision-banner{display:flex;flex-direction:column;gap:7px;padding:13px 14px;border-radius:15px;background:linear-gradient(110deg,#f8e8df,#eee8f7);border:1px solid #fff}
+.decision-wait{font-size:9px;letter-spacing:.08em;font-weight:800;color:#9a7959}
+.decision-banner strong{font-size:15px;letter-spacing:-.025em;color:#2b2730}
+.explain-intro,.feature-note{font-size:10px;line-height:1.6;color:#77717a;margin:13px 0}
+.reason-list{display:flex;flex-direction:column;gap:0}
+.reason-list>div{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.reason-list>div:last-child{border-bottom:0}
+.reason-list>div>span{display:grid;place-items:center;flex:none;width:25px;height:25px;border-radius:9px;background:#eee9f4;color:#796a9d;font-size:9px;font-weight:800}
+.reason-list section{flex:1;min-width:0}
+.reason-list b{display:block;font-size:11px;color:#302b34}
+.reason-list small{display:block;font-size:9px;line-height:1.5;color:#89838c;margin-top:3px}
+.reason-list em{font-size:8px;font-style:normal;color:#a18a69;font-weight:750;white-space:nowrap;padding-top:3px}
+.advantage-grid{margin-top:12px}
+.calendar-card{margin-top:12px}
+.calendar-state{display:flex;align-items:center;gap:11px;padding:2px 0 13px;border-bottom:1px solid var(--line)}
+.calendar-state .metric-icon{flex:none;margin:0}
+.calendar-state strong{display:block;font-size:12px;color:#302b34}
+.calendar-state small{display:block;font-size:9px;line-height:1.45;color:#89838c;margin-top:4px}
+.calendar-categories{display:flex;flex-direction:column}
+.calendar-categories>div{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.calendar-categories>div:last-child{border-bottom:0}
+.calendar-categories b{font-size:10px;color:#39343c}
+.calendar-categories span{font-size:9px;color:#9a8a72;text-align:right}
+@media(min-width:560px){
+ .advantage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
