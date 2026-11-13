@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f2edf3"><title>NIFTY — Seller Intelligence</title>
-<link rel="stylesheet" href="/static/style.css?v=20261113-seller-panels3">
+<link rel="stylesheet" href="/static/style.css?v=20261113-strategy4">
 </head>
 <body>
 <main class="app-shell" id="top">
@@ -68,6 +68,18 @@
   </section>
   <section class="section-block" id="history">
     <div class="section-title"><div><p class="eyebrow">PERFORMANCE TRACKER</p><h2>Prediction history</h2></div><span class="soft-tag">1-year heatmap</span></div>
+    <div class="section-title sub-feature-title"><div><p class="eyebrow">SELLER STRATEGY LAB</p><h2>Strategy &amp; performance</h2></div><span class="soft-tag">Backtest pending</span></div>
+    <div class="strategy-grid">
+      <article class="feature-card strategy-card"><div class="feature-heading"><span class="metric-icon peach">CE</span><div><strong>Call credit spread</strong><small>Defined-risk bearish / neutral setup</small></div></div><div class="level-line"><span>Max risk</span><b>—</b></div><div class="level-line"><span>Max reward</span><b>—</b></div><div class="level-line"><span>Breakeven</span><b>—</b></div><strong class="feature-status">AWAITING BACKTEST</strong></article>
+      <article class="feature-card strategy-card"><div class="feature-heading"><span class="metric-icon mint">PE</span><div><strong>Put credit spread</strong><small>Defined-risk bullish / neutral setup</small></div></div><div class="level-line"><span>Max risk</span><b>—</b></div><div class="level-line"><span>Max reward</span><b>—</b></div><div class="level-line"><span>Breakeven</span><b>—</b></div><strong class="feature-status">AWAITING BACKTEST</strong></article>
+      <article class="feature-card strategy-card"><div class="feature-heading"><span class="metric-icon lilac">IC</span><div><strong>Iron condor</strong><small>Range-bound, defined-risk structure</small></div></div><div class="level-line"><span>Upper / lower wings</span><b>—</b></div><div class="level-line"><span>Max risk</span><b>—</b></div><div class="level-line"><span>Net credit</span><b>—</b></div><strong class="feature-status">AWAITING BACKTEST</strong></article>
+      <article class="feature-card strategy-card"><div class="feature-heading"><span class="metric-icon yellow">✓</span><div><strong>No-trade alternative</strong><small>Capital protection when edge is weak</small></div></div><div class="level-line"><span>Trigger</span><b>Risk / conflict</b></div><div class="level-line"><span>Exposure</span><b>None</b></div><strong class="feature-status">SAFETY FIRST</strong></article>
+    </div>
+    <article class="heatmap-card strategy-performance">
+      <div class="heatmap-intro"><div><strong>Strategy performance</strong><small>Only evaluated historical trades will count</small></div><span class="heatmap-icon">↗</span></div>
+      <div class="heatmap-summary strategy-metrics"><div><small>Backtested trades</small><strong>—</strong></div><div><small>Win rate</small><strong>—</strong></div><div><small>Avg. return</small><strong>—</strong></div><div><small>Max drawdown</small><strong>—</strong></div></div>
+      <p class="heatmap-note">Performance remains unavailable until historical option-chain snapshots, strategy rules, realistic transaction costs and next-session outcomes are replayed and validated.</p>
+    </article>
     <div class="heatmap-card">
       <div class="heatmap-intro"><div><strong>Daily prediction results</strong><small>Each square represents one calendar day</small></div><span class="heatmap-icon">▦</span></div>
       <div class="date-controls"><label>From<input type="date" id="heat-from"></label><label>To<input type="date" id="heat-to"></label><button id="heat-apply" type="button">Apply</button></div>
