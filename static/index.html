@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f2edf3"><title>NIFTY 50 Intelligence — Seller Intelligence</title>
-<link rel="stylesheet" href="/static/style.css?v=20261113-reports6">
+<link rel="stylesheet" href="/static/style.css?v=20261114-chain1">
 </head>
 <body>
 <main class="app-shell" id="top">
@@ -17,13 +17,37 @@
   <section class="section-block"><div class="section-title"><div><p class="eyebrow">YOUR MARKET SNAPSHOT</p><h2>Today at a glance</h2></div><span class="soft-tag">NIFTY 50</span></div><div class="metric-grid">
     <article class="metric-card"><span class="metric-icon peach">◎</span><small>OI / PCR</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon lilac">↗</span><small>FUTURES</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon mint">⌁</span><small>INDIA VIX</small><strong>—</strong><em>Awaiting feed</em></article><article class="metric-card"><span class="metric-icon yellow">◷</span><small>EXPIRY RISK</small><strong>—</strong><em>Awaiting feed</em></article>
   </div></section>
+
+  <section class="section-block option-chain-section" id="option-chain">
+    <div class="section-title">
+      <div><p class="eyebrow">DERIVATIVES SNAPSHOT</p><h2>Option chain</h2><small class="section-caption">NIFTY strikes, open interest and premium movement</small></div>
+      <span class="soft-tag" id="option-chain-state" data-tone="unavailable">Unavailable</span>
+    </div>
+    <article class="report-panel chain-panel">
+      <div class="chain-state" id="option-chain-message" role="status" aria-live="polite">
+        <span class="chain-state-icon">⌁</span>
+        <div><strong>Option-chain feed is not connected</strong><small>No validated live option-chain snapshot is available. Values are intentionally hidden.</small></div>
+      </div>
+      <div class="chain-table-scroll" tabindex="0" aria-label="Option-chain table, horizontally scrollable">
+        <table class="chain-table" aria-label="NIFTY option-chain snapshot">
+          <thead><tr><th>CE OI</th><th>CE ΔOI</th><th>CE LTP</th><th>STRIKE</th><th>PE LTP</th><th>PE ΔOI</th><th>PE OI</th></tr></thead>
+          <tbody><tr><td colspan="7" class="chain-empty">No validated option-chain snapshot loaded.</td></tr></tbody>
+        </table>
+      </div>
+      <p class="feature-note">The table will populate only after a validated NIFTY option-chain adapter supplies same-session strike data. No sample prices or open-interest values are shown.</p>
+    </article>
+  </section>
+
   <section class="section-block" id="analysis">
-    <div class="section-title"><div><p class="eyebrow">MULTI-ENGINE ANALYSIS</p><h2>Seller intelligence</h2></div><span class="soft-tag">8 engines</span></div>
+    <div class="section-title"><div><p class="eyebrow">AI ANALYSIS · EIGHT-ENGINE ENSEMBLE</p><h2>Seller intelligence</h2></div><span class="soft-tag">8 engines</span></div>
     <div class="engine-card">
       <div class="engine-row"><span class="engine-symbol peach">CE</span><div><strong>Call seller analysis</strong><small>Resistance · call writing · squeeze risk</small></div><b>—</b></div>
       <div class="engine-row"><span class="engine-symbol mint">PE</span><div><strong>Put seller analysis</strong><small>Support · put writing · downside risk</small></div><b>—</b></div>
       <div class="engine-row"><span class="engine-symbol lilac">OI</span><div><strong>Positioning &amp; confirmation</strong><small>OI/PCR · futures · participants</small></div><b>—</b></div>
       <div class="engine-row"><span class="engine-symbol yellow">!</span><div><strong>Risk &amp; seller trap</strong><small>Volatility · expiry · breakout warning</small></div><b>—</b></div>
+    </div>
+    <div class="model-grid" id="engine-grid" aria-live="polite" aria-label="Eight seller-analysis engines">
+      <article class="model-card model-card-loading"><strong>Loading engine catalogue…</strong><small>Checking the available analysis modules.</small></article>
     </div>
     <div class="feature-grid">
       <article class="feature-card"><div class="feature-heading"><span class="metric-icon peach">⇄</span><div><strong>Seller strength</strong><small>CE vs PE writing balance</small></div></div><div class="strength-track"><span></span><span></span></div><div class="feature-pair"><b>CE —</b><b>PE —</b></div><p>Waiting for validated option-chain data.</p></article>
@@ -120,18 +144,21 @@
       <article class="report-content-card"><span class="report-content-icon yellow">▦</span><div><strong>Prediction vs actual</strong><small>Previous call, next-session outcome and measured performance.</small></div></article>
     </div>
 
-    <div class="report-section-heading"><div><p class="eyebrow">ADMIN / INTERNAL</p><h3>System health</h3></div><span class="soft-tag">Technical status</span></div>
+    <div class="report-section-heading" id="system"><div><p class="eyebrow">ADMIN / INTERNAL</p><h3>System health</h3></div><span class="soft-tag">Technical status</span></div>
     <article class="report-panel system-report-panel">
-      <div class="system-report-head"><span class="report-panel-icon mint">⌘</span><div><strong>Engine connectivity</strong><small>Service and data readiness</small></div><span id="api-state" class="system-pill">Checking</span></div>
-      <div class="system-line"><span>Live NSE data adapter</span><b class="pending">Not connected</b></div>
-      <div class="system-line"><span>AI model training</span><b class="pending">OFF</b></div>
-      <div class="system-line"><span>Historical archive validation</span><b class="pending">In progress</b></div>
-      <div class="system-line"><span>Prediction outcome evaluator</span><b class="pending">Not connected</b></div>
+      <div class="system-report-head"><span class="report-panel-icon mint">⌘</span><div><strong>Engine connectivity</strong><small>Service health is separate from live market-data readiness</small></div><span id="api-state" class="system-pill">Checking</span></div>
+      <p class="system-note" id="system-status-note" role="status" aria-live="polite">Loading system status…</p>
+      <div class="system-line"><span>Live NSE / option-chain adapter</span><b id="nse-feed-state" class="pending">Checking</b></div>
+      <div class="system-line"><span>AI model training</span><b id="training-state" class="pending">OFF — locked</b></div>
+      <div class="system-line"><span>Historical archive storage</span><b id="archive-state" class="pending">Checking</b></div>
+      <div class="system-line"><span>Historical data quality gate</span><b id="data-quality-state" class="pending">Checking</b></div>
+      <div class="system-line"><span>Prediction outcome evaluator</span><b id="evaluator-state" class="pending">Not connected</b></div>
+      <div class="system-line"><span>Last status check</span><b id="status-checked-at">—</b></div>
     </article>
   </section>
   <footer>Research support only · Options involve substantial risk. Signals are not guarantees.</footer>
 </main>
-<nav class="bottom-nav" aria-label="Main navigation"><a class="active" href="#top"><span>◉</span>Overview</a><a href="#analysis"><span>⌁</span>Analysis</a><a href="#history"><span>▦</span>History</a><a href="#reports"><span>▤</span>Reports</a></nav>
+<nav class="bottom-nav" aria-label="Main navigation"><a class="active" href="#top"><span>◉</span>Overview</a><a href="#option-chain"><span>▤</span>Chain</a><a href="#analysis"><span>⌁</span>AI</a><a href="#history"><span>▦</span>History</a><a href="#reports"><span>▧</span>Reports</a></nav>
 <button class="floating-action" id="quick-refresh" aria-label="Refresh data">↻</button>
-<script src="/static/app.js?v=20261113-reports6"></script>
+<script src="/static/app.js?v=20261114-chain1"></script>
 </body></html>

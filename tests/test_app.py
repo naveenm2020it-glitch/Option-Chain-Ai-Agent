@@ -87,3 +87,21 @@ def test_manifest_without_results_is_blocked():
     quality = assess_manifest(None)
     assert quality["status"] == "blocked"
     assert quality["aligned"] is False
+
+
+
+def test_engine_models_catalog_lists_eight_modules_without_live_feed():
+    response = client.get("/api/engine/models")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["parallel_subprocesses"]) == 8
+    assert payload["live_data_connected"] is False
+
+
+def test_dashboard_marks_option_chain_as_unavailable_until_validated_feed():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="option-chain"' in response.text
+    assert 'id="engine-grid"' in response.text
+    assert "No validated option-chain snapshot loaded." in response.text
+    assert "No sample prices or open-interest values are shown." in response.text
