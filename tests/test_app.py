@@ -105,3 +105,11 @@ def test_dashboard_marks_option_chain_as_unavailable_until_validated_feed():
     assert 'id="engine-grid"' in response.text
     assert "No validated option-chain snapshot loaded." in response.text
     assert "No sample prices or open-interest values are shown." in response.text
+
+
+
+def test_dashboard_has_explicit_intelligence_sections():
+    response = client.get("/")
+    assert response.status_code == 200
+    for label in ("AI Analysis", "SELLER INTELLIGENCE", "RISK ANALYSIS", "Historical Data", "Daily Reports", "System health"):
+        assert label in response.text
