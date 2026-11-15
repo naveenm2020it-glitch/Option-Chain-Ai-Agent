@@ -57,7 +57,11 @@ def check_training_gate(checkpoint_path: Path) -> tuple[dict, dict]:
         raise RuntimeError("Training blocked: one or more NIFTY feature rows failed validation")
     if len(checkpoint.get("features", {})) != expected:
         raise RuntimeError("Training blocked: checkpoint does not contain all 494 feature rows")
+    if sorted(checkpoint["features"]) != sorted(report.get("verified_dates", [])):
+        raise RuntimeError("Training blocked: feature dates do not exactly match integrity-verified sessions")
     for day, row in checkpoint["features"].items():
+        if row.get("session_date") != day:
+            raise RuntimeError(f"Training blocked: feature session key mismatch for {day}")
         if row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION:
             raise RuntimeError(f"Training blocked: stale feature schema for {day}")
     feature_rows = list(checkpoint["features"].values())
