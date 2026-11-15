@@ -43,3 +43,37 @@ def test_read_catalog_parses_existing_catalog(monkeypatch):
     client = Mock()
     client.get_object.return_value = {"Body": body}
     assert read_catalog(client) == payload
+
+
+
+def test_read_catalog_uses_process_cache_for_default_client(monkeypatch):
+    import storage
+
+    bucket = "cache-test-catalog"
+    monkeypatch.setenv("B2_BUCKET_NAME", bucket)
+    body = Mock()
+    body.read.return_value = json.dumps({"schema_version": 1, "collections": []}).encode()
+    client = Mock()
+    client.get_object.return_value = {"Body": body}
+    monkeypatch.setattr(storage, "b2_client", lambda: client)
+
+    first = storage.read_catalog()
+    second = storage.read_catalog()
+
+    assert first == second
+    assert client.get_object.call_count == 1
+
+
+def test_read_catalog_does_not_cache_explicit_client(monkeypatch):
+    import storage
+
+    monkeypatch.setenv("B2_BUCKET_NAME", "explicit-client-test")
+    body = Mock()
+    body.read.return_value = json.dumps({"schema_version": 1, "collections": []}).encode()
+    client = Mock()
+    client.get_object.return_value = {"Body": body}
+
+    storage.read_catalog(client)
+    storage.read_catalog(client)
+
+    assert client.get_object.call_count == 2

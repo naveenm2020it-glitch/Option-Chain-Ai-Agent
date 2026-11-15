@@ -6,6 +6,52 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+import database
+from threading import RLock
+
+
+# Per-process read-through cache: prevent every dashboard visitor from hitting B2.
+# Render process restarts/extra instances have independent caches; durable DB caching
+# is a later architecture step, not implied by this in-memory layer.
+_CACHE_TTL_SECONDS = {"catalog": 300, "manifest": 3600}
+_CACHE_MAX_ENTRIES = 512
+_CACHE: dict[tuple[str, str], tuple[float, Any]] = {}
+_CACHE_LOCK = RLock()
+
+
+def _cache_get(kind: str, key: str):
+    import time
+    cache_key = (kind, key)
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        item = _CACHE.get(cache_key)
+        if item is None:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            _CACHE.pop(cache_key, None)
+            return None
+        return value
+
+
+def _cache_set(kind: str, key: str, value: Any) -> None:
+    import time
+    cache_key = (kind, key)
+    with _CACHE_LOCK:
+        if len(_CACHE) >= _CACHE_MAX_ENTRIES and cache_key not in _CACHE:
+            now = time.monotonic()
+            expired = [k for k, (expiry, _) in _CACHE.items() if expiry <= now]
+            for old_key in expired:
+                _CACHE.pop(old_key, None)
+            if len(_CACHE) >= _CACHE_MAX_ENTRIES:
+                _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[cache_key] = (time.monotonic() + _CACHE_TTL_SECONDS[kind], value)
+
+
+def _cache_delete(kind: str, key: str) -> None:
+    with _CACHE_LOCK:
+        _CACHE.pop((kind, key), None)
+
 
 def b2_configured() -> bool:
     required = ("B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME")
@@ -37,33 +83,75 @@ def b2_client():
 
 
 def read_catalog(client=None) -> dict[str, Any]:
-    client = client or b2_client()
     bucket = os.environ["B2_BUCKET_NAME"]
-    try:
-        response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
-        return json.loads(response["Body"].read().decode("utf-8"))
-    except Exception as exc:
-        error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
-        if error_code in {"NoSuchKey", "404", "NotFound"}:
-            return {"schema_version": 1, "updated_at_utc": None, "collections": []}
-        raise
+    if client is not None:
+        # Explicit clients are used by maintenance code and tests; leave them uncached.
+        try:
+            response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
+            return json.loads(response["Body"].read().decode("utf-8"))
+        except Exception as exc:
+            error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404", "NotFound"}:
+                return {"schema_version": 1, "updated_at_utc": None, "collections": []}
+            raise
 
+    # Hold the re-entrant lock across the cache miss and B2 read to prevent
+    # simultaneous first-page visitors from stampeding the same B2 object.
+    with _CACHE_LOCK:
+        cached = _cache_get("catalog", bucket)
+        if cached is not None:
+            return cached
+        client = b2_client()
+        try:
+            response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
+            catalog = json.loads(response["Body"].read().decode("utf-8"))
+        except Exception as exc:
+            error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404", "NotFound"}:
+                return {"schema_version": 1, "updated_at_utc": None, "collections": []}
+            raise
+        _cache_set("catalog", bucket, catalog)
+        return catalog
 
 def history_catalog() -> dict[str, Any]:
-    return read_catalog()
+    # Shared persistent cache keeps client traffic independent of B2 after warm-up.
+    catalog = database.get_cached_json("b2:catalog")
+    if catalog is None:
+        catalog = read_catalog()
+        database.set_cached_json("b2:catalog", catalog)
+    merged = {item["collection_date"]: item for item in catalog.get("collections", [])
+              if isinstance(item, dict) and item.get("collection_date")}
+    # Daily collector metadata is durable in PostgreSQL, even if B2 is temporarily unavailable.
+    for item in database.list_daily_reports():
+        old = merged.get(item["collection_date"], {})
+        merged[item["collection_date"]] = {**item, **old}
+    return {**catalog, "collections": [merged[key] for key in sorted(merged)]}
 
 
 def read_collection_manifest(collection_date: str) -> dict[str, Any]:
     """Read one archived NSE collection manifest from B2."""
     from datetime import date
     date.fromisoformat(collection_date)  # strict YYYY-MM-DD validation
-    client = b2_client()
-    response = client.get_object(
-        Bucket=os.environ["B2_BUCKET_NAME"],
-        Key=f"nse/daily/{collection_date}/manifest.json",
-    )
-    return json.loads(response["Body"].read().decode("utf-8"))
-
+    bucket = os.environ["B2_BUCKET_NAME"]
+    persistent_key = f"b2:manifest:{collection_date}"
+    persistent = database.get_cached_json(persistent_key)
+    if persistent is not None:
+        return persistent
+    cache_key = f"{bucket}:{collection_date}"
+    # Prevent concurrent cache misses for the same dated manifest.
+    with _CACHE_LOCK:
+        cached = _cache_get("manifest", cache_key)
+        if cached is not None:
+            return cached
+        client = b2_client()
+        response = client.get_object(
+            Bucket=bucket,
+            Key=f"nse/daily/{collection_date}/manifest.json",
+        )
+        manifest = json.loads(response["Body"].read().decode("utf-8"))
+        _cache_set("manifest", cache_key, manifest)
+        database.set_cached_json(persistent_key, manifest)
+        return manifest
 
 def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
     """Create a short-lived URL for downloading an archived report ZIP."""
@@ -126,4 +214,9 @@ def upload_collection(directory, collection_date: str) -> dict[str, Any]:
     client.put_object(Bucket=bucket, Key="nse/catalog.json",
                       Body=json.dumps(catalog, indent=2).encode("utf-8"),
                       ContentType="application/json")
+    # Keep this process consistent after a successful archive replacement.
+    _cache_delete("catalog", bucket)
+    _cache_delete("manifest", f"{bucket}:{collection_date}")
+    database.delete_cached_json("b2:catalog")
+    database.delete_cached_json(f"b2:manifest:{collection_date}")
     return entry
