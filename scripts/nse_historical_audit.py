@@ -112,6 +112,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
     features = checkpoint.get("features", {})
     feature_errors = checkpoint.get("feature_errors", {})
     coverage_keys = (
+        "future_data_available",
         "index_data_available",
         "participant_oi_data_available",
         "participant_volume_data_available",
@@ -123,7 +124,20 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         )
         for key in coverage_keys
     }
-    sources_ready = all(value >= 0.95 for value in feature_coverage.values())
+    # Futures + NIFTY options are the core supervised signal. Index OHLC and
+    # participant reports are contextual inputs; their explicit availability
+    # flags remain in every row, but absent optional sources must not invalidate
+    # an otherwise complete, integrity-verified core dataset.
+    core_market_coverage = {
+        "future_data_available": feature_coverage.get("future_data_available", 0.0),
+        "nifty_options_available": (
+            sum(1 for row in features.values()
+                if float(row.get("features", {}).get("ce_contract_count", 0.0)) > 0
+                and float(row.get("features", {}).get("pe_contract_count", 0.0)) > 0) / len(features)
+            if features else 0.0
+        ),
+    }
+    sources_ready = all(value >= 0.95 for value in core_market_coverage.values())
     features_current = all(
         row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
         for row in features.values()
@@ -156,6 +170,11 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "feature_errors": feature_errors,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "feature_coverage": feature_coverage,
+        "core_market_coverage": core_market_coverage,
+        "optional_context_sources": {
+            "index_ohlc": "availability flagged; not a training prerequisite",
+            "participant_positioning": "availability flagged; not a training prerequisite",
+        },
         "missing_archive_dates": missing,
         "pending_archive_dates": pending,
         "verified_dates": sorted(verified),
@@ -264,7 +283,8 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
                 and feature_error.get("feature_schema_version") == FEATURE_SCHEMA_VERSION):
             continue
         previous_failure = checkpoint["failed"].get(day_text)
-        if previous_failure and previous_failure.get("catalog_fingerprint") == fingerprint:
+        if (previous_failure and previous_failure.get("catalog_fingerprint") == fingerprint
+                and previous_failure.get("reason") != "archive_size_mismatch_or_missing_catalog_size"):
             continue
 
         if run_state["processed_this_run"] >= max_archives:
