@@ -12,7 +12,7 @@ import secrets
 import database
 from data_quality import assess_manifest
 from seller_engine import analyze_seller_market
-from storage import history_catalog, b2_configured, read_collection_manifest, archive_download_url
+from storage import history_catalog, b2_configured, read_catalog, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
