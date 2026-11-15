@@ -98,7 +98,7 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
             )
     required_index_columns = {
         "futureindexlong", "futureindexshort",
-        "optionindexcallong", "optionindexcallshort",
+        "optionindexcalllong", "optionindexcallshort",
         "optionindexputlong", "optionindexputshort",
     }
     # Participant files are contextual NSE-wide index-derivatives totals.
