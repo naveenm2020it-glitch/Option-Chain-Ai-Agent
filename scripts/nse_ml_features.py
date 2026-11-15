@@ -243,12 +243,18 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         (future_frame["CLSPRIC"] > 0) & (future_frame["XPRYDT"] >= session_date)
     ].copy()
 
-    previous = near["PRVSCLSGPRIC"].where(near["PRVSCLSGPRIC"] > 0)
-    near["premium_return"] = (near["CLSPRIC"] / previous - 1.0).replace([float("inf"), -float("inf")], pd.NA)
-    near["premium_return"] = near["premium_return"].fillna(0.0)
-    near["OPNINTRST"] = near["OPNINTRST"].fillna(0.0).clip(lower=0)
-    near["CHNGINOPNINTRST"] = near["CHNGINOPNINTRST"].fillna(0.0)
-    near["TTLTRADGVOL"] = near["TTLTRADGVOL"].fillna(0.0).clip(lower=0)
+    def prepare_option_data(data: pd.DataFrame) -> pd.DataFrame:
+        data = data.copy()
+        previous = data["PRVSCLSGPRIC"].where(data["PRVSCLSGPRIC"] > 0)
+        data["premium_return"] = (data["CLSPRIC"] / previous - 1.0).replace([float("inf"), -float("inf")], pd.NA)
+        data["premium_return"] = data["premium_return"].fillna(0.0)
+        data["OPNINTRST"] = data["OPNINTRST"].fillna(0.0).clip(lower=0)
+        data["CHNGINOPNINTRST"] = data["CHNGINOPNINTRST"].fillna(0.0)
+        data["TTLTRADGVOL"] = data["TTLTRADGVOL"].fillna(0.0).clip(lower=0)
+        return data
+
+    near = prepare_option_data(near)
+    all_near = prepare_option_data(all_near)
 
     def side_metrics(data: pd.DataFrame, side: str) -> dict[str, float]:
         part = data.loc[data["OPTNTP"] == side]
