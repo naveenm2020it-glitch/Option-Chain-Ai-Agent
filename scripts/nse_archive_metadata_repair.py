@@ -13,6 +13,27 @@ from storage import b2_client, read_catalog
 
 
 def inspect_and_repair(day: date, output: Path) -> dict:
+    checkpoint_path = Path("data/historical_audit/checkpoint.json")
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8")) if checkpoint_path.is_file() else {}
+    failure = checkpoint.get("failed", {}).get(day.isoformat(), {})
+    if failure.get("reason") != "archive_sha256_mismatch":
+        report = {
+            "date": day.isoformat(),
+            "diagnostic_skipped": True,
+            "reason": "checkpoint does not identify the expected catalog SHA-256 mismatch",
+            "catalog_repaired": False,
+            "b2_reads": 0,
+            "b2_writes": 0,
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        output_path = os.getenv("GITHUB_OUTPUT")
+        if output_path:
+            with open(output_path, "a", encoding="utf-8") as handle:
+                handle.write("catalog_repaired=false\\n")
+        print(json.dumps(report, indent=2), flush=True)
+        return report
+
     client = b2_client()
     bucket = os.environ["B2_BUCKET_NAME"]
     catalog = read_catalog(client)
