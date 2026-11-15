@@ -298,6 +298,10 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
             estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=False
         )
         calibrated.fit(X_train, y_train)
+        calibrated_probabilities = _probability_matrix(calibrated, X_test)
+        calibrated_predictions = np.argmax(calibrated_probabilities, axis=1)
+        holdout_f1 = float(f1_score(y_test, calibrated_predictions, labels=[0, 1, 2], average="macro", zero_division=0))
+        holdout_brier = _multiclass_brier(y_test, calibrated_probabilities)
         calibration_status = "time_series_sigmoid_calibration"
     except Exception as exc:
         calibration_status = f"failed:{type(exc).__name__}"
@@ -343,17 +347,21 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     lower_model.fit(X, lower_returns)
     range_models["lower_q10"] = lower_model
 
-    if len(np.unique(large_move_labels)) > 1:
-        large_move_model = LGBMClassifier(
-            objective="binary", n_estimators=120, learning_rate=0.03,
-            num_leaves=7, max_depth=3, min_child_samples=18,
-            reg_lambda=8.0, verbosity=-1, random_state=RANDOM_STATE,
-        )
-        large_move_model.fit(X, large_move_labels)
-    else:
-        from sklearn.dummy import DummyClassifier
-        large_move_model = DummyClassifier(strategy="prior")
-        large_move_model.fit(X, large_move_labels)
+    def fit_binary_event_model(labels: np.ndarray):
+        if len(np.unique(labels)) > 1:
+            model = LGBMClassifier(
+                objective="binary", n_estimators=120, learning_rate=0.03,
+                num_leaves=7, max_depth=3, min_child_samples=18,
+                reg_lambda=8.0, verbosity=-1, random_state=RANDOM_STATE,
+            )
+        else:
+            model = DummyClassifier(strategy="prior")
+        model.fit(X, labels)
+        return model
+
+    large_move_model = fit_binary_event_model(large_move_labels)
+    breakout_model = fit_binary_event_model(breakout_labels)
+    trap_model = fit_binary_event_model(trap_labels)
 
     seller_models = {}
     seller_metrics = {}
