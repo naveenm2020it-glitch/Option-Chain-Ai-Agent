@@ -291,7 +291,7 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     calibrated = None
     try:
         calibrated = CalibratedClassifierCV(
-            estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3)
+            estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=False
         )
         calibrated.fit(X_train, y_train)
         calibration_status = "time_series_sigmoid_calibration"
@@ -299,7 +299,7 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         calibration_status = f"failed:{type(exc).__name__}"
 
     final_direction = CalibratedClassifierCV(
-        estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3)
+        estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=False
     )
     try:
         final_direction.fit(X, y)
@@ -399,6 +399,7 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     )
     bundle = {
         "model_version": "NIFTY-Adaptive-Intelligence-V2",
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "trained_at_utc": datetime.now(timezone.utc).isoformat(),
         "feature_names": feature_names,
         "direction_model": final_direction,
@@ -457,6 +458,11 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
             "beats_baseline_brier": True,
             "requires_time_series_calibration": True,
             "requires_both_seller_models": True,
+        },
+        "data_scope": {
+            "nifty_options_and_futures": "NIFTY contracts from NSE UDiFF bhavcopy",
+            "participant_positioning": "NSE-wide index derivatives participant totals; contextual, not NIFTY-only",
+            "volatility": "India VIX from NSE index close report when present; not option-chain implied volatility",
         },
         "disclaimer": "Research model candidate; no live trading or guaranteed accuracy.",
     }
