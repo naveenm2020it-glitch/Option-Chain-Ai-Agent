@@ -14,6 +14,7 @@ on:
       - "scripts/nse_historical_audit.py"
       - "scripts/nse_historical_backfill.py"
       - "scripts/train_adaptive_intelligence.py"
+      - "scripts/nse_archive_metadata_repair.py"
       - ".github/workflows/nifty-historical-integrity-audit.yml"
   schedule:
     # One small read-only batch each day, after B2's daily quota reset window.
