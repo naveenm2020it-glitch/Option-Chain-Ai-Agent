@@ -127,7 +127,8 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "calendar_sources": [
             "https://archives.nseindia.com/content/circulars/FAOP59723.pdf",
             "https://nsearchives.nseindia.com/content/circulars/FAOP65588.pdf",
-            "https://archives.nseindia.com/content/circulars/CMTR71775.pdf",
+            "https://nsearchives.nseindia.com/content/circulars/FAOP71777.pdf",
+            "https://nsearchives.nseindia.com/content/circulars/FAOP72262.pdf",
             "https://www.nseindia.com/resources/exchange-communication-holidays",
         ],
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
