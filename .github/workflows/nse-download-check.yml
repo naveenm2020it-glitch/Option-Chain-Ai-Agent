@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nse-eod-collection
+  group: nse-b2-archive
   cancel-in-progress: false
 
 jobs:
