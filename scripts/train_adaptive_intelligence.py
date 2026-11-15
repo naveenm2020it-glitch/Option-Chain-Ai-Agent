@@ -517,7 +517,7 @@ if __name__ == "__main__":
     output_path = os.getenv("GITHUB_OUTPUT")
     if output_path:
         with open(output_path, "a", encoding="utf-8") as handle:
-            handle.write("trained=false\\n")
+            handle.write("trained=false\n")
     try:
         result = train_pipeline(Path(args.checkpoint), Path(args.output_dir))
     except RuntimeError as exc:
@@ -527,4 +527,4 @@ if __name__ == "__main__":
     if output_path:
         trained = "false" if result.get("status") == "already_trained_for_current_dataset" else "true"
         with open(output_path, "a", encoding="utf-8") as handle:
-            handle.write(f"trained={trained}\\n")
+            handle.write(f"trained={trained}\n")
