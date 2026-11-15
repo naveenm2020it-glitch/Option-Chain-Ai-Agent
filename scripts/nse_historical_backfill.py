@@ -274,7 +274,7 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
                 print(f"NO FO BHAVCOPY (holiday or archive unavailable) {day_text}", flush=True)
             continue
 
-        entry = upload_collection(day_dir, day_text)
+        entry = upload_collection(day_dir, day_text, client=client, catalog=catalog)
         # Verify the uploaded ZIP; embedded manifest avoids a second B2 GET.
         valid, reason = validate_remote_archive(client, bucket, day, entry)
         if not valid:
@@ -312,26 +312,31 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
         summary["status"] = "partial_needs_review"
     else:
         summary["status"] = "uploaded_needs_exchange_calendar_validation"
-    key = f"nse/backfill/coverage-{start.isoformat()}-to-{end.isoformat()}.json"
-    client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json.dumps(summary, indent=2).encode("utf-8"),
-        ContentType="application/json",
-    )
-    latest_key = "nse/backfill/latest-coverage.json"
-    client.put_object(
-        Bucket=bucket,
-        Key=latest_key,
-        Body=json.dumps(summary, indent=2).encode("utf-8"),
-        ContentType="application/json",
-    )
+    # One stable checkpoint object avoids duplicate coverage writes per batch.
     local_report = output_root / "coverage.json"
     local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    try:
+        client.put_object(
+            Bucket=bucket,
+            Key="nse/backfill/latest-coverage.json",
+            Body=json.dumps(summary, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
+    except ClientError as exc:
+        error = exc.response.get("Error", {})
+        message = str(error.get("Message", exc))
+        if "cap" not in message.lower() and error.get("Code") not in {"TooManyRequests", "429"}:
+            raise
+        summary["status"] = "blocked_b2_class_b_cap"
+        summary["model_training_allowed"] = False
+        summary["b2_error"] = {"code": error.get("Code", "Unknown"), "message": message[:500]}
+        local_report.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2), flush=True)
     # No-trade/model-training gate: incomplete weekday coverage must be visible as a failed run.
     # Batch runs are intentionally non-final: a separate cumulative audit must
     # reconcile all batch artifacts before the training gate can ever be opened.
+    if summary.get("status") == "blocked_b2_class_b_cap":
+        return 3
     if max_sessions is not None:
         return 0
     if summary["incomplete_session_dates"] or summary["validated_session_count"] < 350 or summary["archive_integrity_failures"] or summary["archive_integrity_verified_count"] != summary["validated_session_count"]:
