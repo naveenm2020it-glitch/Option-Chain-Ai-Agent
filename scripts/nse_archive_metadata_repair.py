@@ -34,7 +34,7 @@ def inspect_and_repair(day: date, output: Path) -> dict:
         output_path = os.getenv("GITHUB_OUTPUT")
         if output_path:
             with open(output_path, "a", encoding="utf-8") as handle:
-                handle.write("catalog_repaired=false\\n")
+                handle.write("catalog_repaired=false\n")
         print(json.dumps(report, indent=2), flush=True)
         return report
 
@@ -163,7 +163,7 @@ def inspect_and_repair(day: date, output: Path) -> dict:
     output_path = os.getenv("GITHUB_OUTPUT")
     if output_path:
         with open(output_path, "a", encoding="utf-8") as handle:
-            handle.write(f"catalog_repaired={'true' if catalog_repaired else 'false'}\\n")
+            handle.write(f"catalog_repaired={'true' if catalog_repaired else 'false'}\n")
     print(json.dumps(report, indent=2), flush=True)
     return report
 
