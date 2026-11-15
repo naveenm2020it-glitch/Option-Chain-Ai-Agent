@@ -1,4 +1,5 @@
 from datetime import date
+import io
 import json
 
 import pytest
@@ -35,7 +36,8 @@ def test_audit_resumes_verified_dates_without_redownloading(monkeypatch, tmp_pat
     calls = []
 
     class FakeClient:
-        pass
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(b"fake-zip")}
 
     catalog = {"collections": [
         {"collection_date": day.isoformat(), "archive_sha256": str(index), "archive_bytes": 100}
@@ -45,6 +47,10 @@ def test_audit_resumes_verified_dates_without_redownloading(monkeypatch, tmp_pat
     monkeypatch.setattr(audit, "read_catalog", lambda client: catalog)
     monkeypatch.setattr(audit, "validate_remote_archive",
                         lambda client, bucket, day, entry: (calls.append(day) or True, "verified_4_report_files"))
+    monkeypatch.setattr(audit, "extract_nifty_features",
+                        lambda archive_bytes, day: {"session_date": day.isoformat(),
+                                                    "feature_schema_version": audit.FEATURE_SCHEMA_VERSION,
+                                                    "features": {"spot_close": 25000.0}, "contracts": []})
     monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
 
     first = audit.run_audit(start, end, checkpoint_path, max_archives=2)
@@ -63,7 +69,8 @@ def test_b2_cap_pauses_without_retrying(monkeypatch, tmp_path):
     checkpoint_path = tmp_path / "checkpoint.json"
 
     class FakeClient:
-        pass
+        def get_object(self, **_kwargs):
+            raise error
 
     catalog = {"collections": [
         {"collection_date": day.isoformat(), "archive_sha256": "a" * 64, "archive_bytes": 100}
