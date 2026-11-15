@@ -77,3 +77,70 @@ def test_read_catalog_does_not_cache_explicit_client(monkeypatch):
     storage.read_catalog(client)
 
     assert client.get_object.call_count == 2
+
+
+def test_upload_collection_reuses_catalog_and_uses_bounded_puts(tmp_path, monkeypatch):
+    import storage
+
+    monkeypatch.setenv("B2_BUCKET_NAME", "nifty-history")
+    report_dir = tmp_path / "2026-11-13"
+    report_dir.mkdir()
+    (report_dir / "fo_bhavcopy.csv").write_text("symbol,close\nNIFTY,25000\n")
+    (report_dir / "manifest.json").write_text(json.dumps({
+        "results": {
+            "fo_udiff_bhavcopy": {
+                "status": "downloaded",
+                "report_date": "2026-11-13",
+                "file": "fo_bhavcopy.csv",
+                "sha256": "test-hash",
+            }
+        }
+    }))
+
+    client = Mock()
+    catalog = {"schema_version": 1, "collections": []}
+    monkeypatch.setattr(storage, "_cache_delete", Mock())
+    monkeypatch.setattr(storage.database, "delete_cached_json", Mock())
+
+    entry = storage.upload_collection(
+        report_dir,
+        "2026-11-13",
+        client=client,
+        catalog=catalog,
+    )
+
+    assert entry["collection_date"] == "2026-11-13"
+    assert entry["report_count"] == 1
+    assert entry["archive_bytes"] > 0
+    assert len(entry["archive_sha256"]) == 64
+    assert catalog["collections"] == [entry]
+    assert client.get_object.call_count == 0
+    assert client.put_object.call_count == 3
+    assert client.put_object.call_args_list[0].kwargs["Key"] == "nse/daily/2026-11-13/reports.zip"
+    assert client.put_object.call_args_list[1].kwargs["Key"] == "nse/daily/2026-11-13/manifest.json"
+    assert client.put_object.call_args_list[2].kwargs["Key"] == "nse/catalog.json"
+
+
+def test_upload_collection_survives_optional_database_cache_invalidation_failure(tmp_path, monkeypatch):
+    import storage
+
+    monkeypatch.setenv("B2_BUCKET_NAME", "nifty-history")
+    report_dir = tmp_path / "2026-11-13"
+    report_dir.mkdir()
+    (report_dir / "manifest.json").write_text(json.dumps({"results": {}}))
+
+    client = Mock()
+    monkeypatch.setattr(storage, "read_catalog", lambda supplied: {
+        "schema_version": 1, "collections": []
+    })
+    monkeypatch.setattr(storage, "_cache_delete", Mock())
+    monkeypatch.setattr(
+        storage.database,
+        "delete_cached_json",
+        Mock(side_effect=RuntimeError("database temporarily unavailable")),
+    )
+
+    entry = storage.upload_collection(report_dir, "2026-11-13", client=client)
+
+    assert entry["collection_date"] == "2026-11-13"
+    assert client.put_object.call_count == 3
