@@ -265,12 +265,17 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         model.fit(X, next_returns)
         range_models[str(quantile)] = model
 
-    large_move_model = LGBMClassifier(
-        objective="binary", n_estimators=120, learning_rate=0.03,
-        num_leaves=7, max_depth=3, min_child_samples=18,
-        reg_lambda=8.0, verbosity=-1, random_state=RANDOM_STATE,
-    )
-    large_move_model.fit(X, large_move_labels)
+    if len(np.unique(large_move_labels)) > 1:
+        large_move_model = LGBMClassifier(
+            objective="binary", n_estimators=120, learning_rate=0.03,
+            num_leaves=7, max_depth=3, min_child_samples=18,
+            reg_lambda=8.0, verbosity=-1, random_state=RANDOM_STATE,
+        )
+        large_move_model.fit(X, large_move_labels)
+    else:
+        from sklearn.dummy import DummyClassifier
+        large_move_model = DummyClassifier(strategy="prior")
+        large_move_model.fit(X, large_move_labels)
 
     seller_models = {}
     seller_metrics = {}
