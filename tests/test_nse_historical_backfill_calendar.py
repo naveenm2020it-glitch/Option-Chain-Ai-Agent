@@ -99,4 +99,15 @@ def test_remote_archive_rejects_catalog_hash_mismatch():
         client, "nifty-history", date(2026, 11, 12), catalog_entry, manifest
     )
     assert valid is False
-    assert reason == "archive_sha256_mismatch_or_missing_catalog_hash"
+    assert reason == "archive_sha256_mismatch"
+
+
+def test_remote_archive_accepts_matching_sha256_when_catalog_size_is_stale():
+    client, catalog_entry, manifest = _valid_archive_fixture()
+    catalog_entry["archive_bytes"] = int(catalog_entry["archive_bytes"]) + 123
+    valid, reason = validate_remote_archive(
+        client, "nifty-history", date(2026, 11, 12), catalog_entry, manifest
+    )
+    assert valid is True
+    assert reason.endswith("_catalog_size_metadata_mismatch")
+    assert client.get_count == 1
