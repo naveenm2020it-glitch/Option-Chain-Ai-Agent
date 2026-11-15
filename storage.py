@@ -5,6 +5,45 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+from threading import RLock
+
+
+# Per-process read-through cache: prevent every dashboard visitor from hitting B2.
+# Render process restarts/extra instances have independent caches; durable DB caching
+# is a later architecture step, not implied by this in-memory layer.
+_CACHE_TTL_SECONDS = {"catalog": 300, "manifest": 3600}
+_CACHE_MAX_ENTRIES = 512
+_CACHE: dict[tuple[str, str], tuple[float, Any]] = {}
+_CACHE_LOCK = RLock()
+
+
+def _cache_get(kind: str, key: str):
+    import time
+    cache_key = (kind, key)
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        item = _CACHE.get(cache_key)
+        if item is None:
+            return None
+        expires_at, value = item
+        if expires_at <= now:
+            _CACHE.pop(cache_key, None)
+            return None
+        return value
+
+
+def _cache_set(kind: str, key: str, value: Any) -> None:
+    import time
+    cache_key = (kind, key)
+    with _CACHE_LOCK:
+        if len(_CACHE) >= _CACHE_MAX_ENTRIES and cache_key not in _CACHE:
+            now = time.monotonic()
+            expired = [k for k, (expiry, _) in _CACHE.items() if expiry <= now]
+            for old_key in expired:
+                _CACHE.pop(old_key, None)
+            if len(_CACHE) >= _CACHE_MAX_ENTRIES:
+                _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[cache_key] = (time.monotonic() + _CACHE_TTL_SECONDS[kind], value)
 
 
 def b2_configured() -> bool:
@@ -37,11 +76,19 @@ def b2_client():
 
 
 def read_catalog(client=None) -> dict[str, Any]:
-    client = client or b2_client()
+    use_cache = client is None
     bucket = os.environ["B2_BUCKET_NAME"]
+    if use_cache:
+        cached = _cache_get("catalog", bucket)
+        if cached is not None:
+            return cached
+        client = b2_client()
     try:
         response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
-        return json.loads(response["Body"].read().decode("utf-8"))
+        catalog = json.loads(response["Body"].read().decode("utf-8"))
+        if use_cache:
+            _cache_set("catalog", bucket, catalog)
+        return catalog
     except Exception as exc:
         error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
         if error_code in {"NoSuchKey", "404", "NotFound"}:
@@ -57,12 +104,19 @@ def read_collection_manifest(collection_date: str) -> dict[str, Any]:
     """Read one archived NSE collection manifest from B2."""
     from datetime import date
     date.fromisoformat(collection_date)  # strict YYYY-MM-DD validation
+    bucket = os.environ["B2_BUCKET_NAME"]
+    cache_key = f"{bucket}:{collection_date}"
+    cached = _cache_get("manifest", cache_key)
+    if cached is not None:
+        return cached
     client = b2_client()
     response = client.get_object(
-        Bucket=os.environ["B2_BUCKET_NAME"],
+        Bucket=bucket,
         Key=f"nse/daily/{collection_date}/manifest.json",
     )
-    return json.loads(response["Body"].read().decode("utf-8"))
+    manifest = json.loads(response["Body"].read().decode("utf-8"))
+    _cache_set("manifest", cache_key, manifest)
+    return manifest
 
 
 def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
