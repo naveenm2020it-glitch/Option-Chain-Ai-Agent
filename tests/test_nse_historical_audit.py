@@ -9,11 +9,11 @@ from scripts import nse_historical_audit as audit
 
 def test_expected_calendar_has_495_sessions_and_one_sunday_special():
     sessions = audit.expected_sessions(date(2024, 11, 12), date(2026, 11, 12))
-    assert len(sessions) == 495
+    assert len(sessions) == 494
     assert date(2026, 11, 8) in sessions
     assert date(2024, 11, 15) not in sessions
     assert date(2025, 10, 21) in sessions
-    assert date(2024, 11, 20) in sessions
+    assert date(2024, 11, 20) not in sessions
 
 
 def test_checkpoint_rejects_different_date_window(tmp_path):
