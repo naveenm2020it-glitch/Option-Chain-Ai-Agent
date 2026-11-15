@@ -1,0 +1,77 @@
+name: NIFTY historical archive integrity audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_archives:
+        description: "Maximum existing ZIP archives to download and verify in this run"
+        required: true
+        default: "25"
+        type: string
+  schedule:
+    # One small read-only batch each day, after B2's daily quota reset window.
+    - cron: "30 0 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nse-b2-archive
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore resumable audit checkpoint
+        uses: actions/cache@v4
+        with:
+          path: data/historical_audit/
+          key: nifty-historical-audit-v1-${{ github.run_id }}
+          restore-keys: |
+            nifty-historical-audit-v1-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify B2 configuration without printing secrets
+        run: |
+          python - <<'PY'
+          import os
+          required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              raise SystemExit("Historical audit blocked; missing secrets: " + ", ".join(missing))
+          print("B2 configuration is present.")
+          PY
+
+      - name: Audit existing archives only
+        run: |
+          python scripts/nse_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --max-archives "${{ inputs.max_archives || '25' }}"
+
+      - name: Publish audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-historical-integrity-audit-${{ github.run_id }}
+          path: data/historical_audit/
+          if-no-files-found: ignore
+          retention-days: 30
