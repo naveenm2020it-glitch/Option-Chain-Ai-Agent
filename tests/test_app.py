@@ -108,6 +108,18 @@ def test_dashboard_marks_option_chain_as_unavailable_until_validated_feed():
 
 
 
+def test_dashboard_caches_b2_backed_metadata_in_session():
+    response = client.get("/static/app.js")
+    assert response.status_code == 200
+    script = response.text
+    assert "sessionStorage" in script
+    assert "STATUS_CACHE_TTL_MS=5*60*1000" in script
+    assert "HISTORY_CACHE_TTL_MS=10*60*1000" in script
+    assert 'fetchJsonWithSessionCache("/api/status",STATUS_CACHE_TTL_MS)' in script
+    assert 'fetchJsonWithSessionCache("/api/history",HISTORY_CACHE_TTL_MS)' in script
+    assert "cached" in script and "repeat archive reads" in script
+
+
 def test_dashboard_distinguishes_b2_credentials_from_quota_status():
     response = client.get("/")
     script = client.get("/static/app.js")
