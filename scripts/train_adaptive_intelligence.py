@@ -38,7 +38,7 @@ def _load_ml_dependencies() -> None:
     from sklearn.calibration import CalibratedClassifierCV
     from sklearn.dummy import DummyClassifier
     from sklearn.ensemble import HistGradientBoostingRegressor
-    from sklearn.metrics import f1_score, mean_absolute_error, pinball_loss
+    from sklearn.metrics import f1_score, mean_absolute_error, mean_pinball_loss as pinball_loss
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.neighbors import NearestNeighbors
     from sklearn.preprocessing import StandardScaler
