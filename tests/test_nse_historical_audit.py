@@ -100,3 +100,10 @@ def test_catalog_read_b2_cap_is_reported_without_losing_checkpoint(monkeypatch, 
     assert report["status"] == "paused_b2_class_b_cap"
     assert report["catalog_snapshot_current"] is False
     assert report["model_training_allowed"] is False
+
+
+def test_archive_batch_size_is_hard_capped_for_b2_quota():
+    assert audit.clamp_archive_batch_size(25) == 25
+    assert audit.clamp_archive_batch_size(1000) == 25
+    assert audit.clamp_archive_batch_size(0) == 1
+    assert audit.clamp_archive_batch_size(-10) == 1
