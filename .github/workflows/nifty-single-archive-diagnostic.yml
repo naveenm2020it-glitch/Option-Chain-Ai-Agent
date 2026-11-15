@@ -1,0 +1,87 @@
+name: NIFTY single archive feature diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "scripts/nse_single_archive_diagnostic.py"
+      - "scripts/nse_ml_features.py"
+      - "scripts/nse_historical_backfill.py"
+      - ".github/workflows/nifty-single-archive-diagnostic.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/nse_single_archive_diagnostic.py"
+      - ".github/workflows/nifty-single-archive-diagnostic.yml"
+  workflow_dispatch:
+    inputs:
+      session_date:
+        description: "One existing archived session date (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-12"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nse-b2-archive
+  cancel-in-progress: false
+
+jobs:
+  syntax-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install audit dependencies and pytest
+        run: pip install -r requirements-audit.txt pytest
+      - name: Compile diagnostic and feature modules
+        run: python -m compileall -q scripts/nse_single_archive_diagnostic.py scripts/nse_ml_features.py scripts/nse_historical_backfill.py
+      - name: Run NIFTY feature extraction tests
+        run: pytest -q tests/test_nse_ml_features.py
+
+  inspect-one-archive:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install audit dependencies
+        run: pip install -r requirements-audit.txt
+      - name: Check required secrets without printing values
+        run: |
+          python - <<'PY'
+          import os
+          required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              raise SystemExit("Missing required B2 secrets: " + ", ".join(missing))
+          print("B2 configuration is present.")
+          PY
+      - name: Inspect exactly one existing archive (read-only)
+        run: |
+          target_date="${{ inputs.session_date || '2026-11-12' }}"
+          python scripts/nse_single_archive_diagnostic.py --session-date "$target_date"
+      - name: Publish diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-single-archive-diagnostic-${{ github.run_id }}
+          path: single-archive-diagnostic.json
+          if-no-files-found: ignore
+          retention-days: 14
