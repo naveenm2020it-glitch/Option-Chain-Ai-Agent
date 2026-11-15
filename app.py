@@ -153,6 +153,8 @@ def history_manifest(collection_date: str):
                 "manifest": read_collection_manifest(collection_date), "storage": "backblaze_b2"}
     except ValueError:
         raise HTTPException(status_code=400, detail="Date must use YYYY-MM-DD.")
+    except HTTPException:
+        raise
     except Exception as exc:
         code = getattr(exc, "response", {}).get("Error", {}).get("Code")
         if code in {"NoSuchKey", "404", "NotFound"}:
