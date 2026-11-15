@@ -81,7 +81,8 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
     expected_text = [item.isoformat() for item in expected]
     verified = checkpoint["verified"]
     failed = checkpoint["failed"]
-    missing = [day for day in expected_text if day not in catalog_dates]
+    catalog_snapshot_current = bool(run_state.get("catalog_snapshot_current", True))
+    missing = [day for day in expected_text if day not in catalog_dates] if catalog_snapshot_current else []
     pending = [
         day for day in expected_text
         if day in catalog_dates
@@ -118,6 +119,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "processed_this_run": run_state.get("processed_this_run", 0),
         "b2_cap_blocked": bool(run_state.get("paused_b2_class_b_cap")),
         "b2_cap_error": run_state.get("b2_cap_error"),
+        "catalog_snapshot_current": catalog_snapshot_current,
         "status": status,
         # The training gate is deliberately closed here. The separate feature
         # dataset and model validation pipeline must also pass before training.
@@ -155,14 +157,37 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
 
     client = b2_client()
     bucket = os.environ["B2_BUCKET_NAME"]
-    catalog = read_catalog(client)  # exactly one catalog read per audit run
+    try:
+        catalog = read_catalog(client)  # exactly one catalog read per audit run
+    except ClientError as exc:
+        if not is_b2_cap_error(exc):
+            raise
+        error = exc.response.get("Error", {})
+        run_state = {
+            "processed_this_run": 0,
+            "paused_b2_class_b_cap": True,
+            "catalog_snapshot_current": False,
+            "b2_cap_error": {
+                "code": error.get("Code", "Unknown"),
+                "message": str(error.get("Message", exc))[:500],
+            },
+        }
+        prior_dates = set(checkpoint.get("catalog_dates", []))
+        report = _save_report(checkpoint_path, checkpoint, expected, prior_dates, run_state)
+        print(json.dumps(report, indent=2), flush=True)
+        return report
     entries = {
         item.get("collection_date"): item
         for item in catalog.get("collections", [])
         if isinstance(item, dict) and item.get("collection_date")
     }
     catalog_dates = set(entries)
-    run_state = {"processed_this_run": 0, "paused_b2_class_b_cap": False}
+    checkpoint["catalog_dates"] = sorted(catalog_dates)
+    run_state = {
+        "processed_this_run": 0,
+        "paused_b2_class_b_cap": False,
+        "catalog_snapshot_current": True,
+    }
 
     for day in expected:
         day_text = day.isoformat()
