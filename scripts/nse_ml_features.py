@@ -139,7 +139,7 @@ def _index_features(frame: pd.DataFrame | None) -> dict[str, float]:
     open_value = value(row, ("openindexvalue", "open"))
     vix_close = value(vix_row, ("closingindexvalue", "closeindexvalue", "close"))
     return {
-        "index_data_available": 1.0 if close > 0 else 0.0,
+        "index_data_available": 1.0 if close > 0 and open_value > 0 and high >= close and low > 0 and high > low else 0.0,
         "index_close": close,
         "spot_open": open_value,
         "spot_high": high,
