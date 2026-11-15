@@ -79,3 +79,17 @@ def test_b2_cap_pauses_without_retrying(monkeypatch, tmp_path):
     assert report["status"] == "paused_b2_class_b_cap"
     assert report["b2_cap_blocked"] is True
     assert report["model_training_allowed"] is False
+
+
+def test_catalog_read_b2_cap_is_reported_without_losing_checkpoint(monkeypatch, tmp_path):
+    start, end = date(2024, 11, 12), date(2024, 11, 12)
+    checkpoint_path = tmp_path / "checkpoint.json"
+    error = ClientError({"Error": {"Code": "TooManyRequests", "Message": "Class B cap exceeded"}}, "GetObject")
+    monkeypatch.setattr(audit, "b2_client", lambda: object())
+    monkeypatch.setattr(audit, "read_catalog", lambda client: (_ for _ in ()).throw(error))
+    monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
+
+    report = audit.run_audit(start, end, checkpoint_path, max_archives=1)
+    assert report["status"] == "paused_b2_class_b_cap"
+    assert report["catalog_snapshot_current"] is False
+    assert report["model_training_allowed"] is False
