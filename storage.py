@@ -81,25 +81,35 @@ def b2_client():
 
 
 def read_catalog(client=None) -> dict[str, Any]:
-    use_cache = client is None
     bucket = os.environ["B2_BUCKET_NAME"]
-    if use_cache:
+    if client is not None:
+        # Explicit clients are used by maintenance code and tests; leave them uncached.
+        try:
+            response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
+            return json.loads(response["Body"].read().decode("utf-8"))
+        except Exception as exc:
+            error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404", "NotFound"}:
+                return {"schema_version": 1, "updated_at_utc": None, "collections": []}
+            raise
+
+    # Hold the re-entrant lock across the cache miss and B2 read to prevent
+    # simultaneous first-page visitors from stampeding the same B2 object.
+    with _CACHE_LOCK:
         cached = _cache_get("catalog", bucket)
         if cached is not None:
             return cached
         client = b2_client()
-    try:
-        response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
-        catalog = json.loads(response["Body"].read().decode("utf-8"))
-        if use_cache:
-            _cache_set("catalog", bucket, catalog)
+        try:
+            response = client.get_object(Bucket=bucket, Key="nse/catalog.json")
+            catalog = json.loads(response["Body"].read().decode("utf-8"))
+        except Exception as exc:
+            error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            if error_code in {"NoSuchKey", "404", "NotFound"}:
+                return {"schema_version": 1, "updated_at_utc": None, "collections": []}
+            raise
+        _cache_set("catalog", bucket, catalog)
         return catalog
-    except Exception as exc:
-        error_code = getattr(exc, "response", {}).get("Error", {}).get("Code")
-        if error_code in {"NoSuchKey", "404", "NotFound"}:
-            return {"schema_version": 1, "updated_at_utc": None, "collections": []}
-        raise
-
 
 def history_catalog() -> dict[str, Any]:
     return read_catalog()
@@ -111,18 +121,19 @@ def read_collection_manifest(collection_date: str) -> dict[str, Any]:
     date.fromisoformat(collection_date)  # strict YYYY-MM-DD validation
     bucket = os.environ["B2_BUCKET_NAME"]
     cache_key = f"{bucket}:{collection_date}"
-    cached = _cache_get("manifest", cache_key)
-    if cached is not None:
-        return cached
-    client = b2_client()
-    response = client.get_object(
-        Bucket=bucket,
-        Key=f"nse/daily/{collection_date}/manifest.json",
-    )
-    manifest = json.loads(response["Body"].read().decode("utf-8"))
-    _cache_set("manifest", cache_key, manifest)
-    return manifest
-
+    # Prevent concurrent cache misses for the same dated manifest.
+    with _CACHE_LOCK:
+        cached = _cache_get("manifest", cache_key)
+        if cached is not None:
+            return cached
+        client = b2_client()
+        response = client.get_object(
+            Bucket=bucket,
+            Key=f"nse/daily/{collection_date}/manifest.json",
+        )
+        manifest = json.loads(response["Body"].read().decode("utf-8"))
+        _cache_set("manifest", cache_key, manifest)
+        return manifest
 
 def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
     """Create a short-lived URL for downloading an archived report ZIP."""
