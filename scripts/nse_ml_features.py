@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import date
 
@@ -17,6 +18,122 @@ REQUIRED_COLUMNS = {
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
     return float(numerator / denominator) if denominator else 0.0
+
+
+def _outer_csv_frame(outer_bytes: bytes, report_key: str) -> pd.DataFrame | None:
+    with zipfile.ZipFile(io.BytesIO(outer_bytes)) as outer:
+        manifest = __import__("json").loads(outer.read("manifest.json").decode("utf-8"))
+        item = manifest.get("results", {}).get(report_key)
+        if not isinstance(item, dict) or not item.get("file"):
+            return None
+        payload = outer.read(item["file"])
+    return pd.read_csv(io.BytesIO(payload), dtype=str, encoding="utf-8-sig", low_memory=False)
+
+
+def _normalised_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+
+def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, float]:
+    if frame is None or frame.empty:
+        return {f"{prefix}_data_available": 0.0}
+    columns = {_normalised_name(column): column for column in frame.columns}
+    participant_column = next(
+        (columns[key] for key in ("clienttype", "participanttype", "participant") if key in columns),
+        frame.columns[0],
+    )
+    result = {f"{prefix}_data_available": 1.0}
+    categories = {
+        "fii": ("fii", "fpi"),
+        "dii": ("dii",),
+        "client": ("client", "clients"),
+        "pro": ("pro", "proprietary"),
+        "total": ("total",),
+    }
+    groups = (
+        ("future_index_long", "futureindexlong"),
+        ("future_index_short", "futureindexshort"),
+        ("option_index_call_long", "optionindexcalllong"),
+        ("option_index_call_short", "optionindexcallshort"),
+        ("option_index_put_long", "optionindexputlong"),
+        ("option_index_put_short", "optionindexputshort"),
+        ("future_stock_long", "futurestocklong"),
+        ("future_stock_short", "futurestockshort"),
+        ("option_stock_call_long", "optionstockcalllong"),
+        ("option_stock_call_short", "optionstockcallshort"),
+        ("option_stock_put_long", "optionstockputlong"),
+        ("option_stock_put_short", "optionstockputshort"),
+        ("total_long", "totallongcontracts"),
+        ("total_short", "totalshortcontracts"),
+    )
+    participant_values = frame[participant_column].astype(str).str.strip().str.lower()
+    for category, aliases in categories.items():
+        matches = frame.loc[participant_values.isin(aliases)]
+        if matches.empty:
+            continue
+        row = matches.iloc[-1]
+        values = {}
+        for feature_name, normalized_column in groups:
+            source_column = columns.get(normalized_column)
+            if source_column is None:
+                continue
+            numeric = pd.to_numeric(str(row[source_column]).replace(",", ""), errors="coerce")
+            values[feature_name] = float(numeric) if pd.notna(numeric) else 0.0
+            result[f"{prefix}_{category}_{feature_name}"] = values[feature_name]
+        if "future_index_long" in values and "future_index_short" in values:
+            result[f"{prefix}_{category}_future_index_net"] = values["future_index_long"] - values["future_index_short"]
+        if "option_index_call_long" in values and "option_index_call_short" in values:
+            result[f"{prefix}_{category}_option_index_call_net"] = values["option_index_call_long"] - values["option_index_call_short"]
+        if "option_index_put_long" in values and "option_index_put_short" in values:
+            result[f"{prefix}_{category}_option_index_put_net"] = values["option_index_put_long"] - values["option_index_put_short"]
+        if all(key in values for key in (
+            "option_index_call_long", "option_index_call_short",
+            "option_index_put_long", "option_index_put_short",
+        )):
+            result[f"{prefix}_{category}_option_index_net"] = (
+                values["option_index_call_long"] + values["option_index_put_long"]
+                - values["option_index_call_short"] - values["option_index_put_short"]
+            )
+    return result
+
+
+def _index_features(frame: pd.DataFrame | None) -> dict[str, float]:
+    defaults = {
+        "index_data_available": 0.0, "spot_open": 0.0, "spot_high": 0.0,
+        "spot_low": 0.0, "india_vix_close": 0.0,
+    }
+    if frame is None or frame.empty:
+        return defaults
+    columns = {_normalised_name(column): column for column in frame.columns}
+    name_column = next((columns[key] for key in ("indexname", "index") if key in columns), None)
+    if name_column is None:
+        return defaults
+    names = frame[name_column].astype(str).map(_normalised_name)
+    nifty = frame.loc[names.isin(("nifty50", "nifty"))]
+    vix = frame.loc[names.isin(("indiavix", "indiavolatilityindex"))]
+    def value(row, aliases):
+        column = next((columns[key] for key in aliases if key in columns), None)
+        if column is None or row is None:
+            return 0.0
+        number = pd.to_numeric(str(row[column]).replace(",", ""), errors="coerce")
+        return float(number) if pd.notna(number) else 0.0
+    if nifty.empty:
+        return defaults
+    row = nifty.iloc[-1]
+    vix_row = vix.iloc[-1] if not vix.empty else None
+    close = value(row, ("closingindexvalue", "closeindexvalue", "close"))
+    high = value(row, ("highindexvalue", "high"))
+    low = value(row, ("lowindexvalue", "low"))
+    open_value = value(row, ("openindexvalue", "open"))
+    vix_close = value(vix_row, ("closingindexvalue", "closeindexvalue", "close"))
+    return {
+        "index_data_available": 1.0 if close > 0 else 0.0,
+        "index_close": close,
+        "spot_open": open_value,
+        "spot_high": high,
+        "spot_low": low,
+        "india_vix_close": vix_close,
+    }
 
 
 def _read_inner_bhavcopy(outer_bytes: bytes, session_date: date) -> pd.DataFrame:
@@ -83,7 +200,10 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     if option_frame.empty:
         raise ValueError("No unexpired NIFTY CE/PE index-option contracts remain after validation")
 
-    spot = float(option_frame["UNDRLYGPRIC"].median())
+    index_info = _index_features(_outer_csv_frame(outer_bytes, "nifty_index_close_all"))
+    participant_oi = _participant_features(_outer_csv_frame(outer_bytes, "fo_participant_oi"), "participant_oi")
+    participant_volume = _participant_features(_outer_csv_frame(outer_bytes, "fo_participant_volume"), "participant_volume")
+    spot = float(index_info.get("index_close") or option_frame["UNDRLYGPRIC"].median())
     if spot <= 0:
         raise ValueError("NIFTY underlying price is invalid")
 
@@ -164,6 +284,19 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         future_return = future_basis = future_days_to_expiry = 0.0
     features = {
         "spot_close": spot,
+        "spot_open": float(index_info.get("spot_open", 0.0) or spot),
+        "spot_high": float(index_info.get("spot_high", 0.0) or spot),
+        "spot_low": float(index_info.get("spot_low", 0.0) or spot),
+        "index_data_available": float(index_info.get("index_data_available", 0.0)),
+        "india_vix_close": float(index_info.get("india_vix_close", 0.0)),
+        "index_range_pct": _safe_ratio(
+            float(index_info.get("spot_high", 0.0)) - float(index_info.get("spot_low", 0.0)),
+            spot,
+        ),
+        "index_close_location": _safe_ratio(
+            spot - float(index_info.get("spot_low", 0.0)),
+            float(index_info.get("spot_high", 0.0)) - float(index_info.get("spot_low", 0.0)),
+        ),
         "days_to_expiry": float(days_to_expiry),
         "ce_oi": ce["oi"], "pe_oi": pe["oi"],
         "pcr_oi": _safe_ratio(pe["oi"], ce["oi"]),
@@ -229,6 +362,8 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
             "days_to_expiry": float((values["XPRYDT"] - session_date).days),
         })
 
+    features.update(participant_oi)
+    features.update(participant_volume)
     return {
         "session_date": session_date.isoformat(),
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
