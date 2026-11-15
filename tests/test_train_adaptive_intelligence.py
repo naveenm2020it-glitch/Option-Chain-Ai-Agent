@@ -13,7 +13,7 @@ def _feature_rows(count=305):
         day = start + timedelta(days=index)
         rows[day.isoformat()] = {
             "session_date": day.isoformat(),
-            "feature_schema_version": 1,
+            "feature_schema_version": 2,
             "features": {
                 "spot_close": 25000.0 + index * 100.0,
                 "ce_oi": 1000.0 + index,
