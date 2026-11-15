@@ -119,10 +119,15 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         for key in coverage_keys
     }
     sources_ready = all(value >= 0.95 for value in feature_coverage.values())
+    features_current = all(
+        row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+        for row in features.values()
+    )
     features_ready = (
         all_verified
         and len(features) == len(expected_text)
         and not feature_errors
+        and features_current
         and sources_ready
     )
     if all_verified:
