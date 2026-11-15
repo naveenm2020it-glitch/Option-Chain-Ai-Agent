@@ -1,6 +1,17 @@
 name: NIFTY single archive feature diagnostic
 
 on:
+  pull_request:
+    paths:
+      - "scripts/nse_single_archive_diagnostic.py"
+      - "scripts/nse_ml_features.py"
+      - "scripts/nse_historical_backfill.py"
+      - ".github/workflows/nifty-single-archive-diagnostic.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/nse_single_archive_diagnostic.py"
+      - ".github/workflows/nifty-single-archive-diagnostic.yml"
   workflow_dispatch:
     inputs:
       session_date:
@@ -17,7 +28,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  syntax-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install audit dependencies and pytest
+        run: pip install -r requirements-audit.txt pytest
+      - name: Compile diagnostic and feature modules
+        run: python -m compileall -q scripts/nse_single_archive_diagnostic.py scripts/nse_ml_features.py scripts/nse_historical_backfill.py
+      - name: Run NIFTY feature extraction tests
+        run: pytest -q tests/test_nse_ml_features.py
+
   inspect-one-archive:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -46,7 +73,8 @@ jobs:
           PY
       - name: Inspect exactly one existing archive (read-only)
         run: |
-          python scripts/nse_single_archive_diagnostic.py --session-date "${{ inputs.session_date }}"
+          target_date="${{ inputs.session_date || '2026-11-12' }}"
+          python scripts/nse_single_archive_diagnostic.py --session-date "$target_date"
       - name: Publish diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
