@@ -8,7 +8,7 @@ from datetime import date
 import pandas as pd
 
 
-FEATURE_SCHEMA_VERSION = 2
+FEATURE_SCHEMA_VERSION = 3
 REQUIRED_COLUMNS = {
     "TCKRSYMB", "FININSTRMTP", "XPRYDT", "STRKPRIC", "OPTNTP", "CLSPRIC",
     "PRVSCLSGPRIC", "OPNINTRST", "CHNGINOPNINTRST",
@@ -107,6 +107,28 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
     if {"fii", "dii", "client", "pro"}.issubset(categories_found) and required_index_columns.issubset(columns):
         result[f"{prefix}_data_available"] = 1.0
     return result
+
+
+def _contract_delta_map(frame: pd.DataFrame | None, session_date: date) -> dict[tuple[str, float, str], float]:
+    if frame is None or frame.empty:
+        return {}
+    columns = {_normalised_name(column): column for column in frame.columns}
+    required = ("symbol", "expiryday", "strikeprice", "optiontype", "deltafactor")
+    if any(key not in columns for key in required):
+        return {}
+    data = frame.copy()
+    symbol = data[columns["symbol"]].astype(str).str.strip().str.upper()
+    option_type = data[columns["optiontype"]].astype(str).str.strip().str.upper()
+    data = data.loc[(symbol == "NIFTY") & option_type.isin(("CE", "PE"))].copy()
+    data["_expiry"] = pd.to_datetime(data[columns["expiryday"]], errors="coerce").dt.date
+    data["_strike"] = pd.to_numeric(data[columns["strikeprice"]].astype(str).str.replace(",", ""), errors="coerce")
+    data["_delta"] = pd.to_numeric(data[columns["deltafactor"]].astype(str).str.replace(",", ""), errors="coerce")
+    data = data.dropna(subset=["_expiry", "_strike", "_delta"])
+    data = data.loc[data["_expiry"] >= session_date]
+    return {
+        (row["_expiry"].isoformat(), round(float(row["_strike"]), 2), str(row[columns["optiontype"]]).strip().upper()): float(row["_delta"])
+        for _, row in data.iterrows()
+    }
 
 
 def _index_features(frame: pd.DataFrame | None) -> dict[str, float]:
@@ -213,6 +235,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         raise ValueError("No unexpired NIFTY CE/PE index-option contracts remain after validation")
 
     index_info = _index_features(_outer_csv_frame(outer_bytes, "nifty_index_close_all"))
+    delta_map = _contract_delta_map(_outer_csv_frame(outer_bytes, "fo_contract_delta"), session_date)
     participant_oi = _participant_features(_outer_csv_frame(outer_bytes, "fo_participant_oi"), "participant_oi")
     participant_volume = _participant_features(_outer_csv_frame(outer_bytes, "fo_participant_volume"), "participant_volume")
     spot = float(index_info.get("index_close") or option_frame["UNDRLYGPRIC"].median())
@@ -285,6 +308,12 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     pe = side_metrics(near, "PE")
     all_ce = side_metrics(all_near, "CE")
     all_pe = side_metrics(all_near, "PE")
+    all_near["delta_factor"] = [
+        delta_map.get((row["XPRYDT"].isoformat(), round(float(row["STRKPRIC"]), 2), str(row["OPTNTP"]).upper()), 0.0)
+        for _, row in all_near.iterrows()
+    ]
+    ce_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "CE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "CE", "delta_factor"]).sum())
+    pe_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "PE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "PE", "delta_factor"]).sum())
     days_to_expiry = (expiry - session_date).days
     if not future_frame.empty:
         future_expiry = min(future_frame["XPRYDT"])
@@ -361,6 +390,11 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         "future_basis_pct": future_basis,
         "future_days_to_expiry": future_days_to_expiry,
         "all_expiry_contract_count": float(len(all_near)),
+        "delta_data_available": 1.0 if delta_map else 0.0,
+        "delta_matched_contract_count": float(sum(1 for _, row in all_near.iterrows() if row["delta_factor"] != 0.0)),
+        "ce_delta_equiv_oi": ce_delta_equiv_oi,
+        "pe_delta_equiv_oi": pe_delta_equiv_oi,
+        "net_option_delta_equiv_oi": ce_delta_equiv_oi + pe_delta_equiv_oi,
     }
 
     contracts = []
@@ -378,6 +412,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
             "premium_return": float(values["premium_return"]),
             "moneyness": float(values["moneyness"]),
             "days_to_expiry": float((values["XPRYDT"] - session_date).days),
+            "delta_factor": float(values["delta_factor"]),
         })
 
     features.update(participant_oi)
