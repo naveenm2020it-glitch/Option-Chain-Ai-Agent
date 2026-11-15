@@ -337,10 +337,11 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     baseline_brier = _multiclass_brier(y_test, baseline_probabilities)
 
     calibration_status = "not_attempted"
+    calibration_error = None
     calibrated = None
     try:
         calibrated = CalibratedClassifierCV(
-            estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=False
+            estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=True
         )
         calibrated.fit(X_train, y_train)
         calibrated_probabilities = _probability_matrix(calibrated, X_test)
@@ -350,13 +351,15 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         calibration_status = "time_series_sigmoid_calibration"
     except Exception as exc:
         calibration_status = f"failed:{type(exc).__name__}"
+        calibration_error = f"{type(exc).__name__}: {str(exc)[:500]}"
 
     final_direction = CalibratedClassifierCV(
-        estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=False
+        estimator=factory(), method="sigmoid", cv=TimeSeriesSplit(n_splits=3), ensemble=True
     )
     try:
         final_direction.fit(X, y)
-    except Exception:
+    except Exception as exc:
+        calibration_error = f"final_calibration:{type(exc).__name__}: {str(exc)[:500]}"
         final_direction = factory()
         final_direction.fit(X, y)
         calibration_status = "uncalibrated_fallback"
@@ -494,6 +497,7 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         "training_end": max(row["session_date"] for row in feature_rows.values()),
         "holdout_start": min(sorted(set(row["session_date"] for row in sorted(feature_rows.values(), key=lambda x: x["session_date"])))[split:]),
         "selected_direction_model": selected,
+        "calibration_error": calibration_error,
         "walk_forward_comparison": walk_forward,
         "direction_holdout": {
             "macro_f1": holdout_f1,
