@@ -38,6 +38,11 @@ HOLIDAYS = {
 }
 SPECIAL_SESSIONS = {date(2026, 11, 8)}
 CHECKPOINT_VERSION = 2
+MAX_ARCHIVES_PER_RUN = 25
+
+
+def clamp_archive_batch_size(value: int) -> int:
+    return max(1, min(int(value), MAX_ARCHIVES_PER_RUN))
 
 
 def expected_sessions(start: date, end: date) -> list[date]:
@@ -232,6 +237,7 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
     }
     catalog_dates = set(entries)
     checkpoint["catalog_dates"] = sorted(catalog_dates)
+    max_archives = clamp_archive_batch_size(max_archives)
     run_state = {
         "processed_this_run": 0,
         "paused_b2_class_b_cap": False,
@@ -334,11 +340,14 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", default="data/historical_audit/checkpoint.json")
     parser.add_argument("--max-archives", type=int, default=25)
     args = parser.parse_args()
+    batch_size = clamp_archive_batch_size(args.max_archives)
+    if batch_size != args.max_archives:
+        print(f"Requested archive batch was capped to {batch_size} to protect the B2 free-tier quota.", flush=True)
     result = run_audit(
         date.fromisoformat(args.start),
         date.fromisoformat(args.end),
         Path(args.checkpoint),
-        args.max_archives,
+        batch_size,
     )
     # A quota pause is a safe resumable outcome. Missing/corrupt archives remain
     # a non-zero exit only after the entire calendar window has been examined.
