@@ -3,10 +3,13 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+import secrets
+
+import database
 from data_quality import assess_manifest
 from seller_engine import analyze_seller_market
 from storage import history_catalog, b2_configured, read_collection_manifest, archive_download_url
@@ -91,10 +94,46 @@ def engine_models():
 
 @app.get("/api/history")
 def history():
+    if database.database_configured():
+        try:
+            catalog = history_catalog() if b2_configured() else {
+                "schema_version": 1, "updated_at_utc": None,
+                "collections": database.list_daily_reports()
+            }
+            return {"configured": True, "storage": "postgresql", **catalog}
+        except Exception:
+            # A persistent daily-report index remains available if B2 is down.
+            return {"configured": True, "storage": "postgresql",
+                    "schema_version": 1, "collections": database.list_daily_reports(),
+                    "message": "Showing database-backed report metadata; B2 archive metadata is temporarily unavailable."}
     if not b2_configured():
         return {"configured": False, "storage": "backblaze_b2", "collections": [],
                 "message": "Historical archive storage is not configured yet."}
     return {"configured": True, "storage": "backblaze_b2", **history_catalog()}
+
+
+@app.post("/api/internal/daily-report")
+def ingest_daily_report(payload: dict, authorization: str | None = Header(default=None)):
+    """Store the collector's daily NSE manifest in PostgreSQL; never expose this endpoint publicly."""
+    token = os.getenv("DAILY_INGEST_TOKEN")
+    if not token:
+        raise HTTPException(status_code=503, detail="Daily report ingestion is not configured.")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not secrets.compare_digest(supplied, token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+    collection_date = payload.get("collection_date")
+    manifest = payload.get("manifest")
+    if not isinstance(collection_date, str) or not isinstance(manifest, dict):
+        raise HTTPException(status_code=400, detail="collection_date and manifest are required.")
+    if not database.database_configured():
+        raise HTTPException(status_code=503, detail="Database persistence is not configured.")
+    try:
+        result = database.upsert_daily_report(collection_date, manifest)
+        return {"stored": True, **result}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="collection_date must use YYYY-MM-DD.")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not persist daily report metadata.")
 
 @app.get("/api/history/{collection_date}")
 def history_manifest(collection_date: str):
@@ -102,8 +141,12 @@ def history_manifest(collection_date: str):
     if not b2_configured():
         raise HTTPException(status_code=503, detail="Backblaze B2 is not configured.")
     try:
+        stored_manifest = database.get_daily_report_manifest(collection_date)
+        if stored_manifest is not None:
+            return {"collection_date": collection_date, "manifest": stored_manifest,
+                    "storage": "postgresql"}
         return {"collection_date": collection_date,
-                "manifest": read_collection_manifest(collection_date)}
+                "manifest": read_collection_manifest(collection_date), "storage": "backblaze_b2"}
     except ValueError:
         raise HTTPException(status_code=400, detail="Date must use YYYY-MM-DD.")
     except Exception as exc:
