@@ -450,12 +450,26 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / "nifty_adaptive_v2.joblib"
-    deployment_ready = (
+    core_validation_ready = (
         holdout_f1 >= baseline_f1 + 0.03
         and holdout_brier < baseline_brier
         and calibration_status == "time_series_sigmoid_calibration"
         and all(side in seller_models for side in ("CE", "PE"))
     )
+    index_data_coverage = float(np.mean([
+        float(row["features"].get("index_data_available", 0.0)) for row in feature_rows.values()
+    ]))
+    participant_oi_coverage = float(np.mean([
+        float(row["features"].get("participant_oi_data_available", 0.0)) for row in feature_rows.values()
+    ]))
+    participant_volume_coverage = float(np.mean([
+        float(row["features"].get("participant_volume_data_available", 0.0)) for row in feature_rows.values()
+    ]))
+    full_context_ready = all(
+        value >= 0.95
+        for value in (index_data_coverage, participant_oi_coverage, participant_volume_coverage)
+    )
+    deployment_ready = core_validation_ready and full_context_ready
     bundle = {
         "model_version": "NIFTY-Adaptive-Intelligence-V2",
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
@@ -486,6 +500,14 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         "training_script_sha256": script_hash,
         "status": "trained_candidate" if not deployment_ready else "validated_candidate",
         "deployment_ready": bool(deployment_ready),
+        "core_validation_ready": bool(core_validation_ready),
+        "full_engine_readiness": {
+            "index_ohlc_coverage": index_data_coverage,
+            "participant_oi_coverage": participant_oi_coverage,
+            "participant_volume_coverage": participant_volume_coverage,
+            "required_coverage": 0.95,
+            "ready": bool(full_context_ready),
+        },
         "model_file": model_path.name,
         "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
         "dataset_sha256": data_hash,
@@ -530,6 +552,9 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
             "beats_baseline_brier": True,
             "requires_time_series_calibration": True,
             "requires_both_seller_models": True,
+            "requires_index_ohlc_coverage": 0.95,
+            "requires_participant_oi_coverage": 0.95,
+            "requires_participant_volume_coverage": 0.95,
         },
         "data_scope": {
             "nifty_options_and_futures": "NIFTY contracts from NSE UDiFF bhavcopy",
