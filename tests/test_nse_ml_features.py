@@ -23,9 +23,9 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY"):
         zf.writestr("BhavCopy.csv", csv_data)
     outer = io.BytesIO()
     participant_headers = "Client Type,Future Index Long,Future Index Short,Future Stock Long,Future Stock Short,Option Index Call Long,Option Index Call Short,Option Index Put Long,Option Index Put Short,Option Stock Call Long,Option Stock Call Short,Option Stock Put Long,Option Stock Put Short,Total Long Contracts,Total Short Contracts"
-    participant_oi = participant_headers + "\\nFII,100,200,0,0,300,250,400,350,0,0,0,0,800,800\\nDII,50,40,0,0,20,10,30,20,0,0,0,0,100,100\\nClient,200,100,0,0,400,300,500,400,0,0,0,0,1100,1100\\nPro,70,80,0,0,60,70,90,100,0,0,0,0,220,220\\nTOTAL,420,420,0,0,780,630,1020,870,0,0,0,0,2220,2220"
-    participant_volume = participant_headers + "\\nFII,10,20,0,0,30,25,40,35,0,0,0,0,80,80\\nDII,5,4,0,0,2,1,3,2,0,0,0,0,10,10\\nClient,20,10,0,0,40,30,50,40,0,0,0,0,110,110\\nPro,7,8,0,0,6,7,9,10,0,0,0,0,22,22\\nTOTAL,42,42,0,0,78,63,102,87,0,0,0,0,222,222"
-    index_csv = "Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,Closing Index Value,Points Change,Change(%)\\nNIFTY 50,12-Nov-2026,24900,25100,24850,25000,100,0.4\\nINDIA VIX,12-Nov-2026,13,14,12,13.5,0.5,3.8"
+    participant_oi = participant_headers + "\nFII,100,200,0,0,300,250,400,350,0,0,0,0,800,800\nDII,50,40,0,0,20,10,30,20,0,0,0,0,100,100\nClient,200,100,0,0,400,300,500,400,0,0,0,0,1100,1100\nPro,70,80,0,0,60,70,90,100,0,0,0,0,220,220\nTOTAL,420,420,0,0,780,630,1020,870,0,0,0,0,2220,2220"
+    participant_volume = participant_headers + "\nFII,10,20,0,0,30,25,40,35,0,0,0,0,80,80\nDII,5,4,0,0,2,1,3,2,0,0,0,0,10,10\nClient,20,10,0,0,40,30,50,40,0,0,0,0,110,110\nPro,7,8,0,0,6,7,9,10,0,0,0,0,22,22\nTOTAL,42,42,0,0,78,63,102,87,0,0,0,0,222,222"
+    index_csv = "Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,Closing Index Value,Points Change,Change(%)\nNIFTY 50,12-Nov-2026,24900,25100,24850,25000,100,0.4\nINDIA VIX,12-Nov-2026,13,14,12,13.5,0.5,3.8"
     manifest = {
         "results": {
             "fo_udiff_bhavcopy": {"report_date": day, "file": "fo_bhavcopy.zip"},
