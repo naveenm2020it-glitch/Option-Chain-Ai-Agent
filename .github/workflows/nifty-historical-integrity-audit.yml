@@ -40,7 +40,10 @@ jobs:
       - name: Restore resumable audit checkpoint
         uses: actions/cache@v4
         with:
-          path: data/historical_audit/
+          path: |
+            data/historical_audit/
+            models/artifacts/
+            data/historical_backfill_repair/coverage.json
           key: nifty-historical-audit-v1-${{ github.run_id }}
           restore-keys: |
             nifty-historical-audit-v1-
@@ -126,6 +129,7 @@ jobs:
           PY
 
       - name: Re-audit repaired archive
+        id: recheck
         if: steps.repair.outputs.repaired == 'true'
         run: |
           python scripts/nse_historical_audit.py \
@@ -134,11 +138,19 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --max-archives 1
 
-      - name: Publish audit report
+      - name: Train Adaptive Intelligence V2 after audit and feature gates pass
+        id: train
+        if: steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')
+        run: |
+          python scripts/train_adaptive_intelligence.py \\
+            --checkpoint data/historical_audit/checkpoint.json \\
+            --output-dir models/artifacts
+
+      - name: Publish audit report and model artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-historical-integrity-audit-${{ github.run_id }}
+          name: nifty-adaptive-v2-pipeline-${{ github.run_id }}
           path: data/historical_audit/
           if-no-files-found: ignore
           retention-days: 30
