@@ -18,6 +18,7 @@ LARGE_MOVE_THRESHOLD = 0.0075
 MIN_SESSIONS = 300
 MIN_CLASS_SAMPLES = 30
 RANDOM_STATE = 42
+TRAINING_PIPELINE_VERSION = 1
 
 
 def _load_ml_dependencies() -> None:
@@ -274,6 +275,20 @@ def build_contract_samples(feature_rows: dict) -> dict[str, tuple[pd.DataFrame, 
 
 def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     checkpoint, audit = check_training_gate(checkpoint_path)
+    data_hash = _canonical_hash(checkpoint["features"])
+    script_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    manifest_path = output_dir / "model_manifest.json"
+    model_path = output_dir / "nifty_adaptive_v2.joblib"
+    if manifest_path.is_file() and model_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
+        if (
+            existing.get("dataset_sha256") == data_hash
+            and existing.get("training_script_sha256") == script_hash
+            and existing.get("training_pipeline_version") == TRAINING_PIPELINE_VERSION
+            and existing.get("model_sha256") == model_hash
+        ):
+            return {**existing, "status": "already_trained_for_current_dataset"}
     _load_ml_dependencies()
     feature_rows = checkpoint["features"]
     X, y, next_returns, large_move_labels, breakout_labels, trap_labels, upper_returns, lower_returns, feature_names = build_daily_dataset(feature_rows)
@@ -412,7 +427,6 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / "nifty_adaptive_v2.joblib"
-    data_hash = _canonical_hash(feature_rows)
     deployment_ready = (
         holdout_f1 >= baseline_f1 + 0.03
         and holdout_brier < baseline_brier
@@ -445,6 +459,8 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
 
     manifest = {
         "model_version": "NIFTY-Adaptive-Intelligence-V2",
+        "training_pipeline_version": TRAINING_PIPELINE_VERSION,
+        "training_script_sha256": script_hash,
         "status": "trained_candidate" if not deployment_ready else "validated_candidate",
         "deployment_ready": bool(deployment_ready),
         "model_file": model_path.name,
@@ -503,3 +519,9 @@ if __name__ == "__main__":
         print(str(exc), flush=True)
         raise SystemExit(0)
     print(json.dumps(result, indent=2), flush=True)
+    import os
+    output_path = os.getenv("GITHUB_OUTPUT")
+    if output_path:
+        trained = "false" if result.get("status") == "already_trained_for_current_dataset" else "true"
+        with open(output_path, "a", encoding="utf-8") as handle:
+            handle.write(f"trained={trained}\\n")
