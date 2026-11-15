@@ -152,7 +152,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         future_expiry = min(future_frame["XPRYDT"])
         front_future = future_frame.loc[future_frame["XPRYDT"] == future_expiry]
         future_close = float(front_future["CLSPRIC"].median())
-        future_previous = float(front_future["PRVSCLSGPRIC"].median())
+        future_previous = float(front_future["PRVSCLSGPRIC"].fillna(0).median())
         future_oi = float(front_future["OPNINTRST"].fillna(0).sum())
         future_change_oi = float(front_future["CHNGINOPNINTRST"].fillna(0).sum())
         future_volume = float(front_future["TTLTRADGVOL"].fillna(0).sum())
@@ -226,7 +226,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
             "volume": float(values["TTLTRADGVOL"]),
             "premium_return": float(values["premium_return"]),
             "moneyness": float(values["moneyness"]),
-            "days_to_expiry": float(days_to_expiry),
+            "days_to_expiry": float((values["XPRYDT"] - session_date).days),
         })
 
     return {
