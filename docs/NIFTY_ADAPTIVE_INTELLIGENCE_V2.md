@@ -14,6 +14,7 @@
 ## Feature sources
 
 - NSE UDiFF FO bhavcopy: NIFTY index options and index futures (IDO / IDF).
+- NSE Clearing Contract Delta report: official contract delta factors matched by NIFTY expiry, strike and CE/PE.
 - Near-expiry and up-to-45-day option-chain aggregates: CE/PE OI, change in OI, volume, premium changes, seller-flow proxies, moneyness and expiry.
 - NSE participant-wise OI and volume: FII, DII, Client and Pro index futures/options positioning. These are NSE-wide index-derivatives totals, not NIFTY-only positions, and are treated as contextual features.
 - NSE index close report: NIFTY 50 OHLC and India VIX when present.
