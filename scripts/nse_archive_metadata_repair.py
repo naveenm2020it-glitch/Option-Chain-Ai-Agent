@@ -4,9 +4,13 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from scripts.nse_download_check import CORE_REPORT_NAMES, report_specs, validate_payload
 from storage import b2_client, read_catalog
