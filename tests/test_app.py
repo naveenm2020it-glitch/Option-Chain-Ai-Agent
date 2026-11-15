@@ -113,3 +113,28 @@ def test_dashboard_has_explicit_intelligence_sections():
     assert response.status_code == 200
     for label in ("AI Analysis", "SELLER INTELLIGENCE", "RISK ANALYSIS", "Historical Data", "Daily Reports", "System health"):
         assert label in response.text
+
+
+def test_daily_report_ingestion_requires_bearer_token(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    response = client.post(
+        "/api/internal/daily-report",
+        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+    )
+    assert response.status_code == 401
+
+
+def test_daily_report_ingestion_persists_manifest(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.upsert_daily_report", lambda day, manifest: {
+        "collection_date": day, "report_count": 4, "storage": "postgresql"
+    })
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+    )
+    assert response.status_code == 200
+    assert response.json()["stored"] is True
+    assert response.json()["report_count"] == 4
