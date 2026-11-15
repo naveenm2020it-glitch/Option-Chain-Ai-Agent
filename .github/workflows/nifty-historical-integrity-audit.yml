@@ -1,0 +1,144 @@
+name: NIFTY historical archive integrity audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_archives:
+        description: "Maximum existing ZIP archives to download and verify in this run"
+        required: true
+        default: "25"
+        type: string
+  schedule:
+    # One small read-only batch each day, after B2's daily quota reset window.
+    - cron: "30 0 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nse-b2-archive
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore resumable audit checkpoint
+        uses: actions/cache@v4
+        with:
+          path: data/historical_audit/
+          key: nifty-historical-audit-v1-${{ github.run_id }}
+          restore-keys: |
+            nifty-historical-audit-v1-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify B2 configuration without printing secrets
+        run: |
+          python - <<'PY'
+          import os
+          required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              raise SystemExit("Historical audit blocked; missing secrets: " + ", ".join(missing))
+          print("B2 configuration is present.")
+          PY
+
+      - name: Audit existing archives only
+        id: audit
+        run: |
+          python scripts/nse_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --max-archives "${{ github.event.inputs.max_archives || '25' }}"
+
+      - name: Repair one calendar-confirmed missing session
+        id: repair
+        if: steps.audit.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path("data/historical_audit")
+          report = json.loads((root / "coverage.json").read_text())
+          output = pathlib.Path(os.environ["GITHUB_OUTPUT"])
+          def set_output(value):
+              with output.open("a", encoding="utf-8") as handle:
+                  handle.write("repaired=" + value + "\n")
+          missing = report.get("missing_archive_dates", [])
+          if report.get("status") != "blocked_missing_or_failed_archives" or report.get("failed_dates") or len(missing) != 1:
+              print("No safe single-date repair candidate; leaving archive unchanged.")
+              set_output("false")
+              raise SystemExit(0)
+          day = missing[0]
+          attempts_path = root / "repair-attempts.json"
+          attempts = json.loads(attempts_path.read_text()) if attempts_path.exists() else {}
+          prior = attempts.get(day)
+          if prior and prior.get("status") != "b2_cap_paused":
+              print("Repair already attempted for", day, prior)
+              set_output("false")
+              raise SystemExit(0)
+          print("Repairing only calendar-confirmed missing F&O session:", day)
+          result = subprocess.run([
+              "python", "scripts/nse_historical_backfill.py",
+              "--start", day, "--end", day,
+              "--output", "data/historical_backfill_repair",
+              "--max-sessions", "1",
+          ])
+          if result.returncode == 0:
+              backfill_report = pathlib.Path("data/historical_backfill_repair/coverage.json")
+              coverage = json.loads(backfill_report.read_text()) if backfill_report.exists() else {}
+              if day in coverage.get("archive_integrity_verified", []):
+                  attempts[day] = {"status": "uploaded_waiting_integrity_recheck"}
+                  attempts_path.write_text(json.dumps(attempts, indent=2))
+                  set_output("true")
+              else:
+                  attempts[day] = {"status": "repair_failed", "reason": "session_not_uploaded_and_verified"}
+                  attempts_path.write_text(json.dumps(attempts, indent=2))
+                  print("Backfill returned zero but did not verify the missing session.")
+                  set_output("false")
+          elif result.returncode == 3:
+              # B2 quota pause is safe to retry on a later scheduled run.
+              attempts[day] = {"status": "b2_cap_paused"}
+              attempts_path.write_text(json.dumps(attempts, indent=2))
+              print("B2 cap reached; no repeated retry in this run.")
+              set_output("false")
+          else:
+              attempts[day] = {"status": "repair_failed", "return_code": result.returncode}
+              attempts_path.write_text(json.dumps(attempts, indent=2))
+              print("Repair did not complete; inspect the backfill log before retrying.")
+              set_output("false")
+          PY
+
+      - name: Re-audit repaired archive
+        if: steps.repair.outputs.repaired == 'true'
+        run: |
+          python scripts/nse_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --max-archives 1
+
+      - name: Publish audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-historical-integrity-audit-${{ github.run_id }}
+          path: data/historical_audit/
+          if-no-files-found: ignore
+          retention-days: 30
