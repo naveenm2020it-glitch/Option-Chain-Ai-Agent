@@ -43,9 +43,9 @@ def test_training_gate_blocks_before_full_integrity_audit(tmp_path):
 
 
 def test_daily_training_labels_use_next_session_only():
-    X, y, next_returns, large_moves, names = build_daily_dataset(_feature_rows())
+    X, y, next_returns, large_moves, breakouts, traps, upper, lower, names = build_daily_dataset(_feature_rows())
     assert len(X) == 303
-    assert len(y) == len(next_returns) == len(large_moves) == 303
+    assert len(y) == len(next_returns) == len(large_moves) == len(breakouts) == len(traps) == len(upper) == len(lower) == 303
     assert set(y.tolist()) == {2}
     assert next_returns[0] > 0.0025
     assert "spot_return_1d" in names
