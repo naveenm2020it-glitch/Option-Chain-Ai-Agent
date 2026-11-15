@@ -102,10 +102,14 @@ def history():
             }
             return {"configured": True, "storage": "postgresql", **catalog}
         except Exception:
-            # A persistent daily-report index remains available if B2 is down.
-            return {"configured": True, "storage": "postgresql",
-                    "schema_version": 1, "collections": database.list_daily_reports(),
-                    "message": "Showing database-backed report metadata; B2 archive metadata is temporarily unavailable."}
+            # If PostgreSQL is unavailable, retain the B2 fallback where possible.
+            if b2_configured():
+                try:
+                    return {"configured": True, "storage": "backblaze_b2",
+                            **read_catalog()}
+                except Exception:
+                    pass
+            raise HTTPException(status_code=503, detail="Historical metadata stores are temporarily unavailable.")
     if not b2_configured():
         return {"configured": False, "storage": "backblaze_b2", "collections": [],
                 "message": "Historical archive storage is not configured yet."}
@@ -138,13 +142,13 @@ def ingest_daily_report(payload: dict, authorization: str | None = Header(defaul
 @app.get("/api/history/{collection_date}")
 def history_manifest(collection_date: str):
     """Return report-level dates and metadata for one archived collection."""
-    if not b2_configured():
-        raise HTTPException(status_code=503, detail="Backblaze B2 is not configured.")
     try:
         stored_manifest = database.get_daily_report_manifest(collection_date)
         if stored_manifest is not None:
             return {"collection_date": collection_date, "manifest": stored_manifest,
                     "storage": "postgresql"}
+        if not b2_configured():
+            raise HTTPException(status_code=503, detail="No stored manifest is available.")
         return {"collection_date": collection_date,
                 "manifest": read_collection_manifest(collection_date), "storage": "backblaze_b2"}
     except ValueError:
