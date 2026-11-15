@@ -66,7 +66,7 @@ jobs:
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --max-archives "${{ inputs.max_archives || '25' }}"
+            --max-archives "${{ github.event.inputs.max_archives || '25' }}"
 
       - name: Repair one calendar-confirmed missing session
         id: repair
@@ -79,7 +79,7 @@ jobs:
           output = pathlib.Path(os.environ["GITHUB_OUTPUT"])
           def set_output(value):
               with output.open("a", encoding="utf-8") as handle:
-                  handle.write("repaired=" + value + "\\n")
+                  handle.write("repaired=" + value + "\n")
           missing = report.get("missing_archive_dates", [])
           if report.get("status") != "blocked_missing_or_failed_archives" or report.get("failed_dates") or len(missing) != 1:
               print("No safe single-date repair candidate; leaving archive unchanged.")
@@ -101,9 +101,17 @@ jobs:
               "--max-sessions", "1",
           ])
           if result.returncode == 0:
-              attempts[day] = {"status": "uploaded_waiting_integrity_recheck"}
-              attempts_path.write_text(json.dumps(attempts, indent=2))
-              set_output("true")
+              backfill_report = pathlib.Path("data/historical_backfill_repair/coverage.json")
+              coverage = json.loads(backfill_report.read_text()) if backfill_report.exists() else {}
+              if day in coverage.get("archive_integrity_verified", []):
+                  attempts[day] = {"status": "uploaded_waiting_integrity_recheck"}
+                  attempts_path.write_text(json.dumps(attempts, indent=2))
+                  set_output("true")
+              else:
+                  attempts[day] = {"status": "repair_failed", "reason": "session_not_uploaded_and_verified"}
+                  attempts_path.write_text(json.dumps(attempts, indent=2))
+                  print("Backfill returned zero but did not verify the missing session.")
+                  set_output("false")
           elif result.returncode == 3:
               # B2 quota pause is safe to retry on a later scheduled run.
               attempts[day] = {"status": "b2_cap_paused"}
