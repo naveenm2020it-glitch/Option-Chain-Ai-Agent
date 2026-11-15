@@ -50,3 +50,31 @@ def test_daily_training_labels_use_next_session_only():
     assert next_returns[0] > 0.0025
     assert "spot_return_1d" in names
     assert "spot_close" in names
+
+
+def test_training_gate_allows_missing_optional_context_when_core_features_are_complete(tmp_path):
+    rows = _feature_rows(494)
+    for row in rows.values():
+        row["features"].update({
+            "future_data_available": 1.0,
+            "ce_contract_count": 10.0,
+            "pe_contract_count": 10.0,
+            "index_data_available": 0.0,
+            "participant_oi_data_available": 0.0,
+            "participant_volume_data_available": 0.0,
+        })
+    checkpoint = {"features": rows}
+    checkpoint_path = tmp_path / "checkpoint.json"
+    checkpoint_path.write_text(json.dumps(checkpoint))
+    (tmp_path / "coverage.json").write_text(json.dumps({
+        "status": "archive_integrity_complete_calendar_reconciled",
+        "model_training_allowed": True,
+        "expected_session_count": 494,
+        "verified_session_count": 494,
+        "feature_session_count": 494,
+        "feature_error_count": 0,
+        "verified_dates": sorted(rows),
+    }))
+    loaded, report = check_training_gate(checkpoint_path)
+    assert len(loaded["features"]) == 494
+    assert report["model_training_allowed"] is True
