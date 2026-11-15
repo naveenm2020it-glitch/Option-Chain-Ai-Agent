@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import sys
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.nse_historical_backfill import is_b2_cap_error, validate_remote_archive  # noqa: E402
 from storage import b2_client, read_catalog  # noqa: E402
+from scripts.nse_ml_features import FEATURE_SCHEMA_VERSION, extract_nifty_features  # noqa: E402
 
 
 # NSE F&O trading holidays from the exchange's annual circulars. The window
@@ -35,7 +37,7 @@ HOLIDAYS = {
     )
 }
 SPECIAL_SESSIONS = {date(2026, 11, 8)}
-CHECKPOINT_VERSION = 1
+CHECKPOINT_VERSION = 2
 
 
 def expected_sessions(start: date, end: date) -> list[date]:
@@ -64,6 +66,8 @@ def _load_checkpoint(path: Path, start: date, end: date) -> dict:
             "end_date": end.isoformat(),
             "verified": {},
             "failed": {},
+            "features": {},
+            "feature_errors": {},
             "updated_at_utc": None,
         }
     checkpoint = json.loads(path.read_text(encoding="utf-8"))
@@ -73,6 +77,10 @@ def _load_checkpoint(path: Path, start: date, end: date) -> dict:
         raise ValueError("Checkpoint date window does not match this audit run")
     if not isinstance(checkpoint.get("verified"), dict) or not isinstance(checkpoint.get("failed"), dict):
         raise ValueError("Checkpoint integrity state is invalid")
+    checkpoint.setdefault("features", {})
+    checkpoint.setdefault("feature_errors", {})
+    if not isinstance(checkpoint["features"], dict) or not isinstance(checkpoint["feature_errors"], dict):
+        raise ValueError("Checkpoint feature state is invalid")
     return checkpoint
 
 
@@ -96,6 +104,9 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         and not failed
         and len(verified) == len(expected_text)
     )
+    features = checkpoint.get("features", {})
+    feature_errors = checkpoint.get("feature_errors", {})
+    features_ready = all_verified and len(features) == len(expected_text) and not feature_errors
     if all_verified:
         status = "archive_integrity_complete_calendar_reconciled"
     elif run_state.get("paused_b2_class_b_cap"):
@@ -112,6 +123,10 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "expected_session_count": len(expected_text),
         "verified_session_count": len(verified),
         "failed_session_count": len(failed),
+        "feature_session_count": len(features),
+        "feature_error_count": len(feature_errors),
+        "feature_errors": feature_errors,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "missing_archive_dates": missing,
         "pending_archive_dates": pending,
         "verified_dates": sorted(verified),
@@ -123,7 +138,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "status": status,
         # The training gate is deliberately closed here. The separate feature
         # dataset and model validation pipeline must also pass before training.
-        "model_training_allowed": False,
+        "model_training_allowed": bool(features_ready),
         "calendar_sources": [
             "https://archives.nseindia.com/content/circulars/FAOP59723.pdf",
             "https://nsearchives.nseindia.com/content/circulars/FAOP64959.pdf",
@@ -150,7 +165,10 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
     checkpoint = _load_checkpoint(checkpoint_path, start, end)
 
     # A fully verified checkpoint is terminal: do not make another B2 request.
-    if len(checkpoint["verified"]) == len(expected) and not checkpoint["failed"]:
+    if (len(checkpoint["verified"]) == len(expected)
+            and not checkpoint["failed"]
+            and len(checkpoint.get("features", {})) == len(expected)
+            and not checkpoint.get("feature_errors")):
         report_path = checkpoint_path.parent / "coverage.json"
         if report_path.is_file():
             existing = json.loads(report_path.read_text(encoding="utf-8"))
@@ -201,7 +219,14 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
 
         fingerprint = _fingerprint(entry)
         previous = checkpoint["verified"].get(day_text)
-        if previous and previous.get("catalog_fingerprint") == fingerprint:
+        feature_row = checkpoint["features"].get(day_text)
+        feature_error = checkpoint["feature_errors"].get(day_text)
+        if (previous and previous.get("catalog_fingerprint") == fingerprint
+                and feature_row and feature_row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION):
+            continue
+        if (previous and previous.get("catalog_fingerprint") == fingerprint
+                and feature_error and feature_error.get("catalog_fingerprint") == fingerprint
+                and feature_error.get("feature_schema_version") == FEATURE_SCHEMA_VERSION):
             continue
         previous_failure = checkpoint["failed"].get(day_text)
         if previous_failure and previous_failure.get("catalog_fingerprint") == fingerprint:
@@ -211,7 +236,15 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
             break
 
         try:
-            valid, reason = validate_remote_archive(client, bucket, day, entry)
+            # One B2 GET supplies both byte-level validation and feature extraction.
+            response = client.get_object(Bucket=bucket, Key=f"nse/daily/{day_text}/reports.zip")
+            archive_bytes = response["Body"].read()
+
+            class CachedArchiveClient:
+                def get_object(self, **_kwargs):
+                    return {"Body": io.BytesIO(archive_bytes)}
+
+            valid, reason = validate_remote_archive(CachedArchiveClient(), bucket, day, entry)
         except ClientError as exc:
             if not is_b2_cap_error(exc):
                 raise
@@ -234,6 +267,17 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
                 "verified_at_utc": datetime.now(timezone.utc).isoformat(),
             }
             checkpoint["failed"].pop(day_text, None)
+            try:
+                checkpoint["features"][day_text] = extract_nifty_features(archive_bytes, day)
+                checkpoint["feature_errors"].pop(day_text, None)
+            except Exception as exc:
+                checkpoint["features"].pop(day_text, None)
+                checkpoint["feature_errors"][day_text] = {
+                    "catalog_fingerprint": fingerprint,
+                    "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                    "reason": f"{type(exc).__name__}: {str(exc)[:500]}",
+                    "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
         else:
             checkpoint["failed"][day_text] = {
                 "catalog_fingerprint": fingerprint,
