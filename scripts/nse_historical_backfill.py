@@ -130,6 +130,17 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
         return False, f"archive_validation_error:{type(exc).__name__}:{str(exc)[:300]}"
 
 
+def is_b2_cap_error(exc: ClientError) -> bool:
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code", ""))
+    message = str(error.get("Message", exc)).lower()
+    return (
+        "cap" in message
+        or "too many requests" in message
+        or code in {"TooManyRequests", "429"}
+    )
+
+
 def catalog_entries_by_date(catalog: dict) -> dict[str, dict]:
     return {
         item.get("collection_date"): item
@@ -199,7 +210,7 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
         error = exc.response.get("Error", {})
         code = error.get("Code", "Unknown")
         message = error.get("Message", str(exc))
-        if "cap exceeded" not in message.lower() and code not in {"AccessDenied", "403"}:
+        if not is_b2_cap_error(exc):
             raise
         blocked = {
             "status": "blocked_b2_class_b_cap",
@@ -255,7 +266,24 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
         batch_sessions += 1
         day_text = day.isoformat()
         summary["processed_weekdays"] += 1
-        if day_text in catalog_dates and archived_and_valid(client, bucket, day, catalog_entries.get(day_text)):
+        try:
+            existing_valid = (
+                day_text in catalog_dates
+                and archived_and_valid(client, bucket, day, catalog_entries.get(day_text))
+            )
+        except ClientError as exc:
+            if not is_b2_cap_error(exc):
+                raise
+            error = exc.response.get("Error", {})
+            summary["b2_cap_blocked"] = {
+                "date": day_text,
+                "code": error.get("Code", "Unknown"),
+                "message": str(error.get("Message", exc))[:500],
+            }
+            summary["batch_complete"] = False
+            next_unprocessed_date = day_text
+            break
+        if existing_valid:
             summary["skipped_existing_sessions"].append(day_text)
             summary["archive_integrity_verified"].append(day_text)
             print(f"SKIP existing ZIP-integrity-verified session {day_text}", flush=True)
@@ -274,9 +302,22 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
                 print(f"NO FO BHAVCOPY (holiday or archive unavailable) {day_text}", flush=True)
             continue
 
-        entry = upload_collection(day_dir, day_text, client=client, catalog=catalog)
-        # Verify the uploaded ZIP; embedded manifest avoids a second B2 GET.
-        valid, reason = validate_remote_archive(client, bucket, day, entry)
+        try:
+            entry = upload_collection(day_dir, day_text, client=client, catalog=catalog)
+            # One remote GET verifies the uploaded bytes, ZIP CRCs and all file hashes.
+            valid, reason = validate_remote_archive(client, bucket, day, entry)
+        except ClientError as exc:
+            if not is_b2_cap_error(exc):
+                raise
+            error = exc.response.get("Error", {})
+            summary["b2_cap_blocked"] = {
+                "date": day_text,
+                "code": error.get("Code", "Unknown"),
+                "message": str(error.get("Message", exc))[:500],
+            }
+            summary["batch_complete"] = False
+            next_unprocessed_date = day_text
+            break
         if not valid:
             summary["archive_integrity_failures"].append({"date": day_text, "reason": reason})
             raise RuntimeError(f"B2 ZIP integrity verification failed for {day_text}: {reason}")
@@ -304,7 +345,10 @@ def run(start: date, end: date, output_root: Path, delay: float, max_sessions: i
     summary["archive_integrity_validation_required"] = True
     summary["calendar_validation_required"] = True
     summary["model_training_allowed"] = False
-    if not summary["batch_complete"]:
+    if summary.get("b2_cap_blocked"):
+        summary["status"] = "blocked_b2_class_b_cap"
+        summary["model_training_allowed"] = False
+    elif not summary["batch_complete"]:
         summary["status"] = "batch_incomplete_continue_from_next_unprocessed_date"
     elif max_sessions is not None:
         summary["status"] = "batch_complete_global_validation_pending"
