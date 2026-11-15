@@ -65,11 +65,15 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
             return False, "empty_archive"
         expected_size = catalog_entry.get("archive_bytes")
         expected_hash = catalog_entry.get("archive_sha256")
-        if not expected_size or len(archive_bytes) != int(expected_size):
-            return False, "archive_size_mismatch_or_missing_catalog_size"
+        # SHA-256 is the authoritative byte-integrity check. A stale/missing
+        # catalog size must not reject bytes whose full digest matches the
+        # catalog; record the metadata discrepancy without weakening the hash.
+        if not expected_hash:
+            return False, "archive_sha256_missing_catalog_hash"
         digest = hashlib.sha256(archive_bytes).hexdigest()
-        if not expected_hash or digest.lower() != str(expected_hash).lower():
-            return False, "archive_sha256_mismatch_or_missing_catalog_hash"
+        if digest.lower() != str(expected_hash).lower():
+            return False, "archive_sha256_mismatch"
+        size_metadata_mismatch = bool(expected_size and len(archive_bytes) != int(expected_size))
 
         specs = {item[0]: item[2] for item in report_specs(day)}
         required = set(CORE_REPORT_NAMES)
@@ -120,7 +124,8 @@ def validate_remote_archive(client, bucket: str, day: date, catalog_entry: dict,
                 checked_files += 1
             if checked_files < len(required):
                 return False, "not_all_core_payloads_checked"
-        return True, f"verified_{checked_files}_report_files"
+        suffix = "_catalog_size_metadata_mismatch" if size_metadata_mismatch else ""
+        return True, f"verified_{checked_files}_report_files{suffix}"
     except ClientError:
         # B2 service errors (especially account download/transaction caps) are
         # operational failures, not evidence of a corrupt archive. Stop the run
