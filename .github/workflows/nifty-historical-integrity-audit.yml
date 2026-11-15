@@ -128,10 +128,10 @@ jobs:
       - name: Re-audit repaired archive
         if: steps.repair.outputs.repaired == 'true'
         run: |
-          python scripts/nse_historical_audit.py \\
-            --start 2024-11-12 \\
-            --end 2026-11-12 \\
-            --checkpoint data/historical_audit/checkpoint.json \\
+          python scripts/nse_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
             --max-archives 1
 
       - name: Publish audit report
