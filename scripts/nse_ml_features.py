@@ -125,10 +125,16 @@ def _contract_delta_map(frame: pd.DataFrame | None, session_date: date) -> dict[
     data["_delta"] = pd.to_numeric(data[columns["deltafactor"]].astype(str).str.replace(",", ""), errors="coerce")
     data = data.dropna(subset=["_expiry", "_strike", "_delta"])
     data = data.loc[data["_expiry"] >= session_date]
-    return {
-        (row["_expiry"].isoformat(), round(float(row["_strike"]), 2), str(row[columns["optiontype"]]).strip().upper()): float(row["_delta"])
-        for _, row in data.iterrows()
-    }
+    result = {}
+    for _, row in data.iterrows():
+        delta = float(row["_delta"])
+        if 1.0 < abs(delta) <= 100.0:
+            delta /= 100.0
+        if abs(delta) > 1.0:
+            continue
+        key = (row["_expiry"].isoformat(), round(float(row["_strike"]), 2), str(row[columns["optiontype"]]).strip().upper())
+        result[key] = delta
+    return result
 
 
 def _index_features(frame: pd.DataFrame | None) -> dict[str, float]:
