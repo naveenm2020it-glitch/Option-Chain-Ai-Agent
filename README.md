@@ -47,3 +47,18 @@ Render start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
 - Research support only, not financial advice.
 
 See docs/ARCHITECTURE.md for the architecture.
+
+
+## Durable history metadata and daily report ingestion
+
+The application supports an optional PostgreSQL database through `DATABASE_URL`.
+
+- PostgreSQL stores the historical catalog cache, dated manifests, and each daily collector manifest.
+- The daily collector posts its manifest to `POST /api/internal/daily-report` using `Authorization: Bearer <DAILY_INGEST_TOKEN>`.
+- Configure these Render environment variables: `DATABASE_URL` and `DAILY_INGEST_TOKEN`.
+- Configure these GitHub Actions repository secrets: `APP_INGEST_URL` (the deployed app base URL, for example `https://nifty50-next-day-intelligence.onrender.com`) and the same `DAILY_INGEST_TOKEN`.
+- Generate a long random ingestion token and keep it only in Render/GitHub secrets. Never commit it.
+- If PostgreSQL is not configured, daily database ingestion is skipped and the existing B2 archive workflow remains unchanged.
+- If B2 is temporarily unavailable, already cached catalog/manifests and daily manifests in PostgreSQL can still be served. Raw ZIP archive downloads still require B2.
+
+**Production note:** Do not use Render's Free Postgres for permanent market history. Render documents that Free Postgres is limited to 1 GB, expires after 30 days, and has no backups. Use a persistent database plan/provider before relying on it for production history. Until a durable database URL and ingestion secrets are configured, this feature remains inactive.
