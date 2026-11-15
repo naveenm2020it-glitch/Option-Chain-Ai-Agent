@@ -322,6 +322,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     ]
     ce_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "CE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "CE", "delta_factor"]).sum())
     pe_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "PE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "PE", "delta_factor"]).sum())
+    delta_matched_contract_count = sum(1 for value in all_near["delta_factor"] if value != 0.0)
     days_to_expiry = (expiry - session_date).days
     if not future_frame.empty:
         future_expiry = min(future_frame["XPRYDT"])
@@ -399,7 +400,8 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         "future_days_to_expiry": future_days_to_expiry,
         "all_expiry_contract_count": float(len(all_near)),
         "delta_data_available": 1.0 if delta_map else 0.0,
-        "delta_matched_contract_count": float(sum(1 for _, row in all_near.iterrows() if row["delta_factor"] != 0.0)),
+        "delta_matched_contract_count": float(delta_matched_contract_count),
+        "delta_match_coverage": _safe_ratio(delta_matched_contract_count, len(all_near)),
         "ce_delta_equiv_oi": ce_delta_equiv_oi,
         "pe_delta_equiv_oi": pe_delta_equiv_oi,
         "net_option_delta_equiv_oi": ce_delta_equiv_oi + pe_delta_equiv_oi,
