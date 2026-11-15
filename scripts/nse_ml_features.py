@@ -42,7 +42,7 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
         (columns[key] for key in ("clienttype", "participanttype", "participant") if key in columns),
         frame.columns[0],
     )
-    result = {f"{prefix}_data_available": 1.0}
+    result = {f"{prefix}_data_available": 0.0}
     categories = {
         "fii": ("fii", "fpi"),
         "dii": ("dii",),
@@ -67,10 +67,12 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
         ("total_short", "totalshortcontracts"),
     )
     participant_values = frame[participant_column].astype(str).str.strip().str.lower()
+    categories_found = set()
     for category, aliases in categories.items():
         matches = frame.loc[participant_values.isin(aliases)]
         if matches.empty:
             continue
+        categories_found.add(category)
         row = matches.iloc[-1]
         values = {}
         for feature_name, normalized_column in groups:
@@ -94,6 +96,16 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
                 values["option_index_call_long"] + values["option_index_put_long"]
                 - values["option_index_call_short"] - values["option_index_put_short"]
             )
+    required_index_columns = {
+        "futureindexlong", "futureindexshort",
+        "optionindexcallong", "optionindexcallshort",
+        "optionindexputlong", "optionindexputshort",
+    }
+    # Participant files are contextual NSE-wide index-derivatives totals.
+    # Mark them usable only when all four participant categories and the core
+    # index futures/options long/short columns are present.
+    if {"fii", "dii", "client", "pro"}.issubset(categories_found) and required_index_columns.issubset(columns):
+        result[f"{prefix}_data_available"] = 1.0
     return result
 
 
