@@ -61,10 +61,10 @@ jobs:
         if: github.event_name == 'push' && steps.audit_cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
-          name: nifty-historical-audit-43688942787
+          name: nifty-historical-audit-43690339257
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: 43688942787
+          run-id: 43690339257
           path: data
 
       - name: Install lightweight audit dependencies
@@ -107,6 +107,24 @@ jobs:
               break
             fi
           done
+
+      - name: Diagnose and repair stale archive catalog metadata
+        id: catalog_repair
+        if: always() && steps.audit.outcome == 'failure'
+        run: |
+          python scripts/nse_archive_metadata_repair.py \
+            --date 2026-10-05 \
+            --output data/historical_audit/archive-diagnostic-2026-10-05.json
+
+      - name: Re-audit catalog-repaired archive
+        id: catalog_recheck
+        if: always() && steps.catalog_repair.outputs.catalog_repaired == 'true'
+        run: |
+          python scripts/nse_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --max-archives 1
 
       - name: Repair one calendar-confirmed missing session
         id: repair
@@ -176,7 +194,7 @@ jobs:
             --max-archives 1
 
       - name: Install ML dependencies only when a new model is required
-        if: steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')
+        if: always() && ((steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')) || steps.catalog_recheck.outcome == 'success')
         run: |
           python - <<'PY'
           import hashlib
@@ -208,7 +226,7 @@ jobs:
 
       - name: Train Adaptive Intelligence V2 after audit and feature gates pass
         id: train
-        if: steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')
+        if: always() && ((steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')) || steps.catalog_recheck.outcome == 'success')
         run: |
           python scripts/train_adaptive_intelligence.py \
             --checkpoint data/historical_audit/checkpoint.json \
