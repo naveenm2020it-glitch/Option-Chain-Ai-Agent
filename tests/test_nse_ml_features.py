@@ -47,5 +47,5 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
 
 
 def test_extract_rejects_mixed_session_dates():
-    with pytest.raises(ValueError, match="trade date"):
+    with pytest.raises(ValueError, match="manifest date"):
         extract_nifty_features(_nested_archive(day="2026-11-12"), date(2026, 11, 13))
