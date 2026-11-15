@@ -56,6 +56,7 @@ def inspect_and_repair(day: date, output: Path) -> dict:
     actual_sha = hashlib.sha256(archive_bytes).hexdigest()
     metadata_sha = str(response.get("Metadata", {}).get("sha256", "")).lower()
     expected_sha = str(entry.get("archive_sha256", "")).lower()
+    expected_bytes = entry.get("archive_bytes")
 
     checks = {
         "archive_nonempty": bool(archive_bytes),
@@ -127,7 +128,14 @@ def inspect_and_repair(day: date, output: Path) -> dict:
         "core_reports_present", "report_hashes_valid",
     ))
     catalog_repaired = False
-    if internal_ok and checks["object_metadata_sha_matches"]:
+    # If B2 custom metadata exists it must match. Older objects may have no
+    # custom SHA metadata; in that case only the full CRC + aligned embedded
+    # manifest + every per-report SHA-256 + payload validation can authorize
+    # a catalog reconciliation. A conflicting object metadata hash is never
+    # overwritten automatically.
+    metadata_absent = not metadata_sha
+    metadata_not_conflicting = metadata_absent or checks["object_metadata_sha_matches"]
+    if internal_ok and metadata_not_conflicting:
         entry["archive_sha256"] = actual_sha
         entry["archive_bytes"] = len(archive_bytes)
         catalog["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -140,7 +148,7 @@ def inspect_and_repair(day: date, output: Path) -> dict:
         )
         catalog_repaired = True
     elif internal_ok:
-        errors.append("refused_catalog_update_object_metadata_sha_does_not_match")
+        errors.append("refused_catalog_update_object_metadata_sha_conflicts_with_archive")
     else:
         errors.append("refused_catalog_update_internal_archive_checks_failed")
 
@@ -149,12 +157,17 @@ def inspect_and_repair(day: date, output: Path) -> dict:
         "catalog_expected_sha256": expected_sha,
         "actual_archive_sha256": actual_sha,
         "object_metadata_sha256": metadata_sha or None,
-        "catalog_expected_bytes": entry.get("archive_bytes"),
+        "catalog_expected_bytes": expected_bytes,
         "actual_archive_bytes": len(archive_bytes),
         "checks": checks,
         "errors": errors,
         "internal_archive_valid": internal_ok,
         "catalog_repaired": catalog_repaired,
+        "catalog_repair_basis": (
+            "b2_object_metadata_sha256" if checks["object_metadata_sha_matches"]
+            else "embedded_manifest_and_all_report_sha256_checks" if catalog_repaired
+            else None
+        ),
         "b2_writes": 1 if catalog_repaired else 0,
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
