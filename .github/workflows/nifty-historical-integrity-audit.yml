@@ -61,14 +61,32 @@ jobs:
           print("B2 configuration is present.")
           PY
 
-      - name: Audit existing archives only
+      - name: Audit existing archives in resumable batches
         id: audit
         run: |
-          python scripts/nse_historical_audit.py \
-            --start 2024-11-12 \
-            --end 2026-11-12 \
-            --checkpoint data/historical_audit/checkpoint.json \
-            --max-archives "${{ github.event.inputs.max_archives || '25' }}"
+          set -euo pipefail
+          batch_size="${{ github.event.inputs.max_archives || '25' }}"
+          # The audit script clamps every batch to 25 archives. Continue in this
+          # same runner so a full audit does not require manual re-dispatches.
+          # A B2 cap pauses immediately; the checkpoint is retained for the next run.
+          for batch in $(seq 1 30); do
+            echo "Starting integrity batch ${batch} (max ${batch_size} archives)"
+            python scripts/nse_historical_audit.py \
+              --start 2024-11-12 \
+              --end 2026-11-12 \
+              --checkpoint data/historical_audit/checkpoint.json \
+              --max-archives "${batch_size}"
+            state="$(python -c 'import json; print(json.load(open("data/historical_audit/coverage.json"))["status"])')"
+            processed="$(python -c 'import json; print(json.load(open("data/historical_audit/coverage.json"))["processed_this_run"])')"
+            pending="$(python -c 'import json; print(len(json.load(open("data/historical_audit/coverage.json"))["pending_archive_dates"]))')"
+            echo "Batch ${batch}: status=${state}, processed=${processed}, pending=${pending}"
+            if [ "${state}" = "archive_integrity_complete_calendar_reconciled" ] || [ "${state}" = "paused_b2_class_b_cap" ]; then
+              break
+            fi
+            if [ "${processed}" -lt "${batch_size}" ] || [ "${pending}" -eq 0 ]; then
+              break
+            fi
+          done
 
       - name: Repair one calendar-confirmed missing session
         id: repair
