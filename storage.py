@@ -5,6 +5,8 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+
+import database
 from threading import RLock
 
 
@@ -112,7 +114,18 @@ def read_catalog(client=None) -> dict[str, Any]:
         return catalog
 
 def history_catalog() -> dict[str, Any]:
-    return read_catalog()
+    # Shared persistent cache keeps client traffic independent of B2 after warm-up.
+    catalog = database.get_cached_json("b2:catalog")
+    if catalog is None:
+        catalog = read_catalog()
+        database.set_cached_json("b2:catalog", catalog)
+    merged = {item["collection_date"]: item for item in catalog.get("collections", [])
+              if isinstance(item, dict) and item.get("collection_date")}
+    # Daily collector metadata is durable in PostgreSQL, even if B2 is temporarily unavailable.
+    for item in database.list_daily_reports():
+        old = merged.get(item["collection_date"], {})
+        merged[item["collection_date"]] = {**item, **old}
+    return {**catalog, "collections": [merged[key] for key in sorted(merged)]}
 
 
 def read_collection_manifest(collection_date: str) -> dict[str, Any]:
@@ -120,6 +133,10 @@ def read_collection_manifest(collection_date: str) -> dict[str, Any]:
     from datetime import date
     date.fromisoformat(collection_date)  # strict YYYY-MM-DD validation
     bucket = os.environ["B2_BUCKET_NAME"]
+    persistent_key = f"b2:manifest:{collection_date}"
+    persistent = database.get_cached_json(persistent_key)
+    if persistent is not None:
+        return persistent
     cache_key = f"{bucket}:{collection_date}"
     # Prevent concurrent cache misses for the same dated manifest.
     with _CACHE_LOCK:
@@ -133,6 +150,7 @@ def read_collection_manifest(collection_date: str) -> dict[str, Any]:
         )
         manifest = json.loads(response["Body"].read().decode("utf-8"))
         _cache_set("manifest", cache_key, manifest)
+        database.set_cached_json(persistent_key, manifest)
         return manifest
 
 def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
@@ -199,4 +217,6 @@ def upload_collection(directory, collection_date: str) -> dict[str, Any]:
     # Keep this process consistent after a successful archive replacement.
     _cache_delete("catalog", bucket)
     _cache_delete("manifest", f"{bucket}:{collection_date}")
+    database.delete_cached_json("b2:catalog")
+    database.delete_cached_json(f"b2:manifest:{collection_date}")
     return entry
