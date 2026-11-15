@@ -513,15 +513,18 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", default="data/historical_audit/checkpoint.json")
     parser.add_argument("--output-dir", default="models/artifacts")
     args = parser.parse_args()
+    import os
+    output_path = os.getenv("GITHUB_OUTPUT")
+    if output_path:
+        with open(output_path, "a", encoding="utf-8") as handle:
+            handle.write("trained=false\\n")
     try:
         result = train_pipeline(Path(args.checkpoint), Path(args.output_dir))
     except RuntimeError as exc:
         print(str(exc), flush=True)
         raise SystemExit(0)
     print(json.dumps(result, indent=2), flush=True)
-    import os
-    output_path = os.getenv("GITHUB_OUTPUT")
     if output_path:
         trained = "false" if result.get("status") == "already_trained_for_current_dataset" else "true"
         with open(output_path, "a", encoding="utf-8") as handle:
-            handle.write(f"trained={trained}\n")
+            handle.write(f"trained={trained}\\n")
