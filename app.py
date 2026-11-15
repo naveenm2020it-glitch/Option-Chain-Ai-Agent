@@ -46,23 +46,51 @@ def status():
         except (OSError, json.JSONDecodeError) as exc:
             manifest_error = f"Cannot read NSE manifest: {exc}"
 
+    data_source = "local_filesystem"
+    latest_collection_date = None
+    if manifest is None and not manifest_error and b2_configured():
+        # The scheduled collector runs in GitHub Actions, not on this Render
+        # filesystem. Read the latest durable B2 manifest so the hosted API
+        # reports the actual collected data instead of always showing empty local state.
+        try:
+            catalog = history_catalog()
+            collections = catalog.get("collections", [])
+            valid_dates = [
+                item.get("collection_date")
+                for item in collections
+                if isinstance(item, dict) and item.get("collection_date")
+            ]
+            if valid_dates:
+                latest_collection_date = max(valid_dates)
+                manifest = read_collection_manifest(latest_collection_date)
+                data_source = "backblaze_b2"
+        except Exception as exc:
+            manifest_error = f"Could not read the latest B2 collection manifest: {type(exc).__name__}"
+
     quality = assess_manifest(manifest)
     if manifest_error:
         quality["status"] = "blocked"
         quality["aligned"] = False
         quality["issues"].append(manifest_error)
 
+    manifest_results = manifest.get("results", {}) if isinstance(manifest, dict) else {}
+    manifest_file_count = sum(
+        1 for item in manifest_results.values()
+        if isinstance(item, dict) and item.get("file")
+    ) if isinstance(manifest_results, dict) else 0
     ready = quality["aligned"]
     return {
         "market": "NIFTY 50",
         "options_scope": "NIFTY only",
         "data_mode": "validated_eod" if ready else "blocked_data_quality",
-        "report_files": sum(p.is_file() for p in files),
+        "data_source": data_source,
+        "latest_collection_date": latest_collection_date,
+        "report_files": max(sum(p.is_file() for p in files), manifest_file_count),
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
         "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False},
-        "message": ("Core NSE reports are aligned. Seller analysis code is implemented; "
+        "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
                     "raw NSE report adapters and live forecast are not enabled yet."
                     if ready else
                     "Prediction blocked: core NSE reports must be present and from one trading session."),

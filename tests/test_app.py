@@ -150,3 +150,36 @@ def test_daily_manifest_is_served_from_database_without_b2(monkeypatch):
     assert response.status_code == 200
     assert response.json()["storage"] == "postgresql"
     assert response.json()["manifest"]["requested_end_date"] == "2026-11-13"
+
+
+def test_status_reads_latest_collection_manifest_from_b2(monkeypatch, tmp_path):
+    import app as app_module
+
+    manifest = {
+        "core_session_status": "aligned",
+        "core_session_date": "2026-11-13",
+        "results": {
+            name: {
+                "status": "downloaded",
+                "report_date": "2026-11-13",
+                "file": name + ".csv",
+            }
+            for name in CORE_REPORTS
+        },
+    }
+    monkeypatch.setattr(app_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "b2_configured", lambda: True)
+    monkeypatch.setattr(app_module, "history_catalog", lambda: {
+        "collections": [{"collection_date": "2026-11-13"}]
+    })
+    monkeypatch.setattr(app_module, "read_collection_manifest", lambda day: manifest)
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_source"] == "backblaze_b2"
+    assert payload["latest_collection_date"] == "2026-11-13"
+    assert payload["data_mode"] == "validated_eod"
+    assert payload["data_quality"]["session_date"] == "2026-11-13"
+    assert payload["report_files"] == len(CORE_REPORTS)
