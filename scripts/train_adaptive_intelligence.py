@@ -6,19 +6,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import joblib
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier, LGBMRegressor
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.dummy import DummyClassifier
-from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.metrics import f1_score, mean_absolute_error, pinball_loss
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import StandardScaler
-from sklearn.mixture import GaussianMixture
 
 from scripts.nse_ml_features import FEATURE_SCHEMA_VERSION
 
@@ -29,6 +18,26 @@ LARGE_MOVE_THRESHOLD = 0.0075
 MIN_SESSIONS = 300
 MIN_CLASS_SAMPLES = 30
 RANDOM_STATE = 42
+
+
+def _load_ml_dependencies() -> None:
+    # Imported only after the historical integrity + feature gates pass. Daily
+    # audit batches therefore do not install or load heavyweight ML libraries.
+    global joblib, CatBoostClassifier, LGBMClassifier, LGBMRegressor
+    global CalibratedClassifierCV, DummyClassifier, HistGradientBoostingRegressor
+    global f1_score, mean_absolute_error, pinball_loss, TimeSeriesSplit
+    global NearestNeighbors, StandardScaler, GaussianMixture
+    import joblib
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier, LGBMRegressor
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.dummy import DummyClassifier
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    from sklearn.metrics import f1_score, mean_absolute_error, pinball_loss
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.neighbors import NearestNeighbors
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.mixture import GaussianMixture
 
 
 def _canonical_hash(value: object) -> str:
@@ -265,6 +274,7 @@ def build_contract_samples(feature_rows: dict) -> dict[str, tuple[pd.DataFrame, 
 
 def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     checkpoint, audit = check_training_gate(checkpoint_path)
+    _load_ml_dependencies()
     feature_rows = checkpoint["features"]
     X, y, next_returns, large_move_labels, breakout_labels, trap_labels, upper_returns, lower_returns, feature_names = build_daily_dataset(feature_rows)
     if len(X) < MIN_SESSIONS:
