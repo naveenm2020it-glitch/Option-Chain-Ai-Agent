@@ -167,56 +167,107 @@ def archive_download_url(collection_date: str, expires_in: int = 900) -> str:
     )
 
 
-def upload_collection(directory, collection_date: str) -> dict[str, Any]:
+
+def upload_collection(directory, collection_date: str, client=None, catalog: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Upload one immutable daily bundle and update the shared catalog once.
+
+    Callers processing multiple sessions should pass the same client and mutable
+    catalog to avoid a catalog GET for every session.
+    """
+    from datetime import date
     from pathlib import Path
     import hashlib
     import zipfile
 
+    date.fromisoformat(collection_date)
     root = Path(directory)
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError("manifest.json is required before archiving")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    results = manifest.get("results", {}) if isinstance(manifest, dict) else {}
+    if not isinstance(results, dict):
+        raise ValueError("manifest.results must be an object")
+
     archive_path = root.parent / f"nse-eod-{collection_date}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.iterdir()):
             if path.is_file():
                 archive.write(path, arcname=path.name)
 
-    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    archive_bytes = archive_path.read_bytes()
+    digest = hashlib.sha256(archive_bytes).hexdigest()
     prefix = f"nse/daily/{collection_date}"
     bucket = os.environ["B2_BUCKET_NAME"]
-    client = b2_client()
-    client.upload_file(str(archive_path), bucket, f"{prefix}/reports.zip",
-                       ExtraArgs={"ContentType": "application/zip"})
-    client.upload_file(str(manifest_path), bucket, f"{prefix}/manifest.json",
-                       ExtraArgs={"ContentType": "application/json"})
+    client = client or b2_client()
+    # Read the catalog before writing any object. A caller doing a batch can
+    # supply and reuse its in-memory catalog, keeping this to one GET per run.
+    current_catalog = catalog if catalog is not None else read_catalog(client)
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    catalog = read_catalog(client)
     entry = {
         "collection_date": collection_date,
         "archive_key": f"{prefix}/reports.zip",
         "manifest_key": f"{prefix}/manifest.json",
         "archive_sha256": digest,
-        "archive_bytes": archive_path.stat().st_size,
-        "report_count": sum(1 for item in manifest.get("results", {}).values()
-                            if item.get("file") and item.get("status", "downloaded") in {"downloaded", "extracted", "ok"}),
-        "report_dates": sorted({item["report_date"] for item in manifest.get("results", {}).values()
-                                 if item.get("report_date")}),
+        "archive_bytes": len(archive_bytes),
+        "report_count": sum(
+            1 for item in results.values()
+            if isinstance(item, dict) and item.get("file")
+            and item.get("status", "downloaded") in {"downloaded", "extracted", "ok"}
+        ),
+        "report_dates": sorted({
+            str(item["report_date"]) for item in results.values()
+            if isinstance(item, dict) and item.get("report_date")
+        }),
     }
-    entries = {item["collection_date"]: item for item in catalog.get("collections", [])}
+
+    entries = {
+        item["collection_date"]: item
+        for item in current_catalog.get("collections", [])
+        if isinstance(item, dict) and item.get("collection_date")
+    }
     entries[collection_date] = entry
-    catalog = {
+    updated_catalog = {
         "schema_version": 1,
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         "collections": [entries[key] for key in sorted(entries)],
     }
-    client.put_object(Bucket=bucket, Key="nse/catalog.json",
-                      Body=json.dumps(catalog, indent=2).encode("utf-8"),
-                      ContentType="application/json")
-    # Keep this process consistent after a successful archive replacement.
+
+    # Use single PUTs rather than transfer-manager multipart uploads for the
+    # small daily bundles. This keeps request counts predictable and bounded.
+    client.put_object(
+        Bucket=bucket,
+        Key=f"{prefix}/reports.zip",
+        Body=archive_bytes,
+        ContentType="application/zip",
+        Metadata={"sha256": digest},
+    )
+    client.put_object(
+        Bucket=bucket,
+        Key=f"{prefix}/manifest.json",
+        Body=manifest_path.read_bytes(),
+        ContentType="application/json",
+    )
+    client.put_object(
+        Bucket=bucket,
+        Key="nse/catalog.json",
+        Body=json.dumps(updated_catalog, indent=2).encode("utf-8"),
+        ContentType="application/json",
+    )
+
+    # Keep the caller's batch catalog in sync without another B2 read.
+    if catalog is not None:
+        catalog.clear()
+        catalog.update(updated_catalog)
+
     _cache_delete("catalog", bucket)
     _cache_delete("manifest", f"{bucket}:{collection_date}")
-    database.delete_cached_json("b2:catalog")
-    database.delete_cached_json(f"b2:manifest:{collection_date}")
+    # The B2 archive is already durable. A stale optional DB cache must never
+    # turn a successful B2 upload into a failed collection job.
+    try:
+        database.delete_cached_json("b2:catalog")
+        database.delete_cached_json(f"b2:manifest:{collection_date}")
+    except Exception:
+        pass
     return entry
