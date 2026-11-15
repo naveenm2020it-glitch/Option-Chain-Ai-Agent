@@ -138,3 +138,15 @@ def test_daily_report_ingestion_persists_manifest(monkeypatch):
     assert response.status_code == 200
     assert response.json()["stored"] is True
     assert response.json()["report_count"] == 4
+
+
+def test_daily_manifest_is_served_from_database_without_b2(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.get_daily_report_manifest", lambda day: {
+        "requested_end_date": day, "results": {}
+    })
+    monkeypatch.setattr("storage.b2_configured", lambda: False)
+    response = client.get("/api/history/2026-11-13")
+    assert response.status_code == 200
+    assert response.json()["storage"] == "postgresql"
+    assert response.json()["manifest"]["requested_end_date"] == "2026-11-13"
