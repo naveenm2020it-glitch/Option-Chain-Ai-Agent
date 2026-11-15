@@ -8,6 +8,13 @@ on:
         required: true
         default: "25"
         type: string
+  push:
+    branches: [main]
+    paths:
+      - "scripts/nse_historical_audit.py"
+      - "scripts/nse_historical_backfill.py"
+      - "scripts/train_adaptive_intelligence.py"
+      - ".github/workflows/nifty-historical-integrity-audit.yml"
   schedule:
     # One small read-only batch each day, after B2's daily quota reset window.
     - cron: "30 0 * * *"
