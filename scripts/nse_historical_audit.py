@@ -106,7 +106,25 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
     )
     features = checkpoint.get("features", {})
     feature_errors = checkpoint.get("feature_errors", {})
-    features_ready = all_verified and len(features) == len(expected_text) and not feature_errors
+    coverage_keys = (
+        "index_data_available",
+        "participant_oi_data_available",
+        "participant_volume_data_available",
+    )
+    feature_coverage = {
+        key: (
+            sum(float(row.get("features", {}).get(key, 0.0)) for row in features.values()) / len(features)
+            if features else 0.0
+        )
+        for key in coverage_keys
+    }
+    sources_ready = all(value >= 0.95 for value in feature_coverage.values())
+    features_ready = (
+        all_verified
+        and len(features) == len(expected_text)
+        and not feature_errors
+        and sources_ready
+    )
     if all_verified:
         status = "archive_integrity_complete_calendar_reconciled"
     elif run_state.get("paused_b2_class_b_cap"):
@@ -127,6 +145,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "feature_error_count": len(feature_errors),
         "feature_errors": feature_errors,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_coverage": feature_coverage,
         "missing_archive_dates": missing,
         "pending_archive_dates": pending,
         "verified_dates": sorted(verified),
