@@ -2,6 +2,29 @@ const byId=id=>document.getElementById(id);
 function setText(id,value){
  const node=byId(id);if(node)node.textContent=value;
 }
+const STATUS_CACHE_TTL_MS=5*60*1000;
+const HISTORY_CACHE_TTL_MS=10*60*1000;
+const SESSION_CACHE_PREFIX="nifty-dashboard-v1:";
+function cacheAgeLabel(savedAt){
+ const minutes=Math.max(0,Math.floor((Date.now()-savedAt)/60000));
+ return minutes<1?"less than 1 min ago":minutes+" min ago";
+}
+async function fetchJsonWithSessionCache(url,ttlMs){
+ const key=SESSION_CACHE_PREFIX+url;
+ let cached=null;
+ try{
+  const raw=sessionStorage.getItem(key);
+  if(raw)cached=JSON.parse(raw);
+ }catch(_error){}
+ if(cached&&cached.data&&Number.isFinite(cached.savedAt)&&Date.now()-cached.savedAt<ttlMs){
+  return {data:cached.data,cached:true,savedAt:cached.savedAt};
+ }
+ const response=await fetch(url,{cache:"no-store"});
+ if(!response.ok)throw new Error(url+" returned HTTP "+response.status);
+ const data=await response.json(),savedAt=Date.now();
+ try{sessionStorage.setItem(key,JSON.stringify({data,savedAt}));}catch(_error){}
+ return {data,cached:false,savedAt};
+}
 function setFeedState(label,title,detail,tone="unavailable"){
  const chip=byId("option-chain-state"),message=byId("option-chain-message");
  if(chip){chip.textContent=label;chip.dataset.tone=tone;}
@@ -38,9 +61,12 @@ function applyFeedStatus(status){
 async function loadStatus(){
  const health=byId("health"),api=byId("api-state");
  try{
-  const [hr,sr]=await Promise.all([fetch("/api/health",{cache:"no-store"}),fetch("/api/status",{cache:"no-store"})]);
-  if(!hr.ok||!sr.ok)throw new Error("Status endpoint returned HTTP "+(!hr.ok?hr.status:sr.status));
-  const [h,s]=await Promise.all([hr.json(),sr.json()]);
+  const [hr,statusResult]=await Promise.all([
+   fetch("/api/health",{cache:"no-store"}),
+   fetchJsonWithSessionCache("/api/status",STATUS_CACHE_TTL_MS)
+  ]);
+  if(!hr.ok)throw new Error("Health endpoint returned HTTP "+hr.status);
+  const h=await hr.json(),s=statusResult.data;
   const online=h.status==="ok";
   health.textContent=online?"API service online":"API unavailable";
   api.textContent=online?"Online":"Offline";
@@ -58,8 +84,9 @@ async function loadStatus(){
   setText("b2-quota-state",b2Configured?"Not queried by app":"Unavailable — B2 not configured");
   const quality=s.data_quality||{};
   setText("data-quality-state",quality.aligned===true?"Aligned":quality.status?("Blocked — "+quality.status):"Unavailable");
-  setText("system-status-note",s.message||"System status received.");
-  setText("status-checked-at",new Date().toLocaleTimeString());
+  const statusNote=s.message||"System status received.";
+  setText("system-status-note",statusResult.cached?statusNote+" Status metadata cached "+cacheAgeLabel(statusResult.savedAt)+" to reduce repeat archive reads.":statusNote);
+  setText("status-checked-at",statusResult.cached?"Cached "+cacheAgeLabel(statusResult.savedAt):new Date().toLocaleTimeString());
   applyFeedStatus(s);
  }catch(e){
   health.textContent="API unavailable";api.textContent="Offline";
@@ -118,9 +145,12 @@ async function loadModels(){
 }
 async function loadHistory(){
  const note=byId("history-note"),list=byId("history-list");if(!note||!list)return;
- try{const response=await fetch("/api/history",{cache:"no-store"}),data=await response.json();
-  if(!response.ok||!data.configured){note.textContent=data.message||"Historical storage is not configured.";return;}
-  const items=data.collections||[];note.textContent=items.length+" archived collection(s) available.";
+ try{
+  const historyResult=await fetchJsonWithSessionCache("/api/history",HISTORY_CACHE_TTL_MS);
+  const data=historyResult.data;
+  if(!data.configured){note.textContent=(data.message||"Historical storage is not configured.")+(historyResult.cached?" Cached "+cacheAgeLabel(historyResult.savedAt)+".":"");return;}
+  const items=data.collections||[];
+  note.textContent=items.length+" archived collection(s) available"+(historyResult.cached?" · cached "+cacheAgeLabel(historyResult.savedAt):" · refreshed just now")+".";
   if(!items.length){list.textContent="No archived collections found.";return;}list.replaceChildren();
   items.slice().reverse().slice(0,5).forEach(item=>{const row=document.createElement("div");row.className="history-row";const title=document.createElement("strong");title.textContent=item.collection_date;const detail=document.createElement("span");detail.textContent=(item.report_count??"—")+" reports · "+((item.report_dates||[]).join(", ")||"dates not listed");const link=document.createElement("a");link.href="/api/history/"+encodeURIComponent(item.collection_date)+"/download";link.textContent="Get archive link";link.addEventListener("click",async event=>{event.preventDefault();try{const result=await fetch(link.href).then(r=>r.json());if(!result.download_url)throw new Error(result.detail||"Link unavailable");window.location.href=result.download_url;}catch(error){note.textContent="Download failed: "+error.message;}});row.append(title,detail,link);list.append(row);});
  }catch(error){note.textContent="Cannot load archive: "+error.message;}
