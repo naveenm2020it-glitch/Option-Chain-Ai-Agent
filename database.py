@@ -141,3 +141,17 @@ def list_daily_reports() -> list[dict[str, Any]]:
             "storage": "postgresql",
         })
     return entries
+
+
+def get_daily_report_manifest(collection_date: str) -> dict[str, Any] | None:
+    from datetime import date
+    date.fromisoformat(collection_date)
+    if not database_configured():
+        return None
+    with _connect() as conn:
+        _ensure_schema(conn)
+        row = conn.execute(
+            "SELECT manifest FROM daily_reports WHERE collection_date = %s",
+            (collection_date,),
+        ).fetchone()
+        return row[0] if row else None
