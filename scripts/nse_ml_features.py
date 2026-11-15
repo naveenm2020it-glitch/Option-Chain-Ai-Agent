@@ -132,7 +132,9 @@ def _contract_delta_map(frame: pd.DataFrame | None, session_date: date) -> dict[
             delta /= 100.0
         if abs(delta) > 1.0:
             continue
-        key = (row["_expiry"].isoformat(), round(float(row["_strike"]), 2), str(row[columns["optiontype"]]).strip().upper())
+        option = str(row[columns["optiontype"]]).strip().upper()
+        delta = abs(delta) if option == "CE" else -abs(delta)
+        key = (row["_expiry"].isoformat(), round(float(row["_strike"]), 2), option)
         result[key] = delta
     return result
 
