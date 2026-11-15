@@ -75,10 +75,24 @@ def check_training_gate(checkpoint_path: Path) -> tuple[dict, dict]:
         if row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION:
             raise RuntimeError(f"Training blocked: stale feature schema for {day}")
     feature_rows = list(checkpoint["features"].values())
-    for key in ("index_data_available", "participant_oi_data_available", "participant_volume_data_available"):
-        coverage = float(np.mean([float(row["features"].get(key, 0.0)) for row in feature_rows]))
-        if coverage < 0.95:
-            raise RuntimeError(f"Training blocked: {key} coverage is only {coverage:.1%}; at least 95% is required")
+    future_coverage = float(np.mean([
+        float(row["features"].get("future_data_available", 0.0)) for row in feature_rows
+    ]))
+    options_coverage = float(np.mean([
+        float(row["features"].get("ce_contract_count", 0.0)) > 0
+        and float(row["features"].get("pe_contract_count", 0.0)) > 0
+        for row in feature_rows
+    ]))
+    if future_coverage < 0.95 or options_coverage < 0.95:
+        raise RuntimeError(
+            "Training blocked: core NIFTY options/futures coverage is insufficient "
+            f"(futures={future_coverage:.1%}, options={options_coverage:.1%}; need 95%)"
+        )
+    optional_coverage = {
+        key: float(np.mean([float(row["features"].get(key, 0.0)) for row in feature_rows]))
+        for key in ("index_data_available", "participant_oi_data_available", "participant_volume_data_available")
+    }
+    print("Optional context coverage (availability flags retained): " + json.dumps(optional_coverage), flush=True)
     return checkpoint, report
 
 
@@ -489,6 +503,14 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         "large_move_positive_rate": float(np.mean(large_move_labels)),
         "breakout_positive_rate": float(np.mean(breakout_labels)),
         "trap_positive_rate": float(np.mean(trap_labels)),
+        "core_market_coverage": {
+            "future_data_available": float(np.mean([float(row["features"].get("future_data_available", 0.0)) for row in feature_rows.values()])),
+            "nifty_options_available": float(np.mean([
+                float(row["features"].get("ce_contract_count", 0.0)) > 0
+                and float(row["features"].get("pe_contract_count", 0.0)) > 0
+                for row in feature_rows.values()
+            ])),
+        },
         "index_data_coverage": float(np.mean([float(row["features"].get("index_data_available", 0.0)) for row in feature_rows.values()])),
         "participant_oi_coverage": float(np.mean([float(row["features"].get("participant_oi_data_available", 0.0)) for row in feature_rows.values()])),
         "participant_volume_coverage": float(np.mean([float(row["features"].get("participant_volume_data_available", 0.0)) for row in feature_rows.values()])),
