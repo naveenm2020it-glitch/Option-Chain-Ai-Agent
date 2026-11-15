@@ -184,10 +184,15 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
     checkpoint = _load_checkpoint(checkpoint_path, start, end)
 
     # A fully verified checkpoint is terminal: do not make another B2 request.
+    features_current = all(
+        row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+        for row in checkpoint.get("features", {}).values()
+    )
     if (len(checkpoint["verified"]) == len(expected)
             and not checkpoint["failed"]
             and len(checkpoint.get("features", {})) == len(expected)
-            and not checkpoint.get("feature_errors")):
+            and not checkpoint.get("feature_errors")
+            and features_current):
         report_path = checkpoint_path.parent / "coverage.json"
         if report_path.is_file():
             existing = json.loads(report_path.read_text(encoding="utf-8"))
