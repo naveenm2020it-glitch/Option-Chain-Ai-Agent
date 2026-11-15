@@ -63,6 +63,7 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
     assert result["features"]["spot_high"] == pytest.approx(25100)
     assert result["features"]["spot_low"] == pytest.approx(24850)
     assert result["features"]["delta_data_available"] == 1
+    assert result["features"]["delta_match_coverage"] == pytest.approx(1.0)
     assert result["features"]["ce_delta_equiv_oi"] == pytest.approx(925)
     assert result["features"]["pe_delta_equiv_oi"] == pytest.approx(-1291)
     assert result["features"]["net_option_delta_equiv_oi"] == pytest.approx(-366)
