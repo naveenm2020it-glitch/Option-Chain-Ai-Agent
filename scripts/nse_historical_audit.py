@@ -267,5 +267,5 @@ if __name__ == "__main__":
     )
     # A quota pause is a safe resumable outcome. Missing/corrupt archives remain
     # a non-zero exit only after the entire calendar window has been examined.
-    if result["status"] == "blocked_missing_or_failed_archives":
+    if result["status"] == "blocked_missing_or_failed_archives" and result["failed_session_count"] > 0:
         raise SystemExit(2)
