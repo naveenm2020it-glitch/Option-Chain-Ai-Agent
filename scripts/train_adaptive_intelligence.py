@@ -20,6 +20,8 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 from sklearn.mixture import GaussianMixture
 
+from scripts.nse_ml_features import FEATURE_SCHEMA_VERSION
+
 
 DIRECTION_LABELS = {0: "bearish", 1: "range", 2: "bullish"}
 DIRECTION_THRESHOLD = 0.0025
@@ -55,10 +57,18 @@ def check_training_gate(checkpoint_path: Path) -> tuple[dict, dict]:
         raise RuntimeError("Training blocked: one or more NIFTY feature rows failed validation")
     if len(checkpoint.get("features", {})) != expected:
         raise RuntimeError("Training blocked: checkpoint does not contain all 494 feature rows")
+    for day, row in checkpoint["features"].items():
+        if row.get("feature_schema_version") != FEATURE_SCHEMA_VERSION:
+            raise RuntimeError(f"Training blocked: stale feature schema for {day}")
+    feature_rows = list(checkpoint["features"].values())
+    for key in ("index_data_available", "participant_oi_data_available", "participant_volume_data_available"):
+        coverage = float(np.mean([float(row["features"].get(key, 0.0)) for row in feature_rows]))
+        if coverage < 0.95:
+            raise RuntimeError(f"Training blocked: {key} coverage is only {coverage:.1%}; at least 95% is required")
     return checkpoint, report
 
 
-def build_daily_dataset(feature_rows: dict) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+def build_daily_dataset(feature_rows: dict) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     ordered = sorted(feature_rows.values(), key=lambda row: row["session_date"])
     if len(ordered) < MIN_SESSIONS + 1:
         raise ValueError(f"Need at least {MIN_SESSIONS + 1} feature sessions; found {len(ordered)}")
@@ -72,6 +82,10 @@ def build_daily_dataset(feature_rows: dict) -> tuple[pd.DataFrame, np.ndarray, n
     labels = []
     returns = []
     large_moves = []
+    breakouts = []
+    traps = []
+    upper_returns = []
+    lower_returns = []
     for index in range(1, len(ordered) - 1):
         current = ordered[index]
         previous = ordered[index - 1]
@@ -81,6 +95,29 @@ def build_daily_dataset(feature_rows: dict) -> tuple[pd.DataFrame, np.ndarray, n
         current_features["spot_return_5d"] = spot[index] / spot[index - 5] - 1.0 if index >= 5 else 0.0
         recent_returns = np.diff(spot[max(0, index - 5):index + 1]) / spot[max(0, index - 5):index]
         current_features["realized_volatility_5d"] = float(np.std(recent_returns)) if len(recent_returns) else 0.0
+        recent_returns_20 = np.diff(spot[max(0, index - 20):index + 1]) / spot[max(0, index - 20):index]
+        current_features["spot_return_20d"] = spot[index] / spot[index - 20] - 1.0 if index >= 20 else 0.0
+        current_features["realized_volatility_20d"] = float(np.std(recent_returns_20)) if len(recent_returns_20) else 0.0
+        current_features["india_vix_change_1d"] = (
+            float(current["features"].get("india_vix_close", 0.0))
+            - float(previous["features"].get("india_vix_close", 0.0))
+        )
+        rolling_keys = (
+            "ce_writer_build", "pe_writer_build",
+            "participant_oi_fii_future_index_net", "participant_oi_client_future_index_net",
+            "participant_oi_fii_option_index_net", "participant_oi_client_option_index_net",
+        )
+        for rolling_key in rolling_keys:
+            current_values = [
+                float(item["features"].get(rolling_key, 0.0))
+                for item in ordered[max(0, index - 19):index + 1]
+            ]
+            current_features[f"{rolling_key}_mean_5d"] = float(np.mean(current_values[-5:]))
+            current_features[f"{rolling_key}_mean_20d"] = float(np.mean(current_values))
+            current_features[f"{rolling_key}_delta_1d"] = (
+                float(current["features"].get(rolling_key, 0.0))
+                - float(previous["features"].get(rolling_key, 0.0))
+            )
         current_features["ce_writer_build_delta_1d"] = (
             current_features.get("ce_writer_build", 0.0) - float(previous["features"].get("ce_writer_build", 0.0))
         )
@@ -93,10 +130,29 @@ def build_daily_dataset(feature_rows: dict) -> tuple[pd.DataFrame, np.ndarray, n
         labels.append(label)
         returns.append(next_return)
         large_moves.append(int(abs(next_return) >= LARGE_MOVE_THRESHOLD))
+        current_high = float(current["features"].get("spot_high", spot[index]))
+        current_low = float(current["features"].get("spot_low", spot[index]))
+        next_high = float(following["features"].get("spot_high", spot[index + 1]))
+        next_low = float(following["features"].get("spot_low", spot[index + 1]))
+        index_data_ok = (
+            float(current["features"].get("index_data_available", 0.0)) > 0
+            and float(following["features"].get("index_data_available", 0.0)) > 0
+        )
+        up_break = index_data_ok and next_high > current_high * 1.001
+        down_break = index_data_ok and next_low < current_low * 0.999
+        breakouts.append(int(up_break or down_break))
+        traps.append(int((up_break and spot[index + 1] < current_high) or (down_break and spot[index + 1] > current_low)))
+        upper_returns.append(next_high / spot[index] - 1.0)
+        lower_returns.append(next_low / spot[index] - 1.0)
 
     frame = pd.DataFrame(rows).replace([np.inf, -np.inf], np.nan).fillna(0.0)
     feature_names = list(frame.columns)
-    return frame, np.asarray(labels, dtype=int), np.asarray(returns, dtype=float), np.asarray(large_moves, dtype=int), feature_names
+    return (
+        frame, np.asarray(labels, dtype=int), np.asarray(returns, dtype=float),
+        np.asarray(large_moves, dtype=int), np.asarray(breakouts, dtype=int),
+        np.asarray(traps, dtype=int), np.asarray(upper_returns, dtype=float),
+        np.asarray(lower_returns, dtype=float), feature_names,
+    )
 
 
 def _probability_matrix(model, features: pd.DataFrame) -> np.ndarray:
@@ -206,7 +262,7 @@ def build_contract_samples(feature_rows: dict) -> dict[str, tuple[pd.DataFrame, 
 def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
     checkpoint, audit = check_training_gate(checkpoint_path)
     feature_rows = checkpoint["features"]
-    X, y, next_returns, large_move_labels, feature_names = build_daily_dataset(feature_rows)
+    X, y, next_returns, large_move_labels, breakout_labels, trap_labels, upper_returns, lower_returns, feature_names = build_daily_dataset(feature_rows)
     if len(X) < MIN_SESSIONS:
         raise ValueError(f"Only {len(X)} labelled daily rows; at least {MIN_SESSIONS} required")
     class_counts = {DIRECTION_LABELS[int(key)]: int(value) for key, value in zip(*np.unique(y, return_counts=True))}
@@ -261,9 +317,27 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         )
         model.fit(X_train, next_returns[:split])
         predictions = model.predict(X_test)
-        range_metrics[str(quantile)] = float(pinball_loss(next_returns[split:], predictions, alpha=quantile))
+        range_metrics[f"close_q{int(quantile * 100)}"] = float(pinball_loss(next_returns[split:], predictions, alpha=quantile))
         model.fit(X, next_returns)
-        range_models[str(quantile)] = model
+        range_models[f"close_q{int(quantile * 100)}"] = model
+
+    upper_model = HistGradientBoostingRegressor(
+        loss="quantile", quantile=0.9, max_iter=120,
+        max_leaf_nodes=7, l2_regularization=8.0, random_state=RANDOM_STATE,
+    )
+    upper_model.fit(X_train, upper_returns[:split])
+    range_metrics["upper_q90"] = float(pinball_loss(upper_returns[split:], upper_model.predict(X_test), alpha=0.9))
+    upper_model.fit(X, upper_returns)
+    range_models["upper_q90"] = upper_model
+
+    lower_model = HistGradientBoostingRegressor(
+        loss="quantile", quantile=0.1, max_iter=120,
+        max_leaf_nodes=7, l2_regularization=8.0, random_state=RANDOM_STATE,
+    )
+    lower_model.fit(X_train, lower_returns[:split])
+    range_metrics["lower_q10"] = float(pinball_loss(lower_returns[split:], lower_model.predict(X_test), alpha=0.1))
+    lower_model.fit(X, lower_returns)
+    range_models["lower_q10"] = lower_model
 
     if len(np.unique(large_move_labels)) > 1:
         large_move_model = LGBMClassifier(
@@ -330,6 +404,8 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         "direction_model": final_direction,
         "range_models": range_models,
         "large_move_model": large_move_model,
+        "breakout_model": breakout_model,
+        "trap_model": trap_model,
         "seller_models": seller_models,
         "seller_feature_names": {side: metrics.get("feature_names", []) for side, metrics in seller_metrics.items()},
         "regime_scaler": scaler,
@@ -370,6 +446,11 @@ def train_pipeline(checkpoint_path: Path, output_dir: Path) -> dict:
         },
         "range_holdout_pinball_loss": range_metrics,
         "large_move_positive_rate": float(np.mean(large_move_labels)),
+        "breakout_positive_rate": float(np.mean(breakout_labels)),
+        "trap_positive_rate": float(np.mean(trap_labels)),
+        "index_data_coverage": float(np.mean([float(row["features"].get("index_data_available", 0.0)) for row in feature_rows.values()])),
+        "participant_oi_coverage": float(np.mean([float(row["features"].get("participant_oi_data_available", 0.0)) for row in feature_rows.values()])),
+        "participant_volume_coverage": float(np.mean([float(row["features"].get("participant_volume_data_available", 0.0)) for row in feature_rows.values()])),
         "seller_models": seller_metrics,
         "deployment_gate": {
             "beats_baseline_macro_f1_by": 0.03,
