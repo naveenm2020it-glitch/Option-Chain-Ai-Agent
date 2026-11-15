@@ -10,12 +10,13 @@ from scripts.nse_ml_features import extract_nifty_features
 
 def _nested_archive(day="2026-11-12", symbol="NIFTY"):
     rows = [
-        ["2026-11-12", "NIFTY", "2026-11-24", 25000, "CE", 100, 110, 1000, 100, 2000, 25000],
-        ["2026-11-12", "NIFTY", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
-        ["2026-11-12", "NIFTY", "2026-11-24", 25100, "CE", 90, 95, 900, 80, 1500, 25000],
-        ["2026-11-12", "NIFTY", "2026-11-24", 25100, "PE", 140, 150, 1300, 150, 1600, 25000],
+        ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "CE", 100, 110, 1000, 100, 2000, 25000],
+        ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
+        ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25100, "CE", 90, 95, 900, 80, 1500, 25000],
+        ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25100, "PE", 140, 150, 1300, 150, 1600, 25000],
+        ["2026-11-12", "NIFTY", "IDF", "2026-11-24", 0, "", 25050, 25000, 5000, 100, 1000, 25000],
     ]
-    headers = "TradDt,TckrSymb,XpryDt,StrkPric,OptnTp,ClsPric,PrvsClsgPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,UndrlygPric"
+    headers = "TradDt,TckrSymb,FinInstrmTp,XpryDt,StrkPric,OptnTp,ClsPric,PrvsClsgPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,UndrlygPric"
     csv_data = headers + "\n" + "\n".join(",".join(map(str, row)) for row in rows)
     inner = io.BytesIO()
     with zipfile.ZipFile(inner, "w") as zf:
@@ -42,6 +43,9 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
     assert result["features"]["ce_oi"] == 1900
     assert result["features"]["pe_oi"] == 2500
     assert result["features"]["near_atm_contract_count"] == 4
+    assert result["features"]["future_data_available"] == 1
+    assert result["features"]["future_return"] == pytest.approx(0.002)
+    assert result["features"]["future_basis_pct"] == pytest.approx(0.002)
     assert len(result["contracts"]) == 4
     assert {row["option_type"] for row in result["contracts"]} == {"CE", "PE"}
 
