@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 from scripts import nse_historical_audit as audit
 
 
-def test_expected_calendar_has_495_sessions_and_one_sunday_special():
+def test_expected_calendar_has_494_sessions_and_one_sunday_special():
     sessions = audit.expected_sessions(date(2024, 11, 12), date(2026, 11, 12))
     assert len(sessions) == 494
     assert date(2026, 11, 8) in sessions
