@@ -46,6 +46,11 @@ def _cache_set(kind: str, key: str, value: Any) -> None:
         _CACHE[cache_key] = (time.monotonic() + _CACHE_TTL_SECONDS[kind], value)
 
 
+def _cache_delete(kind: str, key: str) -> None:
+    with _CACHE_LOCK:
+        _CACHE.pop((kind, key), None)
+
+
 def b2_configured() -> bool:
     required = ("B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME")
     return all(os.getenv(key) for key in required)
@@ -180,4 +185,7 @@ def upload_collection(directory, collection_date: str) -> dict[str, Any]:
     client.put_object(Bucket=bucket, Key="nse/catalog.json",
                       Body=json.dumps(catalog, indent=2).encode("utf-8"),
                       ContentType="application/json")
+    # Keep this process consistent after a successful archive replacement.
+    _cache_delete("catalog", bucket)
+    _cache_delete("manifest", f"{bucket}:{collection_date}")
     return entry
