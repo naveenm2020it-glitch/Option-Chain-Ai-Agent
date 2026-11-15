@@ -108,6 +108,17 @@ def test_dashboard_marks_option_chain_as_unavailable_until_validated_feed():
 
 
 
+def test_dashboard_distinguishes_b2_credentials_from_quota_status():
+    response = client.get("/")
+    script = client.get("/static/app.js")
+    assert response.status_code == 200
+    assert script.status_code == 200
+    assert "B2 quota status" in response.text
+    assert "Not queried by app" in response.text
+    assert "Credentials set" in script.text
+    assert "Not queried by app" in script.text
+
+
 def test_dashboard_has_explicit_intelligence_sections():
     response = client.get("/")
     assert response.status_code == 200

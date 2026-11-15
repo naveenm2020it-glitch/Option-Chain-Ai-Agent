@@ -53,7 +53,9 @@ async function loadStatus(){
   const live=s.seller_engine?.live_data_connected===true;
   setText("nse-feed-state",live?"Connected — awaiting snapshot":"Not connected");
   setText("training-state","OFF — locked");
-  setText("archive-state",s.historical_storage==="backblaze_b2_configured"?"Configured":"Not configured");
+  const b2Configured=s.historical_storage==="backblaze_b2_configured";
+  setText("archive-state",b2Configured?"Credentials set":"Not configured");
+  setText("b2-quota-state",b2Configured?"Not queried by app":"Unavailable — B2 not configured");
   const quality=s.data_quality||{};
   setText("data-quality-state",quality.aligned===true?"Aligned":quality.status?("Blocked — "+quality.status):"Unavailable");
   setText("system-status-note",s.message||"System status received.");
