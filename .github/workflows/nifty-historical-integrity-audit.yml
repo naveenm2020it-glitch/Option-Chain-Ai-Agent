@@ -40,7 +40,9 @@ jobs:
       - name: Restore resumable audit checkpoint
         uses: actions/cache@v4
         with:
-          path: data/historical_audit/
+          path: |
+            data/historical_audit/
+            models/artifacts/
           key: nifty-historical-audit-v1-${{ github.run_id }}
           restore-keys: |
             nifty-historical-audit-v1-
@@ -135,19 +137,35 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --max-archives 1
 
-      - name: Install ML dependencies only after the training gate opens
+      - name: Install ML dependencies only when a new model is required
         if: steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')
         run: |
           python - <<'PY'
+          import hashlib
           import json
+          import pathlib
           import subprocess
           import sys
-          report = json.loads(open("data/historical_audit/coverage.json", encoding="utf-8").read())
-          if report.get("model_training_allowed"):
+          report = json.loads(pathlib.Path("data/historical_audit/coverage.json").read_text())
+          checkpoint = json.loads(pathlib.Path("data/historical_audit/checkpoint.json").read_text())
+          manifest_path = pathlib.Path("models/artifacts/model_manifest.json")
+          model_path = pathlib.Path("models/artifacts/nifty_adaptive_v2.joblib")
+          needed = bool(report.get("model_training_allowed"))
+          if needed and manifest_path.is_file() and model_path.is_file():
+              manifest = json.loads(manifest_path.read_text())
+              data_hash = hashlib.sha256(json.dumps(checkpoint["features"], sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+              script_hash = hashlib.sha256(pathlib.Path("scripts/train_adaptive_intelligence.py").read_bytes()).hexdigest()
+              model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
+              needed = not (
+                  manifest.get("dataset_sha256") == data_hash
+                  and manifest.get("training_script_sha256") == script_hash
+                  and manifest.get("model_sha256") == model_hash
+              )
+          if needed:
               subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements-ml.txt"], check=True)
-              print("ML dependencies installed; all audit and source-coverage gates passed.")
+              print("ML dependencies installed; a new V2 model is required.")
           else:
-              print("ML installation skipped; archive integrity or feature coverage gate is still closed.")
+              print("ML installation skipped; training gate is closed or the current dataset already has a verified model.")
           PY
 
       - name: Train Adaptive Intelligence V2 after audit and feature gates pass
@@ -158,14 +176,22 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --output-dir models/artifacts
 
-      - name: Publish audit report and model artifact
+      - name: Publish audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-adaptive-v2-pipeline-${{ github.run_id }}
+          name: nifty-historical-audit-${{ github.run_id }}
           path: |
             data/historical_audit/
-            models/artifacts/
             data/historical_backfill_repair/coverage.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Publish newly trained V2 model
+        if: steps.train.outputs.trained == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-adaptive-v2-model-${{ github.run_id }}
+          path: models/artifacts/
           if-no-files-found: ignore
           retention-days: 30
