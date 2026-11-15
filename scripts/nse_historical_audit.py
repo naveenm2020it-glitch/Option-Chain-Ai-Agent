@@ -23,7 +23,7 @@ from storage import b2_client, read_catalog  # noqa: E402
 HOLIDAYS = {
     date.fromisoformat(value)
     for value in (
-        "2024-11-15", "2024-12-25",
+        "2024-11-15", "2024-11-20", "2024-12-25",
         "2025-02-26", "2025-03-14", "2025-03-31",
         "2025-04-10", "2025-04-14", "2025-04-18",
         "2025-05-01", "2025-08-15", "2025-08-27",
@@ -126,6 +126,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "model_training_allowed": False,
         "calendar_sources": [
             "https://archives.nseindia.com/content/circulars/FAOP59723.pdf",
+            "https://nsearchives.nseindia.com/content/circulars/FAOP64959.pdf",
             "https://nsearchives.nseindia.com/content/circulars/FAOP65588.pdf",
             "https://nsearchives.nseindia.com/content/circulars/FAOP71777.pdf",
             "https://nsearchives.nseindia.com/content/circulars/FAOP72262.pdf",
