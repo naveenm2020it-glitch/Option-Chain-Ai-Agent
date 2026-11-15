@@ -15,7 +15,7 @@ def _feature_rows(count=305):
             "session_date": day.isoformat(),
             "feature_schema_version": 2,
             "features": {
-                "spot_close": 25000.0 + index * 100.0,
+                "spot_close": 25000.0 + index * 500.0,
                 "ce_oi": 1000.0 + index,
                 "pe_oi": 1200.0 + index * 2,
                 "ce_writer_build": 10.0 + index,
