@@ -43,7 +43,11 @@ def test_history_api_explains_unconfigured_storage(monkeypatch):
 
 
 def make_manifest(dates):
+    session_dates = set(dates.values())
+    aligned_date = next(iter(session_dates)) if len(session_dates) == 1 else None
     return {
+        "core_session_status": "aligned" if aligned_date else "blocked",
+        "core_session_date": aligned_date,
         "results": {
             name: {
                 "status": "downloaded",
@@ -53,6 +57,10 @@ def make_manifest(dates):
             for name in CORE_REPORTS
         }
     }
+
+
+def aligned_manifest(day):
+    return make_manifest({name: day for name in CORE_REPORTS})
 
 
 def test_mixed_core_report_dates_block_analysis():
@@ -142,7 +150,7 @@ def test_daily_report_ingestion_requires_bearer_token(monkeypatch):
     monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
     response = client.post(
         "/api/internal/daily-report",
-        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13")},
     )
     assert response.status_code == 401
 
@@ -156,7 +164,7 @@ def test_daily_report_ingestion_persists_manifest(monkeypatch):
     response = client.post(
         "/api/internal/daily-report",
         headers={"Authorization": "Bearer expected-secret"},
-        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13")},
     )
     assert response.status_code == 200
     assert response.json()["stored"] is True
@@ -206,3 +214,124 @@ def test_status_reads_latest_collection_manifest_from_b2(monkeypatch, tmp_path):
     assert payload["data_mode"] == "validated_eod"
     assert payload["data_quality"]["session_date"] == "2026-11-13"
     assert payload["report_files"] == len(CORE_REPORTS)
+
+
+def test_seller_levels_api_blocks_unvalidated_data():
+    response = client.post("/api/engine/levels", json={"option_chain": []})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["support"] == []
+    assert payload["resistance"] == []
+
+
+def test_seller_levels_api_returns_support_resistance_for_validated_snapshot():
+    payload = {
+        "data_quality": {"aligned": True, "session_date": "2026-11-13"},
+        "spot_price": 25340,
+        "option_chain": [
+            {"strike": 25200, "ce_oi": 1000, "ce_change_oi": 100, "ce_volume": 500,
+             "ce_price_change_pct": -2, "pe_oi": 5000, "pe_change_oi": 900,
+             "pe_volume": 1200, "pe_price_change_pct": -3},
+            {"strike": 25300, "ce_oi": 2000, "ce_change_oi": 250, "ce_volume": 700,
+             "ce_price_change_pct": -1, "pe_oi": 3500, "pe_change_oi": 400,
+             "pe_volume": 900, "pe_price_change_pct": -1},
+            {"strike": 25400, "ce_oi": 7000, "ce_change_oi": 1100, "ce_volume": 1500,
+             "ce_price_change_pct": -2, "pe_oi": 1200, "pe_change_oi": -300,
+             "pe_volume": 400, "pe_price_change_pct": 2},
+        ],
+    }
+    response = client.post("/api/engine/levels", json=payload)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "analysis_complete"
+    assert result["support"]
+    assert result["resistance"]
+    assert "seller_exit_zones" in result
+
+
+
+def test_seller_context_latest_returns_unavailable_without_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = client.get("/api/seller-intelligence/latest")
+    assert response.status_code == 200
+    assert response.json()["status"] == "unavailable"
+
+
+def test_daily_ingest_persists_seller_context_with_manifest(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    captured = {}
+    def fake_upsert(day, manifest, seller_context):
+        captured["seller_context"] = seller_context
+        return {"collection_date": day, "report_count": 4, "storage": "postgresql"}
+    monkeypatch.setattr("database.upsert_daily_report", fake_upsert)
+    seller_context = {
+        "schema_version": 1,
+        "status": "ready", "session_date": "2026-11-16",
+        "current": {"status": "analysis_complete", "session_date": "2026-11-16"},
+        "lookback": {"last_5_sessions": {"sessions_analyzed": 5},
+                     "last_22_sessions": {"sessions_analyzed": 22}},
+    }
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-16", "manifest": aligned_manifest("2026-11-16"),
+              "seller_context": seller_context},
+    )
+    assert response.status_code == 200
+    assert response.json()["seller_context_stored"] is True
+    assert captured["seller_context"]["lookback"]["last_22_sessions"]["sessions_analyzed"] == 22
+
+
+def test_daily_ingest_rejects_manifest_session_mismatch(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    manifest = aligned_manifest("2026-11-13")
+    manifest["core_session_date"] = "2026-11-12"
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-13", "manifest": manifest},
+    )
+    assert response.status_code == 422
+
+
+def test_daily_ingest_rejects_seller_context_date_mismatch(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    seller_context = {
+        "schema_version": 1, "status": "ready", "session_date": "2026-11-12",
+        "current": {"status": "analysis_complete", "session_date": "2026-11-12"},
+        "lookback": {"last_5_sessions": {}, "last_22_sessions": {}},
+    }
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13"),
+              "seller_context": seller_context},
+    )
+    assert response.status_code == 422
+
+
+def test_seller_context_latest_reads_postgres_cache(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.get_cached_json", lambda key: {
+        "status": "ready", "session_date": "2026-11-16"
+    })
+    response = client.get("/api/seller-intelligence/latest")
+    assert response.status_code == 200
+    assert response.json()["session_date"] == "2026-11-16"
+
+
+
+def test_seller_context_history_returns_prior_records(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.get_seller_context_history", lambda before, limit: [
+        {"session_date": "2026-11-13", "current": {"status": "analysis_complete"}}
+    ])
+    response = client.get("/api/seller-intelligence/history?before=2026-11-16&limit=22")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["records"][0]["session_date"] == "2026-11-13"

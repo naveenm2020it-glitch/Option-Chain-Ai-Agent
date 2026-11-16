@@ -14,6 +14,9 @@ Open http://localhost:8000.
 - GET /api/health — service health
 - GET /api/status — selected market, report count and data readiness
 - GET /api/history — durable historical collection catalog (requires Backblaze B2 configuration)
+- GET /api/seller-intelligence/latest — latest validated seller levels plus 5/22-session persistence
+- GET /api/seller-intelligence/history?before=YYYY-MM-DD&limit=22 — prior daily seller snapshots
+- POST /api/engine/levels — support, resistance and seller exit-risk analysis from a validated normalized option chain
 
 ## Durable historical storage (Backblaze B2)
 The scheduled GitHub Actions collector saves a dated ZIP archive and its manifest to:
@@ -62,3 +65,7 @@ The application supports an optional PostgreSQL database through `DATABASE_URL`.
 - If B2 is temporarily unavailable, already cached catalog/manifests and daily manifests in PostgreSQL can still be served. Raw ZIP archive downloads still require B2.
 
 **Production note:** Do not use Render's Free Postgres for permanent market history. Render documents that Free Postgres is limited to 1 GB, expires after 30 days, and has no backups. Use a persistent database plan/provider before relying on it for production history. Until a durable database URL and ingestion secrets are configured, this feature remains inactive.
+
+
+## Seller levels and rolling context
+The daily EOD workflow derives NIFTY CE/PE strike-level seller proxies from the same-session UDiFF F&O bhavcopy, then compares them with the last 5 and 22 prior sessions. It reuses the existing verified historical checkpoint and stores compact daily snapshots in PostgreSQL. This path performs zero additional B2 reads/writes. The dashboard keeps levels unavailable when the data-quality gate or database persistence is not ready.

@@ -16,7 +16,7 @@ def test_nse_collection_workflow_uses_real_secret_expressions_and_b2_first():
     assert "$" + "{{ secrets.B2_BUCKET_NAME }}" in workflow
     assert "\n  push:" not in workflow
     assert workflow.index("Upload durable archive to Backblaze B2") < workflow.index(
-        "Persist daily report manifest in application database"
+        "Persist daily report and seller context in PostgreSQL"
     )
     assert "continue-on-error: true" in workflow
     assert "vars.ENABLE_DAILY_B2_ARCHIVE == 'true'" in workflow
@@ -161,3 +161,22 @@ def test_13_to_16_retrospective_is_scoped_to_its_target_date():
     assert '"2026-11-16"' in download
     assert 'echo "execute_retrospective=true" >> "$GITHUB_OUTPUT"' in download
     assert "outputs.execute_retrospective == 'true'" in scoring
+
+
+
+def test_seller_context_workflow_uses_verified_checkpoint_and_zero_b2_pipeline():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "nse-download-check.yml").read_text(encoding="utf-8")
+    adapter = (root / "scripts" / "seller_context.py").read_text(encoding="utf-8")
+
+    assert "Build seller levels and 5/22-session context (zero B2 I/O)" in workflow
+    assert "steps.checkpoint-verify.outcome == 'success'" in workflow
+    assert "--checkpoint data/historical_audit/checkpoint.json" in workflow
+    assert "seller_context" in workflow
+    assert "Fetch prior daily seller snapshots from PostgreSQL" in workflow
+    assert "--recent-history data/seller_context/prior_history.json" in workflow
+    assert "seller_context_daily" in (root / "database.py").read_text(encoding="utf-8")
+    assert '"b2_reads": 0' in adapter
+    assert '"b2_writes": 0' in adapter
+    assert "last_5_sessions" in adapter
+    assert "last_22_sessions" in adapter

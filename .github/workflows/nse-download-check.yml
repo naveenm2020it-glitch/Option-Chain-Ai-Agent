@@ -63,23 +63,6 @@ jobs:
           COLLECTION_DATE="$(python -c 'import json; print(json.load(open("data/nse_reports/manifest.json"))["requested_end_date"])')"
           python scripts/archive_to_b2.py --directory data/nse_reports --collection-date "$COLLECTION_DATE"
 
-      - name: Persist daily report manifest in application database (optional)
-        if: ${{ always() && steps.nse-download.outcome == 'success' && env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
-        continue-on-error: true
-        run: |
-          python - <<'PY'
-          import json, os, pathlib, requests
-          manifest = json.loads(pathlib.Path("data/nse_reports/manifest.json").read_text())
-          response = requests.post(
-              os.environ["APP_INGEST_URL"].rstrip("/") + "/api/internal/daily-report",
-              headers={"Authorization": "Bearer " + os.environ["DAILY_INGEST_TOKEN"]},
-              json={"collection_date": manifest["requested_end_date"], "manifest": manifest},
-              timeout=30,
-          )
-          response.raise_for_status()
-          print("Persisted daily report metadata:", response.json())
-          PY
-
       # Use a Range candidate built from the exact current research-branch SHA.
       # This keeps PR #23 open and avoids using an artifact from stale code.
       - name: Find exact-commit successful Range candidate artifact
@@ -166,7 +149,7 @@ jobs:
 
       - name: Restore frozen 494-session historical feature checkpoint
         id: range-checkpoint
-        if: ${{ always() && steps.range-bundle.outcome == 'success' && steps.checkpoint-source.outcome == 'success' }}
+        if: ${{ always() && steps.checkpoint-source.outcome == 'success' }}
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -192,6 +175,67 @@ jobs:
           PY
           mkdir -p range-checkpoint-retained/historical_audit
           cp data/historical_audit/checkpoint.json range-checkpoint-retained/historical_audit/checkpoint.json
+
+      - name: Fetch prior daily seller snapshots from PostgreSQL
+        id: seller-history
+        if: ${{ always() && steps.nse-download.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          mkdir -p data/seller_context
+          python - <<'PY'
+          import json, os, pathlib, requests
+          manifest = json.loads(pathlib.Path("data/nse_reports/manifest.json").read_text())
+          output = pathlib.Path("data/seller_context/prior_history.json")
+          output.write_text('{"records":[]}', encoding="utf-8")
+          base = os.environ.get("APP_INGEST_URL", "").rstrip("/")
+          if not base:
+              print("PostgreSQL history endpoint not configured; verified checkpoint will be used.")
+              raise SystemExit(0)
+          before = manifest.get("core_session_date")
+          if not before:
+              print("No aligned current session; historical seller context fetch skipped.")
+              raise SystemExit(0)
+          response = requests.get(
+              base + "/api/seller-intelligence/history",
+              params={"before": before, "limit": 22},
+              timeout=30,
+          )
+          response.raise_for_status()
+          output.write_text(json.dumps(response.json()), encoding="utf-8")
+          print("Restored prior seller snapshots:", len(response.json().get("records", [])))
+          PY
+
+      - name: Build seller levels and 5/22-session context (zero B2 I/O)
+        id: seller-context
+        if: ${{ always() && steps.nse-download.outcome == 'success' && steps.checkpoint-verify.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python scripts/seller_context.py \
+            --reports-dir data/nse_reports \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --recent-history data/seller_context/prior_history.json \
+            --output data/seller_context/seller_context.json
+
+      - name: Persist daily report and seller context in PostgreSQL (optional)
+        if: ${{ always() && steps.nse-download.outcome == 'success' && env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, requests
+          manifest = json.loads(pathlib.Path("data/nse_reports/manifest.json").read_text())
+          payload = {"collection_date": manifest["requested_end_date"], "manifest": manifest}
+          seller_path = pathlib.Path("data/seller_context/seller_context.json")
+          if seller_path.is_file():
+              payload["seller_context"] = json.loads(seller_path.read_text())
+          response = requests.post(
+              os.environ["APP_INGEST_URL"].rstrip("/") + "/api/internal/daily-report",
+              headers={"Authorization": "Bearer " + os.environ["DAILY_INGEST_TOKEN"]},
+              json=payload,
+              timeout=45,
+          )
+          response.raise_for_status()
+          print("Persisted daily report metadata and seller context:", response.json())
+          PY
 
       - name: Publish retained frozen Range checkpoint
         if: ${{ always() && steps.checkpoint-verify.outcome == 'success' }}

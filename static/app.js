@@ -212,6 +212,40 @@ function initMotionAndNavigation(){
   targets.forEach(target=>navObserver.observe(target));
  }
 }
-function refresh(){loadStatus();loadHistory();loadModels();}
+async function loadSellerContext(){
+ const note=byId("seller-persistence-note");
+ try{
+  const response=await fetch("/api/seller-intelligence/latest",{cache:"no-store"});
+  if(!response.ok)throw new Error("Seller context returned HTTP "+response.status);
+  const data=await response.json();
+  if(data.status!=="ready"){
+   setText("seller-resistance-levels","—");
+   setText("seller-support-levels","—");
+   setText("seller-spot-reference","—");
+   setText("seller-exit-zones","Seller exit and squeeze-risk zones: unavailable.");
+   if(note)note.textContent=data.reason||"Seller context is not available yet.";
+   return;
+  }
+  const current=data.current||{};
+  const levels=items=>(items||[]).slice(0,3).map(item=>String(item.level)).join(" / ")||"No strong level";
+  setText("seller-resistance-levels",levels(current.resistance));
+  setText("seller-support-levels",levels(current.support));
+  setText("seller-spot-reference",Number(data.spot_reference||0).toLocaleString("en-IN",{maximumFractionDigits:2}));
+  const five=data.lookback?.last_5_sessions||{},month=data.lookback?.last_22_sessions||{};
+  if(note){
+   const fiveSupport=(five.support_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+five.sessions_analyzed+")").join(", ")||"—";
+   const fiveResistance=(five.resistance_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+five.sessions_analyzed+")").join(", ")||"—";
+   const monthSupport=(month.support_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+month.sessions_analyzed+")").join(", ")||"—";
+   const monthResistance=(month.resistance_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+month.sessions_analyzed+")").join(", ")||"—";
+   const coverageWarnings=[five,month].filter(x=>x.coverage_status!=="complete").map(x=>x.requested_sessions+"-session window has a possible data/calendar gap");
+   note.textContent="EOD session "+data.session_date+". Last 5 sessions — PE support: "+fiveSupport+"; CE resistance: "+fiveResistance+". Last 22 sessions — PE support: "+monthSupport+"; CE resistance: "+monthResistance+"."+ (coverageWarnings.length?" Coverage warning: "+coverageWarnings.join("; ")+".":"");
+  }
+  const exits=(current.seller_exit_zones||[]).slice(0,4).map(x=>x.side+" "+x.level+" ("+x.risk+")").join(", ")||"None flagged";
+  setText("seller-exit-zones","Seller exit / squeeze-risk zones: "+exits);
+ }catch(error){
+  if(note)note.textContent="Seller context unavailable: "+error.message;
+ }
+}
+function refresh(){loadStatus();loadHistory();loadModels();loadSellerContext();}
 byId("refresh")?.addEventListener("click",refresh);byId("quick-refresh")?.addEventListener("click",refresh);
 refresh();initHeatmap();initMotionAndNavigation();

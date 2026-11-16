@@ -37,6 +37,13 @@ def _ensure_schema(conn) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS seller_context_daily (
+            session_date DATE PRIMARY KEY,
+            payload JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
 
 
 def get_cached_json(key: str) -> Any | None:
@@ -73,10 +80,22 @@ def delete_cached_json(key: str) -> None:
         conn.execute("DELETE FROM app_json_cache WHERE cache_key = %s", (key,))
 
 
-def upsert_daily_report(collection_date: str, manifest: dict[str, Any]) -> dict[str, Any]:
+def upsert_daily_report(collection_date: str, manifest: dict[str, Any], seller_context: dict[str, Any] | None = None) -> dict[str, Any]:
     from datetime import date
     date.fromisoformat(collection_date)
-    results = manifest.get("results", {}) if isinstance(manifest, dict) else {}
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("results"), dict):
+        raise ValueError("manifest.results must be an object")
+    results = manifest["results"]
+    if seller_context is not None:
+        from data_quality import assess_manifest
+        quality = assess_manifest(manifest)
+        context_date = seller_context.get("session_date") if isinstance(seller_context, dict) else None
+        current = seller_context.get("current") if isinstance(seller_context, dict) else None
+        if not quality.get("aligned") or context_date != quality.get("session_date"):
+            raise ValueError("seller context and manifest session dates must match validated core reports")
+        if (not isinstance(current, dict) or current.get("status") != "analysis_complete"
+                or current.get("session_date") != context_date):
+            raise ValueError("current seller levels are not valid for the manifest session")
     report_dates = sorted({
         str(item["report_date"]) for item in results.values()
         if isinstance(item, dict) and item.get("report_date")
@@ -101,6 +120,27 @@ def upsert_daily_report(collection_date: str, manifest: dict[str, Any]) -> dict[
             (collection_date, session_date, status,
              json.dumps(manifest, separators=(",", ":"), ensure_ascii=False)),
         )
+        if seller_context is not None:
+            encoded_context = json.dumps(seller_context, separators=(",", ":"), ensure_ascii=False)
+            context_date = seller_context.get("session_date")
+            if context_date:
+                date.fromisoformat(str(context_date))
+                conn.execute(
+                    """INSERT INTO seller_context_daily(session_date, payload, updated_at)
+                       VALUES (%s, %s::jsonb, NOW())
+                       ON CONFLICT(session_date) DO UPDATE
+                       SET payload = EXCLUDED.payload, updated_at = NOW()""",
+                    (context_date, encoded_context),
+                )
+            conn.execute(
+                """INSERT INTO app_json_cache(cache_key, payload, updated_at)
+                   VALUES ('seller_context:latest', %s::jsonb, NOW())
+                   ON CONFLICT(cache_key) DO UPDATE
+                   SET payload = EXCLUDED.payload, updated_at = NOW()
+                   WHERE COALESCE((app_json_cache.payload->>'session_date')::date, DATE '0001-01-01')
+                         <= COALESCE((EXCLUDED.payload->>'session_date')::date, DATE '0001-01-01')""",
+                (encoded_context,),
+            )
     return {
         "collection_date": collection_date,
         "report_count": report_count,
@@ -155,3 +195,21 @@ def get_daily_report_manifest(collection_date: str) -> dict[str, Any] | None:
             (collection_date,),
         ).fetchone()
         return row[0] if row else None
+
+
+
+def get_seller_context_history(before_date: str, limit: int = 22) -> list[dict[str, Any]]:
+    from datetime import date
+    date.fromisoformat(before_date)
+    limit = max(1, min(int(limit), 100))
+    if not database_configured():
+        return []
+    with _connect() as conn:
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """SELECT payload FROM seller_context_daily
+               WHERE session_date < %s
+               ORDER BY session_date DESC LIMIT %s""",
+            (before_date, limit),
+        ).fetchall()
+    return [row[0] for row in reversed(rows) if isinstance(row[0], dict)]

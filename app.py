@@ -12,6 +12,7 @@ import secrets
 import database
 from data_quality import assess_manifest
 from seller_engine import analyze_seller_market
+from seller_levels import build_seller_levels
 from storage import history_catalog, b2_configured, read_catalog, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
@@ -89,9 +90,12 @@ def status():
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
-        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False},
-        "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
-                    "raw NSE report adapters and live forecast are not enabled yet."
+        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False,
+                          "seller_levels_engine": True, "levels_live_data_connected": False,
+                          "daily_eod_adapter": True, "seller_context_windows": [5, 22],
+                          "seller_context_persistence": "postgresql"},
+        "message": ("Core NSE reports are aligned in the latest stored collection. The daily EOD seller-level adapter is implemented; "
+                    "dashboard levels require successful PostgreSQL persistence. Intraday feed and predictive forecast are not enabled."
                     if ready else
                     "Prediction blocked: core NSE reports must be present and from one trading session."),
     }
@@ -102,6 +106,15 @@ def engine_analyze(payload: dict):
     """Run seller ensemble on a validated, normalized snapshot; not raw NSE files."""
     try:
         return analyze_seller_market(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/engine/levels")
+def engine_levels(payload: dict):
+    """Return seller support, resistance and exit-risk zones from validated normalized data."""
+    try:
+        return build_seller_levels(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -117,6 +130,37 @@ def engine_models():
         ],
         "master_engine": "weighted consensus with data-quality, disagreement and risk gates",
         "live_data_connected": False,
+        "seller_levels": {"endpoint": "POST /api/engine/levels",
+                          "support": "PE writing candidates",
+                          "resistance": "CE writing candidates",
+                          "exit_risk": "unwinding and premium-rise-with-OI-addition",
+                          "live_data_connected": False},
+    }
+
+
+@app.get("/api/seller-intelligence/history")
+def seller_intelligence_history(before: str, limit: int = 22):
+    """Return prior daily seller snapshots for the next 5/22-session calculation."""
+    try:
+        records = database.get_seller_context_history(before, limit)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="before must use YYYY-MM-DD.")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Seller context history is temporarily unavailable.")
+    return {"status": "ready" if records else "empty", "records": records}
+
+
+@app.get("/api/seller-intelligence/latest")
+def seller_intelligence_latest():
+    """Return the latest daily seller map and its precomputed 5/22-session context."""
+    if not database.database_configured():
+        return {"status": "unavailable", "reason": "PostgreSQL persistence is not configured."}
+    try:
+        payload = database.get_cached_json("seller_context:latest")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Seller context store is temporarily unavailable.")
+    return payload if isinstance(payload, dict) else {
+        "status": "unavailable", "reason": "No validated daily seller context has been ingested yet."
     }
 
 
@@ -160,10 +204,41 @@ def ingest_daily_report(payload: dict, authorization: str | None = Header(defaul
     if not database.database_configured():
         raise HTTPException(status_code=503, detail="Database persistence is not configured.")
     try:
-        result = database.upsert_daily_report(collection_date, manifest)
-        return {"stored": True, **result}
+        from datetime import date
+        date.fromisoformat(collection_date)
+        quality = assess_manifest(manifest)
+        declared_session = manifest.get("core_session_date")
+        if (not quality.get("aligned") or not quality.get("session_date")
+                or declared_session != quality.get("session_date")):
+            raise HTTPException(status_code=422, detail="Manifest core reports must pass same-session validation.")
+        seller_context = payload.get("seller_context")
+        if seller_context is not None:
+            if not isinstance(seller_context, dict):
+                raise HTTPException(status_code=422, detail="seller_context must be a JSON object.")
+            context_date = seller_context.get("session_date")
+            current = seller_context.get("current")
+            if context_date != quality.get("session_date"):
+                raise HTTPException(status_code=422, detail="Seller context session_date must match the validated manifest.")
+            if seller_context.get("schema_version") != 1 or seller_context.get("status") != "ready":
+                raise HTTPException(status_code=422, detail="Seller context schema/status is not valid.")
+            if not isinstance(current, dict) or current.get("status") != "analysis_complete":
+                raise HTTPException(status_code=422, detail="Current seller levels are not analysis_complete.")
+            if current.get("session_date") != context_date:
+                raise HTTPException(status_code=422, detail="Current seller levels date does not match seller context.")
+            lookback = seller_context.get("lookback")
+            if not isinstance(lookback, dict) or not all(
+                isinstance(lookback.get(key), dict)
+                for key in ("last_5_sessions", "last_22_sessions")
+            ):
+                raise HTTPException(status_code=422, detail="Both 5-session and 22-session lookback summaries are required.")
+            result = database.upsert_daily_report(collection_date, manifest, seller_context)
+        else:
+            result = database.upsert_daily_report(collection_date, manifest)
+        return {"stored": True, "seller_context_stored": seller_context is not None, **result}
+    except HTTPException:
+        raise
     except ValueError:
-        raise HTTPException(status_code=400, detail="collection_date must use YYYY-MM-DD.")
+        raise HTTPException(status_code=400, detail="Dates must use YYYY-MM-DD.")
     except Exception:
         raise HTTPException(status_code=503, detail="Could not persist daily report metadata.")
 
