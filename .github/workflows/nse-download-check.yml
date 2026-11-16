@@ -320,6 +320,62 @@ jobs:
           }, indent=2), encoding="utf-8")
           PY
 
+      # One-off retrospective: forecast from 13-Nov NSE data, then score on 16-Nov.
+      # Uses the already downloaded 16-Nov reports plus one date-pinned 13-Nov download.
+      # This is isolated from the ongoing forward-shadow state and performs zero B2 I/O.
+      - name: Download aligned 13-Nov NSE reports for retrospective check
+        id: range-retro-13-download
+        if: ${{ always() && steps.range-state-init.outputs.ready == 'true' && steps.range-dependencies.outcome == 'success' && steps.nse-download.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python scripts/nse_download_check.py --date 2026-11-13 --lookback-days 1 --output data/nse_reports_2026_11_13
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("data/nse_reports_2026_11_13/manifest.json").read_text())
+          assert manifest.get("core_session_status") == "aligned", manifest
+          assert manifest.get("core_session_date") == "2026-11-13", manifest
+          print("13-Nov retrospective inputs aligned.")
+          PY
+
+      - name: Generate 13-Nov forecast and score against 16-Nov actual
+        id: range-retro-score
+        if: ${{ always() && steps.range-retro-13-download.outcome == 'success' && steps.nse-download.outcome == 'success' && steps.range-dependencies.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/range-code
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("data/nse_reports/manifest.json").read_text())
+          assert manifest.get("core_session_status") == "aligned", manifest
+          assert manifest.get("core_session_date") == "2026-11-16", manifest
+          PY
+          mkdir -p data/range_shadow_retrospective
+          python range-code/scripts/range_shadow_validation.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --reports-dir data/nse_reports_2026_11_13 \
+            --bundle models/artifacts/nifty_range_candidate.joblib \
+            --state data/range_shadow_retrospective/state.json \
+            --output data/range_shadow_retrospective/forecast_2026-11-13.json
+          python range-code/scripts/range_shadow_validation.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --reports-dir data/nse_reports \
+            --bundle models/artifacts/nifty_range_candidate.joblib \
+            --state data/range_shadow_retrospective/state.json \
+            --output data/range_shadow_retrospective/score_2026-11-16.json
+          cat data/range_shadow_retrospective/score_2026-11-16.json
+
+      - name: Publish 13-to-16 retrospective scorecard
+        if: ${{ always() && hashFiles('data/range_shadow_retrospective/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-range-retrospective-2026-11-13-to-16
+          path: data/range_shadow_retrospective/
+          if-no-files-found: ignore
+          retention-days: 90
+
       - name: Publish Range shadow state and report
         if: ${{ always() && hashFiles('data/range_shadow/range_shadow_state.json') != '' }}
         uses: actions/upload-artifact@v4
