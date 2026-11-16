@@ -38,3 +38,18 @@ Start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
 - The engine fails closed unless `data_quality.aligned=true`, a `session_date`, and at least three valid strikes are supplied.
 - These are positioning proxies, not proof of participant identity or guaranteed defended levels. Price reaction is required for confirmation.
 - The current repository does not yet parse raw NSE archives into a normalized daily option-chain snapshot, so the API is implemented but live dashboard levels remain unavailable until that adapter is completed. No extra B2 archive reads or writes are introduced by this engine.
+
+
+## Daily seller-level context and rolling persistence
+
+The daily NSE workflow builds a normalized seller snapshot from the already-downloaded, same-session UDiFF F&O bhavcopy. It reuses the retained 494-session checkpoint artifact for historical context; it does not query Backblaze B2.
+
+- The option adapter uses the front unexpired NIFTY index-option expiry for each session and aggregates CE/PE OI, change-in-OI, volume and premium movement by strike.
+- Premium confirmation is unavailable when the contract has no valid previous close; a missing baseline is never treated as a zero premium return.
+- PE writing candidates contribute to support candidates; CE writing candidates contribute to resistance candidates. OI unwinding and OI-addition with premium expansion are surfaced as exit/squeeze-risk flags.
+- Last 5 and last 22 completed sessions are summarized by strike persistence and average strength. The current session is excluded from both historical windows.
+- The collector posts the daily manifest and compact seller context together to the existing authenticated daily-ingest endpoint. PostgreSQL stores the latest context in the existing JSON cache table. The dashboard reads it through GET /api/seller-intelligence/latest.
+- If PostgreSQL ingestion is not configured or the daily adapter fails, the dashboard reports seller context as unavailable; it does not fabricate levels.
+- No extra B2 reads/writes, historical re-backfill, or automatic trading are introduced.
+
+All levels remain evidence-weighted positioning proxies. OI does not identify the participant who opened a position, and price reaction is required before calling a level defended.
