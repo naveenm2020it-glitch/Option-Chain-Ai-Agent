@@ -240,3 +240,45 @@ def test_seller_levels_api_returns_support_resistance_for_validated_snapshot():
     assert result["support"]
     assert result["resistance"]
     assert "seller_exit_zones" in result
+
+
+
+def test_seller_context_latest_returns_unavailable_without_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = client.get("/api/seller-intelligence/latest")
+    assert response.status_code == 200
+    assert response.json()["status"] == "unavailable"
+
+
+def test_daily_ingest_persists_seller_context_with_manifest(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    captured = {}
+    def fake_upsert(day, manifest, seller_context):
+        captured["seller_context"] = seller_context
+        return {"collection_date": day, "report_count": 4, "storage": "postgresql"}
+    monkeypatch.setattr("database.upsert_daily_report", fake_upsert)
+    seller_context = {
+        "status": "ready", "session_date": "2026-11-16",
+        "lookback": {"last_5_sessions": {"sessions_analyzed": 5},
+                     "last_22_sessions": {"sessions_analyzed": 22}},
+    }
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-16", "manifest": {"results": {}},
+              "seller_context": seller_context},
+    )
+    assert response.status_code == 200
+    assert response.json()["seller_context_stored"] is True
+    assert captured["seller_context"]["lookback"]["last_22_sessions"]["sessions_analyzed"] == 22
+
+
+def test_seller_context_latest_reads_postgres_cache(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.get_cached_json", lambda key: {
+        "status": "ready", "session_date": "2026-11-16"
+    })
+    response = client.get("/api/seller-intelligence/latest")
+    assert response.status_code == 200
+    assert response.json()["session_date"] == "2026-11-16"
