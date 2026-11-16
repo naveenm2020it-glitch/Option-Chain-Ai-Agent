@@ -36,7 +36,7 @@ def _classifier():
 
 
 def _enhanced_features(X: pd.DataFrame) -> pd.DataFrame:
-    """Add scale-normalized 5-session versus 22-session regime shifts."""
+    """Add scale-normalized regime, momentum and volatility interactions."""
     out = X.copy()
     sources = (
         "future_return", "future_oi_change_pct", "pcr_oi", "pcr_change_oi",
@@ -55,6 +55,22 @@ def _enhanced_features(X: pd.DataFrame) -> pd.DataFrame:
             out[f"relative_regime_shift__{source}"] = (
                 X[five] - X[month]
             ) / (np.abs(X[month]) + 1e-6)
+    vol = X.get("realized_volatility_22_sessions")
+    if vol is not None:
+        safe_vol = vol.clip(lower=0.001)
+        for momentum in ("spot_return_5_sessions", "spot_return_22_sessions"):
+            if momentum in X.columns:
+                out[f"vol_adjusted__{momentum}"] = X[momentum] / safe_vol
+        for distance in (
+            "high_distance_5_sessions", "low_distance_5_sessions",
+            "high_distance_22_sessions", "low_distance_22_sessions",
+        ):
+            if distance in X.columns:
+                out[f"vol_adjusted__{distance}"] = X[distance] / safe_vol
+    if "std5__spot_return_1d" in X.columns and "std22__spot_return_1d" in X.columns:
+        out["short_long_volatility_ratio"] = (
+            X["std5__spot_return_1d"] / (X["std22__spot_return_1d"] + 1e-6)
+        )
     return out.replace([np.inf, -np.inf], np.nan)
 
 
