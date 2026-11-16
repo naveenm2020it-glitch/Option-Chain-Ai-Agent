@@ -347,6 +347,27 @@ def score_range_forecast(
         "evaluation_note": "First subsequent aligned EOD session within the four-calendar-day safety window; no trading P&L is inferred.",
     }
 
+    if "core_low_return" in forecast and "core_high_return" in forecast:
+        core_metrics = _interval_metrics(
+            float(forecast["core_low_return"]),
+            float(forecast["core_high_return"]),
+            float(forecast.get("core_close_return", predicted_close_return)),
+            actual_low_return,
+            actual_high_return,
+            actual_close_return,
+            origin_close,
+            0.20,
+        )
+        result.update({
+            "core_range_covered": core_metrics["range_covered"],
+            "core_low_endpoint_covered": core_metrics["low_endpoint_covered"],
+            "core_high_endpoint_covered": core_metrics["high_endpoint_covered"],
+            "core_close_inside_predicted_range": core_metrics["close_inside_predicted_range"],
+            "core_winkler_interval_score_return_space": core_metrics["winkler_interval_score_return_space"],
+            "core_predicted_range_width_points": core_metrics["predicted_range_width_points"],
+            "core_range_width_ratio": core_metrics["range_width_ratio"],
+        })
+
     baseline = forecast.get("baseline")
     if isinstance(baseline, dict):
         baseline_metrics = _interval_metrics(
