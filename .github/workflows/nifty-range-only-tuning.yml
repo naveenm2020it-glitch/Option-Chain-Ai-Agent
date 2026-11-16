@@ -11,6 +11,7 @@ on:
       - "scripts/build_nifty_range_bundle.py"
       - "scripts/train_nifty_four_models.py"
       - "tests/test_range_model_bundle.py"
+      - "tests/test_nse_workflow_config.py"
       - "requirements-four-models.txt"
       - ".github/workflows/nifty-range-only-tuning.yml"
   push:
@@ -23,6 +24,7 @@ on:
       - "scripts/build_nifty_range_bundle.py"
       - "scripts/train_nifty_four_models.py"
       - "tests/test_range_model_bundle.py"
+      - "tests/test_nse_workflow_config.py"
       - "requirements-four-models.txt"
       - ".github/workflows/nifty-range-only-tuning.yml"
 
