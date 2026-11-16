@@ -130,8 +130,14 @@ def make_range_forecast(
     low_price = origin_close * (1.0 + low_return)
     high_price = origin_close * (1.0 + high_return)
     close_price = origin_close * (1.0 + close_return)
-    if low_price <= 0 or high_price <= low_price or not low_price <= close_price <= high_price:
-        raise ValueError("Range forecast failed price-bound sanity checks")
+    if (
+        core_low_price <= 0 or core_high_price <= core_low_price
+        or not core_low_price <= close_price <= core_high_price
+        or low_price <= 0 or high_price <= low_price
+        or not low_price <= close_price <= high_price
+        or low_price > core_low_price or high_price < core_high_price
+    ):
+        raise ValueError("Core or calibrated Range forecast failed price-bound sanity checks")
     return {
         "status": "pending",
         "origin_date": origin_date,
