@@ -47,6 +47,17 @@ jobs:
           run-id: 43691154808
           path: data
 
+      # Reuse the prior completed NSE repair artifact (100% coverage).
+      # This prevents a second 1,481-request NSE download cycle.
+      - name: Restore previously repaired NSE context (no refetch)
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-context-repair-43803440207
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43803440207
+          path: data
+
       - name: Verify historical checkpoint before repair
         run: |
           python - <<'PY'
