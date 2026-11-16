@@ -86,6 +86,41 @@ def test_conformal_calibration_never_shrinks_interval_and_expands_for_misses():
     assert adjustment >= 0.0
 
 
+
+
+def test_range_bundle_rejects_impossible_ohlc_targets():
+    rng = np.random.default_rng(11)
+    count = 180
+    X = pd.DataFrame({
+        "realized_volatility_5_sessions": rng.uniform(0.003, 0.018, count),
+        "realized_volatility_22_sessions": rng.uniform(0.003, 0.018, count),
+    })
+    y = np.column_stack((
+        np.full(count, -0.01),
+        np.full(count, 0.01),
+        np.zeros(count),
+    ))
+    y[12, 2] = 0.02  # close above the session high is impossible
+    candidate = {
+        "name": "test_extra_trees",
+        "family": "extra_trees_quantile",
+        "config": {"trees": 12, "max_depth": 3, "min_samples_leaf": 5, "max_features": 0.8},
+    }
+    with pytest.raises(ValueError, match="Range targets must satisfy"):
+        fit_range_bundle(candidate, X, y)
+
+
+def test_range_inference_rejects_empty_or_multirow_inputs_and_negative_margin():
+    bundle, features = _bundle_and_features()
+    with pytest.raises(ValueError, match="exactly one"):
+        predict_range_bundle(bundle, pd.DataFrame())
+    with pytest.raises(ValueError, match="exactly one"):
+        predict_range_bundle(bundle, pd.DataFrame([features, features]))
+    corrupted = dict(bundle, normalized_adjustment=-0.01)
+    with pytest.raises(ValueError, match="nonnegative"):
+        predict_range_bundle(corrupted, features)
+
+
 def test_range_bundle_produces_finite_ordered_next_session_returns():
     bundle, features = _bundle_and_features()
     forecast = predict_range_bundle(bundle, features)
