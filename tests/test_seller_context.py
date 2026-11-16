@@ -12,6 +12,7 @@ def _contracts(day_offset=0):
             rows.append({
                 "expiry": expiry, "strike": strike, "option_type": side,
                 "oi": oi, "change_oi": change, "volume": 1500,
+                "close": 100, "previous_close": 103,
                 "premium_return": premium, "days_to_expiry": 3,
             })
     return rows
@@ -50,3 +51,14 @@ def test_window_summary_uses_only_requested_trailing_sessions():
     result = _window_summary(history, 22)
     assert result["sessions_available"] == 22
     assert result["sessions_analyzed"] == 22
+
+
+
+def test_missing_previous_close_does_not_confirm_option_writing():
+    rows = _contracts()
+    for row in rows:
+        row["previous_close"] = 0
+    result = snapshot_from_contracts("2026-11-16", 25100, rows)
+    candidates = result["support"] + result["resistance"]
+    assert candidates
+    assert all(item["evidence"]["classification"] != "writing_candidate" for item in candidates)
