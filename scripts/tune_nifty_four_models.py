@@ -183,6 +183,7 @@ def tune_direction(X: pd.DataFrame, y: np.ndarray, train_end: int) -> dict[str, 
         "candidate_count": len(results),
         "holdout": hold_metrics,
         "baseline_holdout": base_metrics,
+        "date_wise_stability": date_stability,
         "beats_baseline": beats,
         "selection_policy": "training-only chronological CV; maximize macro-F1 minus 0.25 x multiclass Brier; final holdout untouched until selected config",
     }
@@ -308,6 +309,39 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
     base_prediction = baseline.predict(X_hold)
     hold_metrics = _seller_metrics(y_hold, prediction, hold_dates)
     base_metrics = _seller_metrics(y_hold, base_prediction, hold_dates)
+
+    # Date-wise stability: every trading date receives equal weight, regardless
+    # of how many contracts happened to be listed on that date.
+    date_frame = pd.DataFrame({
+        "date": hold_dates,
+        "actual": y_hold,
+        "model_prediction": prediction,
+        "baseline_prediction": base_prediction,
+    })
+    date_frame["model_abs_error"] = np.abs(date_frame["actual"] - date_frame["model_prediction"])
+    date_frame["baseline_abs_error"] = np.abs(date_frame["actual"] - date_frame["baseline_prediction"])
+    daily = date_frame.groupby("date", sort=True).agg(
+        model_mae=("model_abs_error", "mean"),
+        baseline_mae=("baseline_abs_error", "mean"),
+        contract_rows=("actual", "size"),
+    )
+    daily["model_beats_baseline"] = daily["model_mae"] < daily["baseline_mae"]
+    date_stability = {
+        "holdout_dates": int(len(daily)),
+        "model_wins_dates": int(daily["model_beats_baseline"].sum()),
+        "date_win_rate": float(daily["model_beats_baseline"].mean()),
+        "median_daily_model_mae": float(daily["model_mae"].median()),
+        "median_daily_baseline_mae": float(daily["baseline_mae"].median()),
+        "p25_daily_model_mae": float(daily["model_mae"].quantile(0.25)),
+        "p75_daily_model_mae": float(daily["model_mae"].quantile(0.75)),
+        "worst_daily_model_mae": float(daily["model_mae"].max()),
+        "date_metrics": [
+            {"date": str(day), "model_mae": float(row.model_mae),
+             "baseline_mae": float(row.baseline_mae), "contract_rows": int(row.contract_rows)}
+            for day, row in daily.iterrows()
+        ],
+        "policy": "Equal-weight date-level comparison; contracts within a date are averaged before dates are compared.",
+    }
     beats = (
         hold_metrics["pooled_mae"] < base_metrics["pooled_mae"]
         and hold_metrics["date_balanced_mae"] < base_metrics["date_balanced_mae"]
