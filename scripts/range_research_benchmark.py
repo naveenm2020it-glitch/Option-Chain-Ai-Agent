@@ -288,11 +288,16 @@ def _asymmetric_conformal_adjustment(
     scale = _volatility_scale(X_calibration)
     low_scores = np.maximum(lower - actual[:, 0], 0.0) / scale
     high_scores = np.maximum(actual[:, 1] - upper, 0.0) / scale
-    tail_alpha = alpha / 2.0
-    rank = min(len(actual), int(np.ceil((len(actual) + 1) * (1.0 - tail_alpha))))
+    # Historical walk-forward showed the upper endpoint is the weaker tail.
+    # Allocate 75% of the error budget to the lower endpoint and 25% to the
+    # upper endpoint, preserving the Bonferroni joint-coverage guarantee.
+    low_tail_alpha = alpha * 0.75
+    high_tail_alpha = alpha * 0.25
+    low_rank = min(len(actual), int(np.ceil((len(actual) + 1) * (1.0 - low_tail_alpha))))
+    high_rank = min(len(actual), int(np.ceil((len(actual) + 1) * (1.0 - high_tail_alpha))))
     return {
-        "low": float(max(0.0, np.sort(low_scores)[max(0, rank - 1)])),
-        "high": float(max(0.0, np.sort(high_scores)[max(0, rank - 1)])),
+        "low": float(max(0.0, np.sort(low_scores)[max(0, low_rank - 1)])),
+        "high": float(max(0.0, np.sort(high_scores)[max(0, high_rank - 1)])),
     }
 
 
@@ -544,7 +549,7 @@ def tune_range_research(
             "method": "asymmetric volatility-normalized split conformal calibration with Bonferroni endpoint allocation",
             "nominal_joint_full_range_coverage": 1.0 - ALPHA,
             "normalization": "separate lower- and upper-endpoint nonconformity scores divided by origin-session rolling volatility scale",
-            "score": "lower=max(predicted_low-actual_low,0); upper=max(actual_high-predicted_high,0); each tail uses alpha/2",
+            "score": "lower=max(predicted_low-actual_low,0) uses 75% of alpha; upper=max(actual_high-predicted_high,0) uses 25% of alpha because the upper tail was weaker in prior walk-forward diagnostics",
             "fit_calibration_split": "first 80% fit, most recent 20% of each training fold calibrates; validation follows calibration chronologically",
         },
         "validation_policy": {
