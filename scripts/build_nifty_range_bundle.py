@@ -66,7 +66,7 @@ def main() -> None:
 
     manifest = {
         "status": "range_research_candidate_built",
-        "model_version": "nifty-range-candidate-v1",
+        "model_version": "nifty-range-candidate-v2",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "archive_start_date": min(feature_rows),
         "archive_end_date": max(feature_rows),
@@ -83,6 +83,8 @@ def main() -> None:
         "conformal_calibration_samples": bundle["calibration_samples"],
         "calibration_alpha": bundle["calibration_alpha"],
         "normalized_conformal_adjustment": bundle["normalized_adjustment"],
+        "normalized_low_adjustment": bundle["normalized_adjustment"]["low"],
+        "normalized_high_adjustment": bundle["normalized_adjustment"]["high"],
         "model_file": model_path.name,
         "model_sha256": digest,
         "archive_audit_pass": audit.get("model_training_allowed") is True,
