@@ -213,6 +213,7 @@ jobs:
           python scripts/seller_context.py \
             --reports-dir data/nse_reports \
             --checkpoint data/historical_audit/checkpoint.json \
+            --recent-history data/seller_context/prior_history.json \
             --output data/seller_context/seller_context.json
 
       - name: Persist daily report and seller context in PostgreSQL (optional)
