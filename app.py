@@ -107,7 +107,16 @@ def engine_analyze(payload: dict):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.post("/api/engine/levels")\ndef engine_levels(payload: dict):\n    """Return seller support, resistance and exit-risk zones from validated normalized data."""\n    try:\n        return build_seller_levels(payload)\n    except ValueError as exc:\n        raise HTTPException(status_code=400, detail=str(exc))\n\n\n@app.get("/api/engine/models")
+@app.post("/api/engine/levels")
+def engine_levels(payload: dict):
+    """Return seller support, resistance and exit-risk zones from validated normalized data."""
+    try:
+        return build_seller_levels(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/engine/models")
 def engine_models():
     return {
         "orientation": "seller_first",
@@ -118,6 +127,11 @@ def engine_models():
         ],
         "master_engine": "weighted consensus with data-quality, disagreement and risk gates",
         "live_data_connected": False,
+        "seller_levels": {"endpoint": "POST /api/engine/levels",
+                          "support": "PE writing candidates",
+                          "resistance": "CE writing candidates",
+                          "exit_risk": "unwinding and premium-rise-with-OI-addition",
+                          "live_data_connected": False},
     }
 
 
