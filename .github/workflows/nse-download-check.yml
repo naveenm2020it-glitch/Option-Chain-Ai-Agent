@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      B2_ENDPOINT_URL: \${{ secrets.B2_ENDPOINT_URL }}
-      B2_APPLICATION_KEY_ID: \${{ secrets.B2_APPLICATION_KEY_ID }}
-      B2_APPLICATION_KEY: \${{ secrets.B2_APPLICATION_KEY }}
-      B2_BUCKET_NAME: \${{ secrets.B2_BUCKET_NAME }}
-      APP_INGEST_URL: \${{ secrets.APP_INGEST_URL }}
-      DAILY_INGEST_TOKEN: \${{ secrets.DAILY_INGEST_TOKEN }}
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      APP_INGEST_URL: ${{ secrets.APP_INGEST_URL }}
+      DAILY_INGEST_TOKEN: ${{ secrets.DAILY_INGEST_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,10 +87,10 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: nifty-range-candidate-\${{ steps.range-bundle.outputs.run_id }}
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          repository: \${{ github.repository }}
-          run-id: \${{ steps.range-bundle.outputs.run_id }}
+          name: nifty-range-candidate-${{ steps.range-bundle.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.range-bundle.outputs.run_id }}
           path: models/artifacts
 
       - name: Restore frozen 494-session historical feature checkpoint
@@ -100,8 +100,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-historical-audit-43691154808
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          repository: \${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
           run-id: 43691154808
           path: data
 
@@ -139,9 +139,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-range-shadow-state
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          repository: \${{ github.repository }}
-          run-id: \${{ steps.range-state.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.range-state.outputs.run_id }}
           path: data/range-shadow-previous
 
       - name: Initialize Range shadow state
@@ -173,7 +173,7 @@ jobs:
             --output data/range_shadow/range_shadow_report.json
 
       - name: Persist daily report manifest in application database (optional)
-        if: \${{ env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
+        if: ${{ env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
         continue-on-error: true
         run: |
           python - <<'PY'
@@ -189,7 +189,7 @@ jobs:
           print("Persisted daily report metadata:", response.json())
           PY
       - name: Explain skipped optional database persistence
-        if: \${{ env.APP_INGEST_URL == '' || env.DAILY_INGEST_TOKEN == '' }}
+        if: ${{ env.APP_INGEST_URL == '' || env.DAILY_INGEST_TOKEN == '' }}
         run: echo "Optional PostgreSQL metadata mirror skipped. The B2 archive has already been stored."
 
       - name: Publish Range shadow state and report
@@ -205,7 +205,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nse-eod-report-download-\${{ github.run_id }}
+          name: nse-eod-report-download-${{ github.run_id }}
           path: data/nse_reports/
           if-no-files-found: ignore
           retention-days: 7
