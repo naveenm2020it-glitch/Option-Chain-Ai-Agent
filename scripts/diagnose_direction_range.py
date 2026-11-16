@@ -6,11 +6,10 @@ from pathlib import Path
 
 import numpy as np
 from sklearn.dummy import DummyClassifier
-from sklearn.metrics import f1_score
 from sklearn.model_selection import TimeSeriesSplit
 from lightgbm import LGBMClassifier
 
-from scripts.train_nifty_four_models import (
+from train_nifty_four_models import (
     EXPECTED_SESSIONS, _check_artifact_gates, _build_daily_targets,
     _direction_metrics, _feature_matrix, build_rolling_feature_rows,
 )
