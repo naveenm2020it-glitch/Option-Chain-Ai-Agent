@@ -95,7 +95,7 @@ jobs:
       - name: Run Range shadow and workflow regression tests
         run: |
           python -m compileall -q scripts/range_model_bundle.py scripts/range_research_benchmark.py scripts/range_shadow_validation.py scripts/build_nifty_range_bundle.py
-          pytest -q tests/test_range_model_bundle.py tests/test_nse_workflow_config.py
+          python -m pytest -q tests/test_range_model_bundle.py tests/test_nse_workflow_config.py
 
       - name: Run Range Intelligence tuning only
         run: |
