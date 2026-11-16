@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: nifty-four-model-training
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   train-four-models:
