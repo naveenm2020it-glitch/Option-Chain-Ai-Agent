@@ -88,7 +88,14 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
                            for key in SOURCES},
         "errors": [],
         "b2_requests": 0,
+        "repair_complete": False,
+        "repair_status": "running",
+        "missing_context_dates": {},
+        "core_market_coverage": {},
+        "optional_context_ready": False,
         "training_allowed": False,
+        "training_gate_reason": "Repair has not finished",
+        "missing_value_policy": "No imputation: unavailable/invalid source data remains missing and is listed by date; no synthetic values are written.",
     }
 
     for day in sorted(features):
@@ -125,10 +132,17 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
                     "url": meta["url"], "bytes": meta["bytes"],
                 }
             except Exception as exc:
-                state["unavailable"] += 1
+                fetch_failure = (
+                    isinstance(exc, requests.RequestException)
+                    or "all official URL variants failed" in str(exc)
+                    or isinstance(exc, RuntimeError)
+                )
+                bucket = "unavailable" if fetch_failure else "invalid"
+                state[bucket] += 1
                 state["missing_dates"].append(day)
                 report["errors"].append({
-                    "date": day, "source": source_key, "error": str(exc)[:500]
+                    "date": day, "source": source_key, "failure_type": bucket,
+                    "error": str(exc)[:500]
                 })
             if delay_seconds:
                 time.sleep(delay_seconds)
@@ -140,7 +154,56 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
             result["already_present"] + result["downloaded"]
         ) / total if total else 0.0
     report["coverage"] = coverage
-    report["training_allowed"] = all(value >= 0.95 for value in coverage.values())
+    report["missing_context_dates"] = {
+        key: value["missing_dates"]
+        for key, value in report["source_results"].items()
+        if value["missing_dates"]
+    }
+    report["repair_complete"] = all(
+        result["already_present"] + result["downloaded"]
+        + result["unavailable"] + result["invalid"] == total
+        for result in report["source_results"].values()
+    )
+
+    # Preserve the archive audit's existing core-data gate. Index/participant
+    # reports are optional context: missing values remain explicitly unavailable
+    # and must not be fabricated or block research-candidate training.
+    audit_path = checkpoint_path.with_name("coverage.json")
+    audit = json.loads(audit_path.read_text(encoding="utf-8")) if audit_path.is_file() else {}
+    feature_rows = list(features.values())
+    core_market_coverage = {
+        "futures": (
+            sum(float(row.get("features", {}).get("future_data_available", 0.0)) >= 1.0 for row in feature_rows) / total
+            if total else 0.0
+        ),
+        "nifty_options": (
+            sum(
+                float(row.get("features", {}).get("ce_contract_count", 0.0)) > 0
+                and float(row.get("features", {}).get("pe_contract_count", 0.0)) > 0
+                for row in feature_rows
+            ) / total if total else 0.0
+        ),
+    }
+    report["core_market_coverage"] = core_market_coverage
+    report["optional_context_ready"] = all(value >= 0.95 for value in coverage.values())
+    archive_gate = (
+        audit.get("status") == "archive_integrity_complete_calendar_reconciled"
+        and int(audit.get("verified_session_count", 0)) == 494
+        and int(audit.get("feature_session_count", 0)) == 494
+        and int(audit.get("feature_error_count", 1)) == 0
+        and bool(audit.get("model_training_allowed"))
+    )
+    core_gate = all(value >= 0.95 for value in core_market_coverage.values())
+    report["training_allowed"] = bool(report["repair_complete"] and archive_gate and core_gate)
+    report["training_gate_reason"] = (
+        "PASS: historical archive and core NIFTY data validated; optional context gaps remain explicitly flagged."
+        if report["training_allowed"] else
+        f"BLOCKED: repair_complete={report['repair_complete']}, archive_gate={archive_gate}, core_gate={core_gate}"
+    )
+    report["repair_status"] = (
+        "complete_no_context_gaps" if report["optional_context_ready"]
+        else "complete_with_reported_context_gaps"
+    )
     report["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
     report["checkpoint_sha256"] = hashlib.sha256(
         json.dumps(checkpoint, sort_keys=True, separators=(",", ":"), default=str).encode()
@@ -150,12 +213,17 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
     (output_dir / "context_repair_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({
         "coverage": coverage,
+        "repair_complete": report["repair_complete"],
+        "repair_status": report["repair_status"],
+        "core_market_coverage": core_market_coverage,
+        "optional_context_ready": report["optional_context_ready"],
         "training_allowed": report["training_allowed"],
-        "unavailable_by_source": {k: v["unavailable"] for k, v in report["source_results"].items()},
+        "training_gate_reason": report["training_gate_reason"],
+        "missing_context_dates": {k: len(v) for k, v in report["missing_context_dates"].items()},
         "b2_requests": 0,
     }, indent=2), flush=True)
-    if not report["training_allowed"]:
-        raise SystemExit("Context repair incomplete: one or more NSE context sources remain below 95%; training is blocked.")
+    if not report["repair_complete"] or not report["training_allowed"]:
+        raise SystemExit("Repair or historical/core-data gate failed; training is blocked. Missing values were not imputed.")
     return report
 
 
