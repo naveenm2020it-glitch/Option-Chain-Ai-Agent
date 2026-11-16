@@ -473,9 +473,14 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         "candidate_results": candidate_rows,
         "holdout": hold_metrics,
         "baseline_holdout": base_metrics,
+        "date_stability": date_stability,
+        "date_stability_pass": (
+            date_stability["date_win_rate"] > 0.5
+            and hold_metrics["date_balanced_mae"] < base_metrics["date_balanced_mae"]
+        ),
         "cv_beats_baseline": cv_beats,
         "holdout_diagnostic_beats_baseline": holdout_beats,
-        "beats_baseline": beats,
+        "beats_baseline": beats and date_stability["date_win_rate"] > 0.5,
         "holdout_start": cutoff_date,
         "holdout_end": max(hold_dates),
         "split_policy": "chronological split and three expanding-window folds by trading date; no random contract-row split",
