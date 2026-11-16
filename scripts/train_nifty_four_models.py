@@ -91,6 +91,7 @@ def _select_model_feature_vector(values: dict[str, float]) -> dict[str, float]:
         )
     selected_keys.update({
         "std5__spot_return_1d", "std22__spot_return_1d",
+        "spot_return_5_sessions", "spot_return_22_sessions",
         "realized_volatility_5_sessions", "realized_volatility_22_sessions",
         "high_distance_5_sessions", "low_distance_5_sessions",
         "high_distance_22_sessions", "low_distance_22_sessions",
