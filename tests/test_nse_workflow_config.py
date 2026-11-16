@@ -87,3 +87,19 @@ def test_range_only_workflow_smoke_tests_the_real_candidate_bundle():
     assert "Smoke-test fitted Range bundle on latest verified archive features" in workflow
     assert "predict_range_bundle(bundle, features)" in workflow
     assert "deployment_ready" in workflow
+
+
+
+def test_daily_range_shadow_never_resets_history_when_state_restore_fails():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "nse-download-check.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "RANGE_STATE_LOOKUP_OUTCOME" in workflow
+    assert "RANGE_STATE_DOWNLOAD_OUTCOME" in workflow
+    assert "previous_state_restore_failed; history was not reset" in workflow
+    assert "steps.range-state-init.outputs.ready == 'true'" in workflow
+    assert "actions: read" in workflow
