@@ -10,7 +10,7 @@ from scripts.range_research_benchmark import (
     Q_HIGH,
     Q_LOW,
     _base_bounds,
-    _conformal_adjustment,
+    _asymmetric_conformal_adjustment,
     _make_sklearn_estimator,
     _tree_distribution_prediction,
     _volatility_neighbours,
@@ -137,7 +137,7 @@ def fit_range_bundle(
         else np.ones(len(X_fit), dtype=float)
     )
     bundle: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "candidate": candidate,
         "feature_names": list(X.columns),
         "fit_X": X_fit if candidate["family"] == "volatility_neighbours" else None,
@@ -149,18 +149,23 @@ def fit_range_bundle(
         "calibration_samples": int(calibration_size),
     }
     calibration_predictions = _predict_base(bundle, X_cal)
-    bundle["normalized_adjustment"] = _conformal_adjustment(
+    bundle["normalized_adjustment"] = _asymmetric_conformal_adjustment(
         calibration_predictions, y_cal, X_cal, alpha=ALPHA
     )
-    if not np.isfinite(bundle["normalized_adjustment"]):
-        raise ValueError("Range conformal calibration produced a non-finite adjustment")
+    if (
+        not isinstance(bundle["normalized_adjustment"], dict)
+        or set(bundle["normalized_adjustment"]) != {"low", "high"}
+        or not all(np.isfinite(float(value)) and float(value) >= 0.0
+                   for value in bundle["normalized_adjustment"].values())
+    ):
+        raise ValueError("Range asymmetric conformal calibration produced invalid endpoint adjustments")
     return bundle
 
 
 def predict_range_bundle(
     bundle: dict[str, Any], features: dict[str, float] | pd.DataFrame
 ) -> dict[str, float]:
-    if bundle.get("schema_version") != 1:
+    if bundle.get("schema_version") not in (1, 2):
         raise ValueError("Unsupported Range model bundle schema")
     if isinstance(features, pd.DataFrame):
         frame = features.copy()
@@ -172,8 +177,19 @@ def predict_range_bundle(
     if len(frame) != 1:
         raise ValueError("Range inference expects exactly one forecast-origin row")
     adjustment = bundle.get("normalized_adjustment")
-    if adjustment is None or not np.isfinite(float(adjustment)) or float(adjustment) < 0.0:
-        raise ValueError("Range bundle conformal adjustment must be finite and nonnegative")
+    if bundle.get("schema_version") == 1:
+        if adjustment is None or not np.isfinite(float(adjustment)) or float(adjustment) < 0.0:
+            raise ValueError("Range bundle conformal adjustment must be finite and nonnegative")
+        low_adjustment = high_adjustment = float(adjustment)
+    else:
+        if (
+            not isinstance(adjustment, dict)
+            or set(adjustment) != {"low", "high"}
+            or not all(np.isfinite(float(value)) and float(value) >= 0.0 for value in adjustment.values())
+        ):
+            raise ValueError("Range bundle endpoint conformal adjustments must be finite and nonnegative")
+        low_adjustment = float(adjustment["low"])
+        high_adjustment = float(adjustment["high"])
     missing = [name for name in names if name not in frame.columns]
     if missing:
         raise ValueError("Range inference is missing model features: " + ", ".join(missing[:10]))
@@ -183,14 +199,18 @@ def predict_range_bundle(
 
     raw = _predict_base(bundle, frame)
     lower, upper, close = _base_bounds(raw)
-    margin = float(bundle["normalized_adjustment"]) * _volatility_scale(frame)
-    lower = np.minimum(lower - margin, close)
-    upper = np.maximum(upper + margin, close)
+    scale = _volatility_scale(frame)
+    low_margin = low_adjustment * scale
+    high_margin = high_adjustment * scale
+    lower = np.minimum(lower - low_margin, close)
+    upper = np.maximum(upper + high_margin, close)
     result = {
         "low_return": float(lower[0]),
         "high_return": float(upper[0]),
         "close_return": float(close[0]),
-        "conformal_margin_return": float(margin[0]),
+        "low_conformal_margin_return": float(low_margin[0]),
+        "high_conformal_margin_return": float(high_margin[0]),
+        "conformal_margin_return": float(max(low_margin[0], high_margin[0])),
     }
     if not all(np.isfinite(value) for value in result.values()):
         raise ValueError("Range inference produced a non-finite forecast")
