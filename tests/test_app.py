@@ -206,3 +206,37 @@ def test_status_reads_latest_collection_manifest_from_b2(monkeypatch, tmp_path):
     assert payload["data_mode"] == "validated_eod"
     assert payload["data_quality"]["session_date"] == "2026-11-13"
     assert payload["report_files"] == len(CORE_REPORTS)
+
+
+def test_seller_levels_api_blocks_unvalidated_data():
+    response = client.post("/api/engine/levels", json={"option_chain": []})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["support"] == []
+    assert payload["resistance"] == []
+
+
+def test_seller_levels_api_returns_support_resistance_for_validated_snapshot():
+    payload = {
+        "data_quality": {"aligned": True, "session_date": "2026-11-13"},
+        "spot_price": 25340,
+        "option_chain": [
+            {"strike": 25200, "ce_oi": 1000, "ce_change_oi": 100, "ce_volume": 500,
+             "ce_price_change_pct": -2, "pe_oi": 5000, "pe_change_oi": 900,
+             "pe_volume": 1200, "pe_price_change_pct": -3},
+            {"strike": 25300, "ce_oi": 2000, "ce_change_oi": 250, "ce_volume": 700,
+             "ce_price_change_pct": -1, "pe_oi": 3500, "pe_change_oi": 400,
+             "pe_volume": 900, "pe_price_change_pct": -1},
+            {"strike": 25400, "ce_oi": 7000, "ce_change_oi": 1100, "ce_volume": 1500,
+             "ce_price_change_pct": -2, "pe_oi": 1200, "pe_change_oi": -300,
+             "pe_volume": 400, "pe_price_change_pct": 2},
+        ],
+    }
+    response = client.post("/api/engine/levels", json=payload)
+    assert response.status_code == 200
+    result = response.json()
+    assert result["status"] == "analysis_complete"
+    assert result["support"]
+    assert result["resistance"]
+    assert "seller_exit_zones" in result
