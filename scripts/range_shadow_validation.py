@@ -6,7 +6,7 @@ import io
 import json
 import sys
 import zipfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -263,6 +263,25 @@ def score_range_forecast(
             ),
         }
 
+    # Conservative continuity guard: only score when exactly one Monday-Friday
+    # date elapsed. This intentionally skips some exchange-holiday gaps rather
+    # than falsely scoring a second or later trading session as the next session.
+    weekday_steps = int(np.busday_count(
+        (origin_date + timedelta(days=1)).isoformat(),
+        (actual_date + timedelta(days=1)).isoformat(),
+    ))
+    if weekday_steps != 1:
+        return {
+            **base,
+            "status": "skipped_nonadjacent_session",
+            "weekday_steps": weekday_steps,
+            "evaluation_note": (
+                "The observed EOD date is not the first weekday after the forecast origin. "
+                "A session may have been missed or an exchange holiday may be present; "
+                "the forecast is skipped to avoid false next-session validation."
+            ),
+        }
+
     actual_low = float(actual_features["spot_low"])
     actual_high = float(actual_features["spot_high"])
     actual_close = float(actual_features["spot_close"])
@@ -350,6 +369,12 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     summary: dict[str, Any] = {
         "scored_sessions": len(scored),
+        "skipped_nonadjacent_session_count": sum(
+            item.get("status") == "skipped_nonadjacent_session" for item in records
+        ),
+        "skipped_stale_gap_count": sum(
+            item.get("status") == "skipped_stale_gap" for item in records
+        ),
         "minimum_sessions_required": SHADOW_MIN_SESSIONS,
         "nominal_full_range_coverage": (
             float(np.mean([1.0 - float(item.get("calibration_alpha", 0.10)) for item in scored]))
@@ -489,8 +514,8 @@ def advance_shadow_state(
         "records": records,
         "evaluation_policy": {
             "target": "next NIFTY trading session",
-            "observed_session_rule": "first subsequent aligned NSE EOD session within four calendar days",
-            "stale_forecasts": "skipped, never scored against a later multi-session gap",
+            "observed_session_rule": "score only when exactly one Monday-Friday date follows the forecast origin; otherwise skip conservatively",
+            "stale_forecasts": "skipped; non-adjacent weekday gaps and possible exchange-holiday gaps are also skipped",
             "b2_reads": 0,
             "b2_writes": 0,
         },
