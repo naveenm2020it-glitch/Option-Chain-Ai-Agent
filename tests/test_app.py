@@ -164,7 +164,7 @@ def test_daily_report_ingestion_persists_manifest(monkeypatch):
     response = client.post(
         "/api/internal/daily-report",
         headers={"Authorization": "Bearer expected-secret"},
-        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13")},
     )
     assert response.status_code == 200
     assert response.json()["stored"] is True
@@ -267,14 +267,16 @@ def test_daily_ingest_persists_seller_context_with_manifest(monkeypatch):
         return {"collection_date": day, "report_count": 4, "storage": "postgresql"}
     monkeypatch.setattr("database.upsert_daily_report", fake_upsert)
     seller_context = {
+        "schema_version": 1,
         "status": "ready", "session_date": "2026-11-16",
+        "current": {"status": "analysis_complete", "session_date": "2026-11-16"},
         "lookback": {"last_5_sessions": {"sessions_analyzed": 5},
                      "last_22_sessions": {"sessions_analyzed": 22}},
     }
     response = client.post(
         "/api/internal/daily-report",
         headers={"Authorization": "Bearer expected-secret"},
-        json={"collection_date": "2026-11-16", "manifest": {"results": {}},
+        json={"collection_date": "2026-11-16", "manifest": aligned_manifest("2026-11-16"),
               "seller_context": seller_context},
     )
     assert response.status_code == 200
