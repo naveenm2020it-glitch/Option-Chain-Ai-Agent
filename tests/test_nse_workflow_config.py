@@ -29,3 +29,39 @@ def test_daily_and_historical_workflows_share_b2_writer_lock():
     assert "group: nse-b2-archive" in historical
     assert "cancel-in-progress: false" in daily
     assert "cancel-in-progress: false" in historical
+
+
+
+def test_range_forward_shadow_reuses_daily_nse_download_without_extra_b2_reads():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "nse-download-check.yml"
+    ).read_text(encoding="utf-8")
+
+    assert 'cron: "30 14 * * 1-5"' in workflow
+    assert "actions: read" in workflow
+    assert "range-code/scripts/range_shadow_validation.py" in workflow
+    assert "--reports-dir data/nse_reports" in workflow
+    assert "nifty-range-candidate-" in workflow
+    assert "steps.range-bundle.outputs.head_sha" in workflow
+    assert "nifty-range-shadow-state" in workflow
+    assert "previous_state_restore_failed; history was not reset" in workflow
+    assert "b2_reads" in workflow
+    assert "b2_writes" in workflow
+    assert "continue-on-error: true" in workflow
+
+
+def test_range_forward_shadow_retains_frozen_checkpoint_for_validation_window():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "nse-download-check.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "nifty-range-shadow-checkpoint" in workflow
+    assert "checkpoint-verify" in workflow
+    assert "retention-days: 90" in workflow
+    assert 'assert len(features) == 494' in workflow
