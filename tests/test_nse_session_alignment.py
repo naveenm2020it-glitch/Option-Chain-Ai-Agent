@@ -19,11 +19,14 @@ def test_core_reports_fall_back_to_one_shared_session(monkeypatch, tmp_path):
     monkeypatch.setattr(downloader.requests, "Session", FakeSession)
     monkeypatch.setattr(downloader, "save_report", fake_save_report)
 
+    ancillary_paths = []
     def fake_fetch(session, name, path, kind):
         # Market activity for 12 Nov is unavailable, while the other three
         # core files exist. The downloader must reject that mixed set.
         if name == "fo_market_activity" and "12112026" in path:
             raise RuntimeError("not published yet")
+        if name not in downloader.CORE_REPORT_NAMES:
+            ancillary_paths.append((name, path))
         return b"validated report payload", {"bytes": 24}
 
     monkeypatch.setattr(downloader, "fetch_report", fake_fetch)
@@ -33,6 +36,12 @@ def test_core_reports_fall_back_to_one_shared_session(monkeypatch, tmp_path):
     assert manifest["core_session_date"] == "2026-11-11"
     for name in downloader.CORE_REPORT_NAMES:
         assert manifest["results"][name]["report_date"] == "2026-11-11"
+    assert ancillary_paths
+    assert all("11112026" in path for _, path in ancillary_paths)
+    assert all(
+        manifest["results"][name]["report_date"] == "2026-11-11"
+        for name, _ in ancillary_paths
+    )
 
 
 def test_missing_one_core_report_blocks_the_whole_session(monkeypatch, tmp_path):
