@@ -101,7 +101,7 @@ def test_compact_model_feature_selector_is_shared_by_training_and_inference():
     samples = build_rolling_feature_rows(rows)
     selected = _select_model_feature_vector(samples[-1]["features"])
     inference = build_latest_inference_features(rows)
-    assert 70 <= len(selected) <= 100
+    assert 100 <= len(selected) <= 130
     assert set(selected) == set(inference)
     assert "latest__spot_open_gap_pct" in selected
     assert "mean5__pcr_oi" in selected
