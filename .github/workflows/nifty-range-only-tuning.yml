@@ -177,4 +177,4 @@ jobs:
           name: nifty-range-candidate-${{ github.run_id }}
           path: models/artifacts/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
