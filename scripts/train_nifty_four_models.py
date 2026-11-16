@@ -26,7 +26,7 @@ def _load_training_dependencies() -> None:
 
 
 FEATURE_SCHEMA_VERSION = 3
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2
 EXPECTED_SESSIONS = 494
 DIRECTION_THRESHOLD = 0.0025
 LABELS = {0: "bearish", 1: "neutral", 2: "bullish"}
@@ -51,11 +51,43 @@ ROLLING_SOURCE_KEYS = (
 STD_SOURCE_KEYS = (
     "index_range_pct", "india_vix_close", "future_return", "pcr_oi", "pcr_volume",
     "ce_premium_return", "pe_premium_return", "ce_writer_build_share", "pe_writer_build_share",
+    "spot_return_1d",
 )
 REQUIRED_AVAILABILITY = (
     "index_data_available", "participant_oi_data_available", "participant_volume_data_available",
     "future_data_available",
 )
+
+# A compact domain-selected set addresses the first pass's 253 inputs versus
+# 377 daily training observations. It is shared across train and inference.
+MODEL_CORE_SOURCE_KEYS = (
+    "india_vix_close", "days_to_expiry", "future_return", "future_basis_pct",
+    "future_oi_change_pct", "pcr_oi", "pcr_change_oi", "pcr_volume",
+    "ce_premium_return", "pe_premium_return", "ce_writer_build_share",
+    "pe_writer_build_share", "ce_max_oi_strike_distance", "pe_max_oi_strike_distance",
+    "participant_oi_fii_future_index_net", "participant_oi_client_future_index_net",
+    "participant_oi_fii_option_index_call_net", "participant_oi_fii_option_index_put_net",
+    "participant_oi_client_option_index_call_net", "participant_oi_client_option_index_put_net",
+    "participant_volume_fii_option_index_call_net", "participant_volume_fii_option_index_put_net",
+    "participant_volume_client_option_index_call_net", "participant_volume_client_option_index_put_net",
+)
+
+
+def _select_model_feature_vector(values: dict[str, float]) -> dict[str, float]:
+    selected = {
+        key: value for key, value in values.items()
+        if key.startswith((
+            "spot_return_", "spot_open_gap", "spot_candle", "spot_intraday",
+            "spot_close_location", "realized_volatility", "high_distance", "low_distance",
+        ))
+        or any(key in (f"latest__{source}", f"mean5__{source}", f"change5__{source}")
+               for source in MODEL_CORE_SOURCE_KEYS)
+    }
+    if not selected:
+        raise ValueError("Selected model feature vector is empty")
+    if not all(math.isfinite(float(value)) for value in selected.values()):
+        raise ValueError("Selected model feature vector contains non-finite values")
+    return selected
 
 
 def _signed_log(value: float) -> float:
@@ -78,7 +110,17 @@ def _base_session_vector(row: dict[str, Any], previous_close: float | None) -> d
     close = _required_number(f, "spot_close", day)
     if close <= 0:
         raise ValueError(f"{day}: spot_close must be positive")
+    open_price = _required_number(f, "spot_open", day)
+    high_price = _required_number(f, "spot_high", day)
+    low_price = _required_number(f, "spot_low", day)
+    reference_close = previous_close if previous_close else close
     vector["spot_return_1d"] = (close / previous_close - 1.0) if previous_close else 0.0
+    vector["spot_open_gap_pct"] = (open_price / previous_close - 1.0) if previous_close else 0.0
+    vector["spot_candle_body_pct"] = (close - open_price) / reference_close
+    vector["spot_intraday_range_pct"] = (high_price - low_price) / reference_close
+    vector["spot_close_location"] = (
+        (close - low_price) / (high_price - low_price) if high_price > low_price else 0.5
+    )
 
     direct_keys = (
         "index_range_pct", "index_close_location", "india_vix_close", "days_to_expiry",
@@ -195,6 +237,7 @@ def build_latest_inference_features(feature_rows: dict[str, dict[str, Any]]) -> 
     result = _build_window_feature_vector(
         raw_vectors[-22:], closes[-22:], highs[-22:], lows[-22:]
     )
+    result = _select_model_feature_vector(result)
     if len(result) == 0:
         raise ValueError("Daily inference feature vector is empty")
     return result
@@ -233,7 +276,9 @@ def build_rolling_feature_rows(feature_rows: dict[str, dict[str, Any]]) -> list[
 
 
 def _feature_matrix(samples: list[dict[str, Any]]) -> tuple[pd.DataFrame, list[str]]:
-    frame = pd.DataFrame([item["features"] for item in samples]).astype(float)
+    frame = pd.DataFrame([
+        _select_model_feature_vector(item["features"]) for item in samples
+    ]).astype(float)
     if frame.isna().any().any() or not np.isfinite(frame.to_numpy()).all():
         raise ValueError("Rolling feature matrix contains missing/non-finite values; no automatic filling is allowed")
     return frame, list(frame.columns)
@@ -257,7 +302,7 @@ def _build_daily_targets(samples: list[dict[str, Any]], feature_rows: dict[str, 
 
 
 def _contract_feature_vector(session_features: dict[str, float], contract: dict[str, Any], side: str) -> dict[str, float]:
-    result = dict(session_features)
+    result = _select_model_feature_vector(session_features)
     close = float(contract["close"])
     oi = float(contract["oi"])
     volume = float(contract["volume"])
@@ -389,10 +434,10 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
 
     # Model 1: next-session direction classifier.
     direction_model = LGBMClassifier(
-        objective="multiclass", num_class=3, n_estimators=180,
-        learning_rate=0.025, num_leaves=7, max_depth=3,
-        min_child_samples=20, reg_lambda=10.0, reg_alpha=1.0,
-        colsample_bytree=0.8, subsample=0.8, subsample_freq=1,
+        objective="multiclass", num_class=3, class_weight="balanced",
+        n_estimators=120, learning_rate=0.025, num_leaves=5, max_depth=2,
+        min_child_samples=25, reg_lambda=15.0, reg_alpha=2.0,
+        colsample_bytree=0.7, subsample=0.8, subsample_freq=1,
         verbosity=-1, random_state=RANDOM_STATE, n_jobs=2,
     )
     direction_model.fit(X_train, y_train)
@@ -401,6 +446,12 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
     aligned_prob = np.zeros((len(X_test), 3), dtype=float)
     for j, label in enumerate(classes):
         aligned_prob[:, int(label)] = test_prob[:, j]
+    direction_probability_blend = 0.5
+    direction_train_prior = np.bincount(y_train, minlength=3).astype(float) / len(y_train)
+    aligned_prob = (
+        direction_probability_blend * aligned_prob
+        + (1.0 - direction_probability_blend) * direction_train_prior
+    )
     direction_holdout = _direction_metrics(y_test, aligned_prob)
     direction_baseline = DummyClassifier(strategy="prior")
     direction_baseline.fit(X_train, y_train)
@@ -414,10 +465,10 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
         if len(np.unique(y_train[tr])) < 3:
             continue
         fold_model = LGBMClassifier(
-            objective="multiclass", num_class=3, n_estimators=120,
-            learning_rate=0.025, num_leaves=7, max_depth=3,
-            min_child_samples=20, reg_lambda=10.0, reg_alpha=1.0,
-            colsample_bytree=0.8, subsample=0.8, subsample_freq=1,
+            objective="multiclass", num_class=3, class_weight="balanced",
+            n_estimators=120, learning_rate=0.025, num_leaves=5, max_depth=2,
+            min_child_samples=25, reg_lambda=15.0, reg_alpha=2.0,
+            colsample_bytree=0.7, subsample=0.8, subsample_freq=1,
             verbosity=-1, random_state=RANDOM_STATE, n_jobs=2,
         )
         fold_model.fit(X_train.iloc[tr], y_train[tr])
@@ -425,6 +476,11 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
         fold_prob = np.zeros((len(va), 3), dtype=float)
         for j, label in enumerate(fold_model.classes_):
             fold_prob[:, int(label)] = fold_raw[:, j]
+        fold_prior = np.bincount(y_train[tr], minlength=3).astype(float) / len(tr)
+        fold_prob = (
+            direction_probability_blend * fold_prob
+            + (1.0 - direction_probability_blend) * fold_prior
+        )
         walk_forward.append({"fold": fold, **_direction_metrics(y_train[va], fold_prob)})
 
     # Model 2: one multi-output model for next-session low/high/close return.
@@ -472,10 +528,10 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
         if train_mask.sum() < 1000 or test_mask.sum() < 500:
             raise ValueError(f"Insufficient {side} matched-contract samples: train={train_mask.sum()}, test={test_mask.sum()}")
         seller_model = LGBMRegressor(
-            objective="regression_l1", n_estimators=220, learning_rate=0.025,
-            num_leaves=9, max_depth=3, min_child_samples=80,
-            reg_lambda=12.0, reg_alpha=1.0,
-            colsample_bytree=0.85, subsample=0.8, subsample_freq=1,
+            objective="regression_l1", n_estimators=130, learning_rate=0.025,
+            num_leaves=7, max_depth=3, min_child_samples=60,
+            reg_lambda=15.0, reg_alpha=2.0,
+            colsample_bytree=0.75, subsample=0.8, subsample_freq=1,
             verbosity=-1, random_state=RANDOM_STATE, n_jobs=2,
         )
         seller_model.fit(seller_X.loc[train_mask], seller_y[train_mask])
@@ -503,13 +559,14 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
     # Refit the four approved model groups on all eligible historical samples.
     print("Refitting four approved model groups on all eligible samples...", flush=True)
     final_direction = LGBMClassifier(
-        objective="multiclass", num_class=3, n_estimators=180,
-        learning_rate=0.025, num_leaves=7, max_depth=3,
-        min_child_samples=20, reg_lambda=10.0, reg_alpha=1.0,
-        colsample_bytree=0.8, subsample=0.8, subsample_freq=1,
+        objective="multiclass", num_class=3, class_weight="balanced",
+        n_estimators=120, learning_rate=0.025, num_leaves=5, max_depth=2,
+        min_child_samples=25, reg_lambda=15.0, reg_alpha=2.0,
+        colsample_bytree=0.7, subsample=0.8, subsample_freq=1,
         verbosity=-1, random_state=RANDOM_STATE, n_jobs=2,
     )
     final_direction.fit(X_daily, y_direction)
+    final_direction_prior = np.bincount(y_direction, minlength=3).astype(float) / len(y_direction)
     final_range = RandomForestRegressor(
         n_estimators=320, max_depth=5, min_samples_leaf=5,
         max_features=0.8, bootstrap=True, random_state=RANDOM_STATE,
@@ -520,10 +577,10 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
     for side in ("CE", "PE"):
         seller_X, seller_y, _, _ = seller_datasets[side]
         final_model = LGBMRegressor(
-            objective="regression_l1", n_estimators=220, learning_rate=0.025,
-            num_leaves=9, max_depth=3, min_child_samples=80,
-            reg_lambda=12.0, reg_alpha=1.0,
-            colsample_bytree=0.85, subsample=0.8, subsample_freq=1,
+            objective="regression_l1", n_estimators=130, learning_rate=0.025,
+            num_leaves=7, max_depth=3, min_child_samples=60,
+            reg_lambda=15.0, reg_alpha=2.0,
+            colsample_bytree=0.75, subsample=0.8, subsample_freq=1,
             verbosity=-1, random_state=RANDOM_STATE, n_jobs=2,
         )
         final_model.fit(seller_X, seller_y)
@@ -539,6 +596,8 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
         "window_sessions": {"recent": 5, "monthly": 22, "includes_latest_completed_session": True},
         "feature_names": feature_names,
         "direction_model": final_direction,
+        "direction_probability_prior": final_direction_prior,
+        "direction_probability_blend": direction_probability_blend,
         "range_model": final_range,
         "ce_seller_model": final_seller_models["CE"],
         "pe_seller_model": final_seller_models["PE"],
@@ -590,8 +649,15 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
             "lookahead_policy": "No feature uses data later than its forecast-origin session.",
         },
         "rolling_feature_count": len(feature_names),
+        "feature_selection": {
+            "method": "fixed domain-selected compact feature set",
+            "previous_feature_count": 253,
+            "selected_feature_count": len(feature_names),
+            "includes_ohlc_derived_features": True,
+            "same_selector_for_training_inference_and_seller_models": True,
+        },
         "direction": {
-            "model": "LightGBM multiclass classifier",
+            "model": "LightGBM multiclass with 50% training-prior probability shrinkage",
             "class_labels": LABELS,
             "class_threshold": DIRECTION_THRESHOLD,
             "holdout": direction_holdout,
