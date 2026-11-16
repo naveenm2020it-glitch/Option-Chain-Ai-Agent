@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import zipfile
 from collections import defaultdict
 from datetime import date, datetime, timezone
@@ -40,32 +41,61 @@ def _outer_archive(reports_dir: Path) -> bytes:
 
 
 def snapshot_from_contracts(session_date: str, spot: float, contracts: list[dict[str, Any]]) -> dict:
-    valid = [
-        item for item in contracts
-        if isinstance(item, dict)
-        and item.get("expiry")
-        and item.get("option_type") in {"CE", "PE"}
-        and float(item.get("strike") or 0) > 0
-    ]
+    valid = []
+    seen = set()
+    session = date.fromisoformat(session_date)
+    for item in contracts:
+        if not isinstance(item, dict):
+            continue
+        if not item.get("expiry") or str(item.get("option_type", "")).upper() not in {"CE", "PE"}:
+            continue
+        try:
+            expiry = date.fromisoformat(str(item["expiry"]))
+            strike = float(item["strike"])
+        except (TypeError, ValueError):
+            raise ValueError("Option contract has an invalid expiry or strike.")
+        if expiry < session or not math.isfinite(strike) or strike <= 0:
+            raise ValueError("Option contract expiry/strike is outside valid bounds.")
+        key = (expiry.isoformat(), strike, str(item["option_type"]).upper())
+        if key in seen:
+            raise ValueError(f"Duplicate NIFTY option contract: {key}")
+        seen.add(key)
+        numeric = {}
+        for field in ("oi", "change_oi", "volume", "close"):
+            try:
+                value = float(item[field])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError(f"Option contract is missing valid {field}.")
+            if not math.isfinite(value):
+                raise ValueError(f"Option contract has non-finite {field}.")
+            numeric[field] = value
+        if numeric["oi"] < 0 or numeric["volume"] < 0 or numeric["close"] <= 0:
+            raise ValueError("Option contract has negative OI/volume or non-positive close.")
+        valid.append((item, expiry, strike, numeric))
     if not valid:
         return {"status": "blocked", "session_date": session_date,
                 "support": [], "resistance": [], "seller_exit_zones": [],
                 "reason": "No validated NIFTY option contracts were available."}
-    front_expiry = min(str(item["expiry"]) for item in valid)
-    front = [item for item in valid if str(item["expiry"]) == front_expiry]
+    front_expiry = min(expiry for _, expiry, _, _ in valid)
+    front = [entry for entry in valid if entry[1] == front_expiry]
     grouped: dict[float, dict] = defaultdict(dict)
-    for item in front:
-        strike = float(item["strike"])
+    for item, expiry, strike, numeric in front:
         side = str(item["option_type"]).upper().lower()
-        oi = max(0.0, float(item.get("oi") or 0))
-        change = float(item.get("change_oi") or 0)
-        volume = max(0.0, float(item.get("volume") or 0))
+        oi = numeric["oi"]
+        change = numeric["change_oi"]
+        volume = numeric["volume"]
         premium = item.get("premium_return")
-        previous_close = float(item.get("previous_close") or 0)
-        close = float(item.get("close") or 0)
+        previous_raw = item.get("previous_close")
+        try:
+            previous_close = float(previous_raw) if previous_raw is not None else None
+        except (TypeError, ValueError):
+            previous_close = None
+        close = numeric["close"]
         premium_pct = (
             float(premium) * 100
-            if premium is not None and previous_close > 0 and close > 0
+            if premium is not None and previous_close is not None
+            and math.isfinite(previous_close) and previous_close > 0
+            and close > 0 and math.isfinite(float(premium))
             else None
         )
         row = grouped[strike].setdefault(side, [])
