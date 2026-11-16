@@ -1,0 +1,123 @@
+name: NIFTY Range-Only Research Tuning
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/tune_nifty_range_only.py"
+      - "scripts/tune_nifty_four_models.py"
+      - "scripts/train_nifty_four_models.py"
+      - "requirements-four-models.txt"
+      - ".github/workflows/nifty-range-only-tuning.yml"
+  push:
+    branches:
+      - model-tuning/**
+    paths:
+      - "scripts/tune_nifty_range_only.py"
+      - "scripts/tune_nifty_four_models.py"
+      - "scripts/train_nifty_four_models.py"
+      - "requirements-four-models.txt"
+      - ".github/workflows/nifty-range-only-tuning.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nifty-range-only-tuning
+  cancel-in-progress: true
+
+jobs:
+  range-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore verified historical audit
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-historical-audit-43691154808
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43691154808
+          path: data
+
+      - name: Restore repaired 494-session checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-context-repair-43805612526
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43805612526
+          path: data
+
+      - name: Verify archive and zero-B2 policy
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          checkpoint = json.loads(Path("data/historical_audit/checkpoint.json").read_text())
+          audit = json.loads(Path("data/historical_audit/coverage.json").read_text())
+          repair = json.loads(Path("data/context_repair/context_repair_report.json").read_text())
+          assert len(checkpoint.get("features", {})) == 494
+          assert audit.get("model_training_allowed") is True
+          assert repair.get("training_allowed") is True
+          assert repair.get("repair_complete") is True
+          assert repair.get("date_alignment_pass") is True
+          assert repair.get("feature_validation", {}).get("pass") is True
+          assert repair.get("missing_context_dates") == {}
+          assert repair.get("b2_requests") == 0
+          print("494/494 archive verified; B2 requests: 0")
+          PY
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-four-models.txt
+
+      - name: Run Range Intelligence tuning only
+        run: |
+          python scripts/tune_nifty_range_only.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --audit-report data/historical_audit/coverage.json \
+            --repair-report data/context_repair/context_repair_report.json \
+            --output models/tuning_artifacts/range_only_report.json
+
+      - name: Enforce research-only gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("models/tuning_artifacts/range_only_report.json").read_text())
+          assert report["status"] == "range_only_tuning_complete"
+          assert report["model_group"] == "Range Intelligence"
+          assert report["other_models_tuned"] is False
+          assert report["b2_reads"] == 0 and report["b2_writes"] == 0
+          assert report["deployment_ready"] is False
+          print("Range-only workflow: PASS")
+          print("CV beats baseline:", report["range"]["cv_beats_baseline"])
+          print("Selected config:", report["range"]["selected_config"])
+          print("CV pinball:", report["range"]["selected_cv_combined_pinball"])
+          print("Baseline CV pinball:", report["range"]["baseline_cv_combined_pinball"])
+          print("Holdout diagnostic beats baseline:", report["range"]["holdout_diagnostic_beats_baseline"])
+          print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
+          PY
+
+      - name: Publish Range-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-range-only-${{ github.run_id }}
+          path: models/tuning_artifacts/range_only_report.json
+          if-no-files-found: warn
+          retention-days: 30
