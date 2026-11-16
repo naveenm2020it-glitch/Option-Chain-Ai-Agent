@@ -145,18 +145,34 @@ jobs:
           path: data/range-shadow-previous
 
       - name: Initialize Range shadow state
+        id: range-state-init
         if: always()
+        env:
+          RANGE_STATE_LOOKUP_OUTCOME: ${{ steps.range-state.outcome }}
+          RANGE_STATE_DOWNLOAD_OUTCOME: ${{ steps.state-download.outcome }}
+          PREVIOUS_STATE_RUN_ID: ${{ steps.range-state.outputs.run_id }}
         run: |
           mkdir -p data/range_shadow
-          if [ -f data/range-shadow-previous/range_shadow_state.json ]; then
+          if [ "$RANGE_STATE_LOOKUP_OUTCOME" != "success" ]; then
+            printf '{"status":"blocked","reason":"previous_state_lookup_failed","b2_reads":0,"b2_writes":0,"deployment_ready":false}\n' > data/range_shadow/range_shadow_report.json
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$PREVIOUS_STATE_RUN_ID" ]; then
+            if [ "$RANGE_STATE_DOWNLOAD_OUTCOME" != "success" ] || [ ! -f data/range-shadow-previous/range_shadow_state.json ]; then
+              printf '{"status":"blocked","reason":"previous_state_restore_failed; history was not reset","b2_reads":0,"b2_writes":0,"deployment_ready":false}\n' > data/range_shadow/range_shadow_report.json
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             cp data/range-shadow-previous/range_shadow_state.json data/range_shadow/range_shadow_state.json
           else
             printf '{"schema_version":1,"records":[],"pending_forecast":null}\n' > data/range_shadow/range_shadow_state.json
           fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Install Range inference dependencies
         id: range-dependencies
-        if: always() && steps.nse-download.outcome == 'success' && steps.range-download.outcome == 'success' && steps.range-checkpoint.outcome == 'success'
+        if: always() && steps.nse-download.outcome == 'success' && steps.range-download.outcome == 'success' && steps.range-checkpoint.outcome == 'success' && steps.range-state-init.outputs.ready == 'true'
         continue-on-error: true
         run: pip install -r requirements-four-models.txt
 
