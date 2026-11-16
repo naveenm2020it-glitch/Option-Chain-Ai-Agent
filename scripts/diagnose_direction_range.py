@@ -53,7 +53,7 @@ def _enhanced_features(X: pd.DataFrame) -> pd.DataFrame:
         five, month = f"mean5__{source}", f"mean22__{source}"
         if five in X.columns and month in X.columns:
             out[f"relative_regime_shift__{source}"] = (
-                X[five"] - X[month]
+                X[five] - X[month]
             ) / (np.abs(X[month]) + 1e-6)
     return out.replace([np.inf, -np.inf], np.nan)
 
