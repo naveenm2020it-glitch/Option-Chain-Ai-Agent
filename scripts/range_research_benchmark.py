@@ -226,11 +226,15 @@ def _base_bounds(
 def _conformal_adjustment(
     predictions: tuple[np.ndarray, np.ndarray, np.ndarray],
     actual: np.ndarray,
+    X_calibration: pd.DataFrame,
     alpha: float = ALPHA,
 ) -> float:
     lower, upper, _ = _base_bounds(predictions)
-    # Joint score covers both endpoints of the next-session realized range.
-    scores = np.maximum(lower - actual[:, 0], actual[:, 1] - upper)
+    # Normalize the joint nonconformity score by forecast-origin volatility.
+    # This lets the calibration margin expand on volatile sessions and contract
+    # on quiet sessions, using only information known at each forecast origin.
+    calibration_scale = _volatility_scale(X_calibration)
+    scores = np.maximum(lower - actual[:, 0], actual[:, 1] - upper) / calibration_scale
     n = len(scores)
     rank = min(n, int(np.ceil((n + 1) * (1.0 - alpha))))
     return float(np.sort(scores)[max(0, rank - 1)])
@@ -239,11 +243,13 @@ def _conformal_adjustment(
 def _range_metrics(
     predictions: tuple[np.ndarray, np.ndarray, np.ndarray],
     actual: np.ndarray,
-    adjustment: float,
+    normalized_adjustment: float,
+    X_eval: pd.DataFrame,
 ) -> dict[str, float]:
     lower, upper, close = _base_bounds(predictions)
-    lower = np.minimum(lower - adjustment, close)
-    upper = np.maximum(upper + adjustment, close)
+    row_adjustment = normalized_adjustment * _volatility_scale(X_eval)
+    lower = np.minimum(lower - row_adjustment, close)
+    upper = np.maximum(upper + row_adjustment, close)
     low_actual, high_actual, close_actual = actual[:, 0], actual[:, 1], actual[:, 2]
     low_miss = np.maximum(lower - low_actual, 0.0)
     high_miss = np.maximum(high_actual - upper, 0.0)
@@ -332,10 +338,10 @@ def tune_range_research(
             raise RuntimeError("Not enough inner-fit samples for calibrated chronological CV")
         fit_idx, calibration_idx = fold_train[:-calibration_size], fold_train[-calibration_size:]
         base_cal = _baseline_predictions(y_train[fit_idx], len(calibration_idx))
-        base_adjustment = _conformal_adjustment(base_cal, y_train[calibration_idx])
+        base_adjustment = _conformal_adjustment(base_cal, y_train[calibration_idx], X_train.iloc[calibration_idx])
         base_valid = _baseline_predictions(y_train[fit_idx], len(fold_valid))
         baseline_fold_metrics.append(
-            _range_metrics(base_valid, y_train[fold_valid], base_adjustment)
+            _range_metrics(base_valid, y_train[fold_valid], base_adjustment, X_train.iloc[fold_valid])
         )
     baseline_cv = _mean_metrics(baseline_fold_metrics)
 
@@ -354,9 +360,9 @@ def tune_range_research(
                 calibration_y = y_train[calibration_idx]
 
                 calibration_predictions = _predict_candidate(candidate, fit_X, fit_y, calibration_X)
-                adjustment = _conformal_adjustment(calibration_predictions, calibration_y)
+                adjustment = _conformal_adjustment(calibration_predictions, calibration_y, calibration_X)
                 valid_predictions = _predict_candidate(candidate, fit_X, fit_y, valid_X)
-                fold_metrics.append(_range_metrics(valid_predictions, y_train[fold_valid], adjustment))
+                fold_metrics.append(_range_metrics(valid_predictions, y_train[fold_valid], adjustment, valid_X))
         except Exception as exc:
             errors.append(f"{type(exc).__name__}: {str(exc)[:500]}")
 
@@ -378,6 +384,7 @@ def tune_range_research(
             mean_cv["winkler_interval_score"] < baseline_cv["winkler_interval_score"]
             and mean_cv["combined_pinball"] <= baseline_cv["combined_pinball"] * 1.03
             and mean_cv["close_return_mae"] <= baseline_cv["close_return_mae"] * 1.10
+            and mean_cv["full_range_coverage"] >= max(0.78, baseline_cv["full_range_coverage"] - 0.01)
             and fold_wins >= 2
         )
         candidate_rows.append({
@@ -417,14 +424,14 @@ def tune_range_research(
     final_cal_y = y_train[final_cal_idx]
 
     base_cal = _baseline_predictions(final_fit_y, len(final_cal_idx))
-    baseline_adjustment = _conformal_adjustment(base_cal, final_cal_y)
+    baseline_adjustment = _conformal_adjustment(base_cal, final_cal_y, final_cal_X)
     base_hold = _baseline_predictions(final_fit_y, len(X_hold))
-    baseline_hold_metrics = _range_metrics(base_hold, y_hold, baseline_adjustment)
+    baseline_hold_metrics = _range_metrics(base_hold, y_hold, baseline_adjustment, X_hold)
 
     selected_cal = _predict_candidate(chosen, final_fit_X, final_fit_y, final_cal_X)
-    selected_adjustment = _conformal_adjustment(selected_cal, final_cal_y)
+    selected_adjustment = _conformal_adjustment(selected_cal, final_cal_y, final_cal_X)
     selected_hold = _predict_candidate(chosen, final_fit_X, final_fit_y, X_hold)
-    selected_hold_metrics = _range_metrics(selected_hold, y_hold, selected_adjustment)
+    selected_hold_metrics = _range_metrics(selected_hold, y_hold, selected_adjustment, X_hold)
 
     return {
         "model": "Range-specialist benchmark: quantile models plus 80% joint conformal calibration",
@@ -448,8 +455,9 @@ def tune_range_research(
         "holdout_is_selection_independent": False,
         "holdout_note": "This final 20% segment has been inspected in earlier research runs. It is diagnostic only, not an untouched test set.",
         "calibration": {
-            "method": "split conformal calibration on chronological inner calibration block",
+            "method": "volatility-normalized split conformal calibration on chronological inner calibration block",
             "nominal_joint_full_range_coverage": 1.0 - ALPHA,
+            "normalization": "joint range nonconformity score divided by origin-session rolling volatility scale; the fitted quantile is multiplied by each forecast session's volatility scale",
             "score": "max(predicted_low - actual_low, actual_high - predicted_high)",
             "fit_calibration_split": "first 80% fit, most recent 20% of each training fold calibrates; validation follows calibration chronologically",
         },
@@ -460,9 +468,11 @@ def tune_range_research(
                 "mean CV Winkler score beats the fold-matched calibrated quantile baseline",
                 "mean CV combined pinball loss is no more than 3% worse than baseline",
                 "mean CV close-return MAE is no more than 10% worse than baseline",
+                "mean CV full-range coverage is at least 78% and no more than 1 percentage point below baseline",
                 "candidate wins Winkler score in at least two of three chronological folds",
             ],
             "all_transforms_fit_inside_fold": True,
+            "minimum_full_range_coverage": 0.78,
             "future_data_used_for_features": False,
             "holdout_used_for_selection": False,
         },
