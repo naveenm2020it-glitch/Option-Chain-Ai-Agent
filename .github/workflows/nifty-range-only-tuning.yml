@@ -1,4 +1,5 @@
 name: NIFTY Range-Only Research Tuning
+# Re-verify the current Range candidate after the shadow artifact log assertion fix.
 
 on:
   workflow_dispatch:
