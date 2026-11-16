@@ -16,6 +16,7 @@ on:
       - model-tuning/**
     paths:
       - "scripts/tune_nifty_range_only.py"
+      - "scripts/range_research_benchmark.py"
       - "scripts/tune_nifty_four_models.py"
       - "scripts/train_nifty_four_models.py"
       - "requirements-four-models.txt"
