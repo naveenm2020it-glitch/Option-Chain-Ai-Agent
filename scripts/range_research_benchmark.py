@@ -128,7 +128,11 @@ def _make_sklearn_estimator(family: str, quantile: float | None, config: dict[st
 
 
 def _tree_distribution_prediction(model, X: pd.DataFrame, q: float) -> np.ndarray:
-    tree_predictions = np.vstack([tree.predict(X) for tree in model.estimators_])
+    # Forest estimators are fitted on sklearn's internal NumPy matrix. Passing
+    # a DataFrame to every individual tree emits one warning per tree per
+    # forecast and creates enormous CI logs during walk-forward refits.
+    matrix = X.to_numpy(dtype=float, copy=False)
+    tree_predictions = np.vstack([tree.predict(matrix) for tree in model.estimators_])
     return np.quantile(tree_predictions, q, axis=0)
 
 
