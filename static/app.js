@@ -232,7 +232,6 @@ async function loadSellerContext(){
   setText("seller-support-levels",levels(current.support));
   setText("seller-spot-reference",Number(data.spot_reference||0).toLocaleString("en-IN",{maximumFractionDigits:2}));
   const five=data.lookback?.last_5_sessions||{},month=data.lookback?.last_22_sessions||{};
-  const top=(items)=> (items||[]).slice(0,3).map(item=>item.level+" ("+item.sessions_present+"/"+(items===five.support_persistence?five.sessions_analyzed:month.sessions_analyzed)+")").join(", ")||"—";
   if(note){
    const fiveSupport=(five.support_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+five.sessions_analyzed+")").join(", ")||"—";
    const fiveResistance=(five.resistance_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+five.sessions_analyzed+")").join(", ")||"—";
