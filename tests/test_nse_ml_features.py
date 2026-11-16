@@ -8,7 +8,7 @@ import pytest
 from scripts.nse_ml_features import extract_nifty_features
 
 
-def _nested_archive(day="2026-11-12", symbol="NIFTY"):
+def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=False, fii_fpi_label=False, context_title_rows=False):
     rows = [
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "CE", 100, 110, 1000, 100, 2000, 25000],
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
@@ -75,3 +75,19 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
 def test_extract_rejects_mixed_session_dates():
     with pytest.raises(ValueError, match="manifest date"):
         extract_nifty_features(_nested_archive(day="2026-11-12"), date(2026, 11, 13))
+
+
+
+def test_extract_supports_nse_compact_headers_and_fii_fpi_label():
+    result = extract_nifty_features(
+        _nested_archive(compact_index_headers=True, fii_fpi_label=True, context_title_rows=True),
+        date(2026, 11, 12),
+    )
+    assert result["features"]["index_data_available"] == 1
+    assert result["features"]["spot_open"] == pytest.approx(24900)
+    assert result["features"]["spot_high"] == pytest.approx(25100)
+    assert result["features"]["spot_low"] == pytest.approx(24850)
+    assert result["features"]["india_vix_close"] == pytest.approx(13.5)
+    assert result["features"]["participant_oi_data_available"] == 1
+    assert result["features"]["participant_volume_data_available"] == 1
+    assert result["features"]["participant_oi_fii_future_index_net"] == -100
