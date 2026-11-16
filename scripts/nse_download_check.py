@@ -200,27 +200,42 @@ def run(output: Path, end: date, lookback_days: int = 7):
                 "checked_days": lookback_days,
             }
 
-    # Ancillary reports are useful context but do not determine whether the
-    # core NIFTY derivatives set is session-aligned.
-    for name, end_spec in specs_by_name.items():
+    # Context reports must match the exact core trading session. Searching
+    # each report independently across a 7-day window can silently mix dates
+    # (for example, today's bhavcopy with yesterday's participant or index data).
+    # Fetch each ancillary report only for the aligned session and mark it
+    # unavailable rather than attaching stale context.
+    for name in specs_by_name:
         if name in CORE_REPORT_NAMES:
             continue
-        for day in candidate_dates(end, lookback_days):
-            spec = next(item for item in report_specs(day) if item[0] == name)
-            try:
-                payload, meta = fetch_report(session, *spec)
-                for result_name, result in save_report(output, name, day, spec, payload, meta):
-                    results[result_name] = result
-                break
-            except Exception as exc:
-                errors.append({
-                    "report": name,
-                    "date": day.isoformat(),
-                    "error": str(exc),
-                    "group": "ancillary",
-                })
-        if name not in results:
-            results[name] = {"status": "not_found", "checked_days": lookback_days}
+        if aligned_day is None:
+            results[name] = {
+                "status": "not_found",
+                "report_date": None,
+                "checked_days": 0,
+                "reason": "no_aligned_core_session",
+            }
+            continue
+        spec = next(item for item in report_specs(aligned_day) if item[0] == name)
+        try:
+            payload, meta = fetch_report(session, *spec)
+            for result_name, result in save_report(output, name, aligned_day, spec, payload, meta):
+                if result.get("report_date") != aligned_day.isoformat():
+                    raise ValueError(f"{result_name} report date does not match aligned core session")
+                results[result_name] = result
+        except Exception as exc:
+            errors.append({
+                "report": name,
+                "date": aligned_day.isoformat(),
+                "error": str(exc),
+                "group": "ancillary_same_session",
+            })
+            results[name] = {
+                "status": "not_found",
+                "report_date": None,
+                "checked_days": 1,
+                "requested_session": aligned_day.isoformat(),
+            }
 
     for derived in ("fo_futidx_activity", "fo_optidx_activity"):
         results.setdefault(derived, {"status": "not_found", "checked_days": lookback_days})
