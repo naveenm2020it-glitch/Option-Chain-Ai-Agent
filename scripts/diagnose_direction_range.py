@@ -81,6 +81,28 @@ def _adaptive_labels(returns: np.ndarray, volatility: np.ndarray, multiplier: fl
     return labels.astype(int), threshold
 
 
+def _fit_probability_calibration(raw, actual, prior):
+    logp = np.log(np.clip(raw, 1e-8, 1.0))
+    best = None
+    for temperature in (0.65, 0.80, 1.0, 1.20, 1.50, 1.80):
+        scaled = np.exp(logp / temperature)
+        scaled /= scaled.sum(axis=1, keepdims=True)
+        for blend in (0.0, 0.10, 0.20, 0.30, 0.40):
+            probs = (1.0 - blend) * scaled + blend * prior
+            metrics = _direction_metrics(actual, probs)
+            score = metrics["multiclass_brier"] - 0.03 * metrics["macro_f1"]
+            candidate = (score, temperature, blend)
+            if best is None or candidate < best:
+                best = candidate
+    return best[1], best[2]
+
+
+def _apply_probability_calibration(raw, prior, temperature, blend):
+    scaled = np.exp(np.log(np.clip(raw, 1e-8, 1.0)) / temperature)
+    scaled /= scaled.sum(axis=1, keepdims=True)
+    return (1.0 - blend) * scaled + blend * prior
+
+
 def diagnose_direction(X, close_returns, split):
     volatility = np.maximum(X["realized_volatility_22_sessions"].to_numpy(), 0.001)
     variants = {"base": X, "relative_regime_features": _enhanced_features(X)}
@@ -88,53 +110,78 @@ def diagnose_direction(X, close_returns, split):
     for variant_name, features in variants.items():
         for multiplier in (0.50, 0.75, 1.00, 1.25):
             labels, thresholds = _adaptive_labels(close_returns, volatility, multiplier)
-            train_labels = labels[:split]
-            if set(np.unique(train_labels)) != {0, 1, 2}:
-                continue
             fold_metrics, fold_baselines = [], []
             for tr, va in TimeSeriesSplit(n_splits=3).split(features.iloc[:split]):
-                if set(np.unique(train_labels[tr])) != {0, 1, 2}:
+                if len(tr) < 80 or len(va) < 15:
                     continue
-                model = _classifier().fit(features.iloc[tr], train_labels[tr])
-                baseline = DummyClassifier(strategy="prior").fit(features.iloc[tr], train_labels[tr])
-                fold_metrics.append(_direction_metrics(
-                    train_labels[va], _aligned(model, features.iloc[va])
-                ))
+                fit_end = int(len(tr) * 0.80)
+                fit_idx, cal_idx = tr[:fit_end], tr[fit_end:]
+                if len(cal_idx) < 15 or set(np.unique(labels[fit_idx])) != {0, 1, 2}:
+                    continue
+                model = _classifier().fit(features.iloc[fit_idx], labels[fit_idx])
+                prior = np.bincount(labels[fit_idx], minlength=3).astype(float) / len(fit_idx)
+                cal_raw = _aligned(model, features.iloc[cal_idx])
+                temperature, blend = _fit_probability_calibration(
+                    cal_raw, labels[cal_idx], prior
+                )
+                valid_raw = _aligned(model, features.iloc[va])
+                valid_probs = _apply_probability_calibration(
+                    valid_raw, prior, temperature, blend
+                )
+                fold_metrics.append(_direction_metrics(labels[va], valid_probs))
+                baseline = DummyClassifier(strategy="prior").fit(
+                    features.iloc[fit_idx], labels[fit_idx]
+                )
                 fold_baselines.append(_direction_metrics(
-                    train_labels[va], _aligned(baseline, features.iloc[va])
+                    labels[va], _aligned(baseline, features.iloc[va])
                 ))
             if not fold_metrics:
                 continue
-            metric_keys = ("macro_f1", "multiclass_brier", "accuracy")
-            cv = {k: float(np.mean([m[k] for m in fold_metrics])) for k in metric_keys}
-            base_cv = {k: float(np.mean([m[k] for m in fold_baselines])) for k in metric_keys}
+            keys = ("macro_f1", "multiclass_brier", "accuracy")
+            cv = {k: float(np.mean([m[k] for m in fold_metrics])) for k in keys}
+            base_cv = {k: float(np.mean([m[k] for m in fold_baselines])) for k in keys}
             candidates.append({
                 "feature_variant": variant_name,
                 "volatility_threshold_multiplier": multiplier,
                 "cv": cv,
                 "prior_baseline_cv": base_cv,
                 "cv_score": cv["macro_f1"] - 0.25 * cv["multiclass_brier"],
-                "mean_training_threshold": float(np.mean(thresholds[:split])),
-                "training_class_counts": {
-                    str(k): int(np.sum(train_labels == k)) for k in range(3)
-                },
+                "cv_gate": (
+                    cv["macro_f1"] > base_cv["macro_f1"]
+                    and cv["multiclass_brier"] < base_cv["multiclass_brier"]
+                    and cv["accuracy"] >= base_cv["accuracy"] - 0.02
+                ),
             })
     if not candidates:
-        raise RuntimeError("No adaptive direction candidate produced valid chronological folds")
-    selected = max(candidates, key=lambda item: item["cv_score"])
-    selected_features = variants[selected["feature_variant"]]
+        raise RuntimeError("No calibrated direction candidate produced valid chronological folds")
+    feasible = [item for item in candidates if item["cv_gate"]]
+    pool = feasible if feasible else candidates
+    selected = max(pool, key=lambda item: item["cv_score"])
     labels, thresholds = _adaptive_labels(
         close_returns, volatility, selected["volatility_threshold_multiplier"]
     )
-    model = _classifier().fit(selected_features.iloc[:split], labels[:split])
-    baseline = DummyClassifier(strategy="prior").fit(selected_features.iloc[:split], labels[:split])
-    model_hold = _direction_metrics(labels[split:], _aligned(model, selected_features.iloc[split:]))
-    baseline_hold = _direction_metrics(labels[split:], _aligned(baseline, selected_features.iloc[split:]))
+    features = variants[selected["feature_variant"]]
+    fit_end = int(split * 0.80)
+    fit_idx, cal_idx = np.arange(fit_end), np.arange(fit_end, split)
+    model = _classifier().fit(features.iloc[fit_idx], labels[fit_idx])
+    prior = np.bincount(labels[fit_idx], minlength=3).astype(float) / len(fit_idx)
+    temperature, blend = _fit_probability_calibration(
+        _aligned(model, features.iloc[cal_idx]), labels[cal_idx], prior
+    )
+    hold_probs = _apply_probability_calibration(
+        _aligned(model, features.iloc[split:]), prior, temperature, blend
+    )
+    model_hold = _direction_metrics(labels[split:], hold_probs)
+    baseline = DummyClassifier(strategy="prior").fit(features.iloc[fit_idx], labels[fit_idx])
+    baseline_hold = _direction_metrics(
+        labels[split:], _aligned(baseline, features.iloc[split:])
+    )
     return {
         "selected_feature_variant_from_training_cv": selected["feature_variant"],
         "selected_volatility_multiplier_from_training_cv": selected["volatility_threshold_multiplier"],
         "selected_training_cv": selected["cv"],
         "selected_prior_baseline_cv": selected["prior_baseline_cv"],
+        "selected_calibration": {"temperature": temperature, "prior_blend": blend},
         "candidate_count": len(candidates),
         "candidate_cv_summary": candidates,
         "exploratory_holdout": model_hold,
@@ -142,10 +189,11 @@ def diagnose_direction(X, close_returns, split):
         "exploratory_holdout_beats_baseline": (
             model_hold["macro_f1"] > baseline_hold["macro_f1"]
             and model_hold["multiclass_brier"] < baseline_hold["multiclass_brier"]
+            and model_hold["accuracy"] >= baseline_hold["accuracy"] - 0.02
         ),
-        "label_policy": "Per-origin neutral band = clipped trailing-22-session realized volatility times a multiplier; volatility uses completed sessions only.",
+        "calibration_policy": "Temperature scaling and prior blending are fitted only on the chronological calibration tail inside each training fold.",
+        "label_policy": "Per-origin neutral band uses clipped trailing-22-session realized volatility; volatility uses completed sessions only.",
     }
-
 
 def _range_metrics(actual, prediction):
     low, high, close = prediction[:, 0], prediction[:, 1], prediction[:, 2]
