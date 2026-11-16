@@ -103,7 +103,7 @@ jobs:
           github-token: \${{ secrets.GITHUB_TOKEN }}
           repository: \${{ github.repository }}
           run-id: 43691154808
-          path: data/historical_audit
+          path: data
 
       - name: Find previous Range shadow state artifact
         id: range-state
@@ -166,7 +166,7 @@ jobs:
         continue-on-error: true
         run: |
           python scripts/range_shadow_validation.py \
-            --checkpoint data/historical_audit/historical_audit/checkpoint.json \
+            --checkpoint data/historical_audit/checkpoint.json \
             --reports-dir data/nse_reports \
             --bundle models/artifacts/nifty_range_candidate.joblib \
             --state data/range_shadow/range_shadow_state.json \
