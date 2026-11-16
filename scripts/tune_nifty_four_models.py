@@ -423,8 +423,23 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
             "config": config,
             "cv_pooled_mae": float(np.mean(pooled)),
             "cv_date_balanced_mae": float(np.mean(date_balanced)),
+            "cv_beats_baseline": (
+                float(np.mean(pooled)) < float(np.mean(baseline_fold_pool))
+                and float(np.mean(date_balanced)) < float(np.mean(baseline_fold_date))
+            ),
         })
-    selected = min(candidate_rows, key=lambda item: item["cv_date_balanced_mae"])
+    # Prefer candidates that beat the median baseline on BOTH pooled and
+    # equal-weight date-level CV error. If none qualify, select the least-bad
+    # candidate for diagnosis only; the promotion gate remains closed.
+    feasible = [item for item in candidate_rows if item["cv_beats_baseline"]]
+    pool = feasible if feasible else candidate_rows
+    selected = min(
+        pool,
+        key=lambda item: (
+            item["cv_pooled_mae"] / max(float(np.mean(baseline_fold_pool)), 1e-12)
+            + item["cv_date_balanced_mae"] / max(float(np.mean(baseline_fold_date)), 1e-12)
+        ),
+    )
     final_model = _seller_estimator(selected["config"])
     final_model.fit(X_train, y_train)
     prediction = final_model.predict(X_hold)
