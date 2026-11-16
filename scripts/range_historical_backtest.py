@@ -64,6 +64,16 @@ def _score_pair(
         origin_close,
         0.20,
     )
+    core_base = _interval_metrics(
+        float(baseline["predicted_low_return"]),
+        float(baseline["predicted_high_return"]),
+        float(baseline["predicted_close_return"]),
+        actual_low_return,
+        actual_high_return,
+        actual_close_return,
+        origin_close,
+        0.20,
+    )
     base = _interval_metrics(
         float(baseline["predicted_low_return"]),
         float(baseline["predicted_high_return"]),
@@ -93,6 +103,14 @@ def _score_pair(
         "core_winkler_interval_score_return_space": core["winkler_interval_score_return_space"],
         "core_predicted_range_width_points": core["predicted_range_width_points"],
         "core_range_width_ratio": core["range_width_ratio"],
+        "core_baseline_range_covered": core_base["range_covered"],
+        "core_baseline_winkler_interval_score_return_space": core_base["winkler_interval_score_return_space"],
+        "core_baseline_predicted_range_width_points": core_base["predicted_range_width_points"],
+        "core_baseline_range_width_ratio": core_base["range_width_ratio"],
+        "core_model_beats_baseline_winkler": (
+            core["winkler_interval_score_return_space"]
+            < core_base["winkler_interval_score_return_space"]
+        ),
         "range_covered": model["range_covered"],
         "low_endpoint_covered": model["low_endpoint_covered"],
         "high_endpoint_covered": model["high_endpoint_covered"],
@@ -225,6 +243,11 @@ def run_historical_walk_forward(
         "mean_winkler_interval_score": float(np.mean([row["core_winkler_interval_score_return_space"] for row in records])),
         "mean_predicted_width_points": float(np.mean([row["core_predicted_range_width_points"] for row in records])),
         "mean_width_ratio": float(np.mean([row["core_range_width_ratio"] for row in records])),
+        "baseline_range_coverage_rate": float(np.mean([row["core_baseline_range_covered"] for row in records])),
+        "mean_baseline_winkler_interval_score": float(np.mean([row["core_baseline_winkler_interval_score_return_space"] for row in records])),
+        "mean_baseline_predicted_width_points": float(np.mean([row["core_baseline_predicted_range_width_points"] for row in records])),
+        "mean_baseline_width_ratio": float(np.mean([row["core_baseline_range_width_ratio"] for row in records])),
+        "winkler_win_rate_vs_baseline": float(np.mean([row["core_model_beats_baseline_winkler"] for row in records])),
     }
     historical_status = (
         "pass_manual_review"
