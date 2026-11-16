@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import numpy as np
 import pandas as pd
+import pytest
+
+import scripts.range_shadow_validation as shadow
 
 from scripts.range_model_bundle import fit_range_bundle, predict_range_bundle
 from scripts.range_shadow_validation import (
     advance_shadow_state,
     make_range_forecast,
+    make_recent_22_session_baseline,
     score_range_forecast,
+    summarize_shadow_records,
 )
 
 
@@ -51,6 +58,7 @@ def test_range_bundle_produces_finite_ordered_next_session_returns():
     assert np.isfinite(list(forecast.values())).all()
     assert forecast["low_return"] < forecast["high_return"]
     assert forecast["low_return"] <= forecast["close_return"] <= forecast["high_return"]
+    assert bundle["calibration_alpha"] == 0.10
 
 
 def test_range_forecast_translates_returns_to_positive_price_levels():
@@ -105,3 +113,127 @@ def test_shadow_state_is_idempotent_and_scores_only_subsequent_session():
     assert next_report["newly_evaluated_record"]["status"] == "scored"
     assert state["records"][0]["actual_session_date"] == "2026-11-17"
     assert state["pending_forecast"]["origin_date"] == "2026-11-17"
+
+
+def test_recent_22_session_baseline_is_leakage_safe_and_uses_22_completed_ranges():
+    rows = {}
+    start = date(2026, 9, 1)
+    last_date = None
+    for index in range(30):
+        day = (start + timedelta(days=index)).isoformat()
+        close = 25000.0 + index * 10.0
+        rows[day] = {
+            "session_date": day,
+            "features": {
+                "spot_close": close,
+                "spot_low": close - 100.0 - (index % 4) * 5.0,
+                "spot_high": close + 90.0 + (index % 3) * 5.0,
+            },
+        }
+        last_date = day
+
+    origin_close = rows[last_date]["features"]["spot_close"]
+    baseline = make_recent_22_session_baseline(rows, last_date, origin_close)
+    future_date = (date.fromisoformat(last_date) + timedelta(days=1)).isoformat()
+    rows[future_date] = {
+        "session_date": future_date,
+        "features": {"spot_close": 35000.0, "spot_low": 30000.0, "spot_high": 40000.0},
+    }
+    baseline_with_future_row = make_recent_22_session_baseline(rows, last_date, origin_close)
+
+    assert baseline["lookback_sessions"] == 22
+    assert baseline["predicted_low"] < baseline["predicted_close"] < baseline["predicted_high"]
+    assert baseline == baseline_with_future_row
+
+
+def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gate():
+    forecast = {
+        "origin_date": "2026-11-16",
+        "origin_close": 25000.0,
+        "predicted_low_return": -0.01,
+        "predicted_high_return": 0.01,
+        "predicted_close_return": 0.0004,
+        "predicted_low": 24750.0,
+        "predicted_high": 25250.0,
+        "predicted_close": 25010.0,
+        "candidate_name": "test",
+        "calibration_alpha": 0.10,
+        "baseline": {
+            "name": "rolling_22_session_empirical_quantile",
+            "predicted_low_return": -0.005,
+            "predicted_high_return": 0.005,
+            "predicted_close_return": 0.0,
+            "predicted_low": 24875.0,
+            "predicted_high": 25125.0,
+            "predicted_close": 25000.0,
+        },
+    }
+    actual = {"spot_low": 24800.0, "spot_high": 25200.0, "spot_close": 25100.0}
+    scored = score_range_forecast(forecast, "2026-11-17", actual)
+    assert scored["status"] == "scored"
+    assert scored["range_covered"] is True
+    assert scored["baseline_range_covered"] is False
+    assert scored["model_beats_baseline_winkler"] is True
+
+    summary = summarize_shadow_records([scored] * 20)
+    assert summary["scored_sessions"] == 20
+    assert summary["shadow_validation_status"] == "pass_manual_review"
+    assert summary["production_promotion_allowed"] is False
+
+
+def test_current_nse_feature_extraction_blocks_missing_critical_context(tmp_path, monkeypatch):
+    report_names = (
+        "fo_udiff_bhavcopy",
+        "fo_participant_oi",
+        "fo_participant_volume",
+        "nifty_index_close_all",
+    )
+    results = {}
+    for name in report_names:
+        filename = f"{name}.csv"
+        (tmp_path / filename).write_text("fixture", encoding="utf-8")
+        results[name] = {"file": filename, "report_date": "2026-11-16"}
+    manifest = {
+        "core_session_status": "aligned",
+        "core_session_date": "2026-11-16",
+        "results": results,
+    }
+    (tmp_path / "manifest.json").write_text(__import__("json").dumps(manifest), encoding="utf-8")
+
+    valid_features = {
+        "index_data_available": 1.0,
+        "participant_oi_data_available": 1.0,
+        "participant_volume_data_available": 1.0,
+        "future_data_available": 1.0,
+        "spot_open": 25000.0,
+        "spot_high": 25100.0,
+        "spot_low": 24900.0,
+        "spot_close": 25050.0,
+    }
+    monkeypatch.setattr(
+        shadow,
+        "extract_nifty_features",
+        lambda *_: {
+            "session_date": "2026-11-16",
+            "feature_schema_version": shadow.FEATURE_SCHEMA_VERSION,
+            "features": valid_features,
+            "contracts": [],
+        },
+    )
+    row = shadow.extract_current_feature_row(tmp_path)
+    assert row["session_date"] == "2026-11-16"
+
+    missing_context = dict(valid_features)
+    missing_context["participant_volume_data_available"] = 0.0
+    monkeypatch.setattr(
+        shadow,
+        "extract_nifty_features",
+        lambda *_: {
+            "session_date": "2026-11-16",
+            "feature_schema_version": shadow.FEATURE_SCHEMA_VERSION,
+            "features": missing_context,
+            "contracts": [],
+        },
+    )
+    with pytest.raises(ValueError, match="participant_volume_data_available"):
+        shadow.extract_current_feature_row(tmp_path)
