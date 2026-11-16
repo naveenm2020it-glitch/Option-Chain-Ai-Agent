@@ -145,9 +145,9 @@ jobs:
 
       - name: Run leakage-safe 40-session historical walk-forward validation
         run: |
-          python scripts/range_historical_backtest.py \\
-            --checkpoint data/historical_audit/checkpoint.json \\
-            --tuning-report models/tuning_artifacts/range_only_report.json \\
+          python scripts/range_historical_backtest.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --tuning-report models/tuning_artifacts/range_only_report.json \
             --output models/tuning_artifacts/range_40_session_backtest.json
           python - <<'PY'
           import json
