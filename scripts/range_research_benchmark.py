@@ -428,16 +428,33 @@ def tune_range_research(
     if not evaluated:
         raise RuntimeError("Every Range candidate failed; no result can be selected")
     feasible = [row for row in evaluated if row["cv_beats_baseline"]]
-    selection_pool = feasible if feasible else evaluated
+    # Prefer stable coverage before the smallest average score. A narrow model
+    # that misses one tail repeatedly is not a useful next-day range forecast.
+    robust_pool = [
+        row for row in feasible
+        if row["cv"]["full_range_coverage"] >= 0.93
+        and row["minimum_fold_full_range_coverage"] >= 0.90
+    ]
+    selection_pool = robust_pool or feasible or evaluated
     selected = min(
         selection_pool,
         key=lambda row: (
             row["cv"]["winkler_interval_score"],
+            -row["cv"]["full_range_coverage"],
+            -row["minimum_fold_full_range_coverage"],
             row["cv"]["combined_pinball"],
             row["cv"]["close_return_mae"],
         ),
     )
     chosen = selected["candidate"]
+    selection_policy = {
+        "primary_metric": "mean chronological CV Winkler score (lower is better)",
+        "robust_coverage_preference": "prefer candidates with mean CV full-range coverage >= 93% and minimum fold coverage >= 90%; if none qualify, fall back to all CV-feasible candidates",
+        "selected_from_cv_only": True,
+        "holdout_outcomes_used_for_selection": False,
+        "robust_pool_size": len(robust_pool),
+        "feasible_pool_size": len(feasible),
+    }
 
     # Historical holdout remains diagnostic only; no candidate or calibration
     # choice is made from its outcomes.
@@ -464,6 +481,7 @@ def tune_range_research(
     return {
         "model": "Range-specialist benchmark: quantile models plus 90% joint conformal calibration",
         "selected_config": chosen,
+        "selection_policy": selection_policy,
         "selected_cv": selected["cv"],
         "selected_minimum_fold_full_range_coverage": selected["minimum_fold_full_range_coverage"],
         "selected_cv_fold_metrics": selected["fold_metrics"],
