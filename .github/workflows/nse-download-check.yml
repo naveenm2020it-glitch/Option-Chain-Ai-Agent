@@ -107,7 +107,7 @@ jobs:
               if (artifact) {
                 core.setOutput("run_id", String(run.id));
                 core.setOutput("head_sha", headSha);
-                core.info(`Using Range candidate run ${run.id} at ${headSha}`);
+                core.info(`Using Range candidate artifact from run ${run.id}`);
                 return;
               }
             }
