@@ -126,9 +126,14 @@ jobs:
           assert manifest.get("eligible_daily_samples") >= 400
           assert manifest.get("rolling_windows", {}).get("recent")
           assert manifest.get("rolling_windows", {}).get("monthly")
+          assert 100 <= manifest.get("rolling_feature_count", 0) <= 130
+          selection = manifest.get("feature_selection", {})
+          assert selection.get("selected_feature_count") == manifest.get("rolling_feature_count")
+          assert selection.get("same_selector_for_training_inference_and_seller_models") is True
           assert manifest.get("b2_reads") == 0 and manifest.get("b2_writes") == 0
           required_models = {"direction_model", "range_model", "ce_seller_model", "pe_seller_model"}
           assert required_models.issubset(bundle.keys())
+          assert sum(key.endswith("_model") for key in bundle) == 4
           assert Path(root / manifest["model_file"]).is_file()
 
           print("Four model objects: PASS")
