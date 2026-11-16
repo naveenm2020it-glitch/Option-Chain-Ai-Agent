@@ -26,3 +26,15 @@ Set `B2_ENDPOINT_URL`, `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, and `B2_BU
 ## Deployment
 Render build command: `pip install -r requirements.txt`
 Start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
+
+
+## Seller Intelligence levels engine
+
+- `POST /api/engine/levels` accepts a normalized, same-session NIFTY option-chain snapshot.
+- PE-side OI concentration and confirmed OI addition with non-rising premium are scored as support candidates.
+- CE-side equivalents are scored as resistance candidates.
+- OI reduction and OI addition alongside a rising option premium are surfaced as seller exit/pressure-risk zones.
+- Scores combine OI concentration, change in OI, volume and premium confirmation. Missing inputs reduce confidence; missing premium data cannot be labelled confirmed writing.
+- The engine fails closed unless `data_quality.aligned=true`, a `session_date`, and at least three valid strikes are supplied.
+- These are positioning proxies, not proof of participant identity or guaranteed defended levels. Price reaction is required for confirmation.
+- The current repository does not yet parse raw NSE archives into a normalized daily option-chain snapshot, so the API is implemented but live dashboard levels remain unavailable until that adapter is completed. No extra B2 archive reads or writes are introduced by this engine.
