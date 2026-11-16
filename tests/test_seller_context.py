@@ -23,7 +23,7 @@ def test_snapshot_uses_front_expiry_and_builds_both_sides():
     rows.append({
         "expiry": "2026-12-31", "strike": 25000, "option_type": "PE",
         "oi": 999999, "change_oi": 999999, "volume": 999999,
-        "premium_return": -0.5,
+        "close": 100, "previous_close": 103, "premium_return": -0.5,
     })
     result = snapshot_from_contracts("2026-11-16", 25100, rows)
     assert result["status"] == "analysis_complete"
@@ -95,5 +95,5 @@ def test_window_summary_flags_missing_weekday_context():
     levels = snapshot_from_contracts("2026-11-16", 25100, _contracts())
     history = [("2026-11-09", levels), ("2026-11-11", levels)]
     result = _window_summary(history, 5, "2026-11-16")
-    assert result["coverage_status"] == "incomplete_or_exchange_holiday_gap"
+    assert result["coverage_status"] == "incomplete_missing_or_invalid_sessions"
     assert result["possible_missing_weekdays"] >= 1
