@@ -148,6 +148,14 @@ def _constant_range_quantiles(
     )
 
 
+def _date_balanced_sample_weights(dates: list[str]) -> np.ndarray:
+    """Give each trading date equal total training weight, regardless of chain size."""
+    date_values = np.asarray(dates, dtype=str)
+    _, inverse, counts = np.unique(date_values, return_inverse=True, return_counts=True)
+    weights = 1.0 / counts[inverse].astype(float)
+    return weights / float(np.mean(weights))
+
+
 def _seller_metrics(actual: np.ndarray, predicted: np.ndarray, dates: list[str]) -> dict[str, float]:
     errors = np.abs(actual - predicted)
     by_date = pd.DataFrame({"date": dates, "error": errors}).groupby("date")["error"].mean()
@@ -391,6 +399,14 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         {"name": "lgbm_low_bias", "n_estimators": 100, "num_leaves": 9, "max_depth": 3, "min_child_samples": 45, "reg_lambda": 20.0, "reg_alpha": 3.0},
         {"name": "lgbm_high_capacity", "n_estimators": 180, "num_leaves": 15, "max_depth": 4, "min_child_samples": 80, "reg_lambda": 35.0, "reg_alpha": 6.0},
     ]
+    # Add an alternative objective for PE: equal total training weight per date.
+    # This directly aligns fitting with the equal-weight date-balanced validation metric.
+    if side == "PE":
+        weighted_bases = [configs[i] for i in (1, 2, 3, 4)]
+        configs.extend([
+            {**cfg, "name": cfg["name"] + "_date_balanced", "sample_weight_mode": "date_balanced"}
+            for cfg in weighted_bases
+        ])
     baseline_fold_pool, baseline_fold_date = [], []
     for fold_train_dates, fold_valid_dates in _date_folds(train_dates):
         row_dates = np.asarray(train_dates)
@@ -413,7 +429,12 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
             tr = np.isin(row_dates, list(fold_train_dates))
             va = np.isin(row_dates, list(fold_valid_dates))
             model = _seller_estimator(config)
-            model.fit(X_train.iloc[tr], y_train[tr])
+            fit_dates = np.asarray(train_dates)[tr].tolist()
+            fit_weights = (
+                _date_balanced_sample_weights(fit_dates)
+                if config.get("sample_weight_mode") == "date_balanced" else None
+            )
+            model.fit(X_train.iloc[tr], y_train[tr], sample_weight=fit_weights)
             pred = model.predict(X_train.iloc[va])
             eval_dates = np.asarray(train_dates)[va].tolist()
             metrics = _seller_metrics(y_train[va], pred, eval_dates)
@@ -441,7 +462,11 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         ),
     )
     final_model = _seller_estimator(selected["config"])
-    final_model.fit(X_train, y_train)
+    final_weights = (
+        _date_balanced_sample_weights(train_dates)
+        if selected["config"].get("sample_weight_mode") == "date_balanced" else None
+    )
+    final_model.fit(X_train, y_train, sample_weight=final_weights)
     prediction = final_model.predict(X_hold)
     baseline = DummyRegressor(strategy="median").fit(X_train, y_train)
     base_prediction = baseline.predict(X_hold)
