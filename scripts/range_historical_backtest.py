@@ -54,6 +54,16 @@ def _score_pair(
         origin_close,
         alpha,
     )
+    core = _interval_metrics(
+        float(forecast.get("core_low_return", forecast["predicted_low_return"])),
+        float(forecast.get("core_high_return", forecast["predicted_high_return"])),
+        float(forecast.get("core_close_return", forecast["predicted_close_return"])),
+        actual_low_return,
+        actual_high_return,
+        actual_close_return,
+        origin_close,
+        0.20,
+    )
     base = _interval_metrics(
         float(baseline["predicted_low_return"]),
         float(baseline["predicted_high_return"]),
@@ -76,6 +86,13 @@ def _score_pair(
         "actual_high": actual_high,
         "actual_close": actual_close,
         "calibration_alpha": alpha,
+        "core_range_covered": core["range_covered"],
+        "core_low_endpoint_covered": core["low_endpoint_covered"],
+        "core_high_endpoint_covered": core["high_endpoint_covered"],
+        "core_close_inside_predicted_range": core["close_inside_predicted_range"],
+        "core_winkler_interval_score_return_space": core["winkler_interval_score_return_space"],
+        "core_predicted_range_width_points": core["predicted_range_width_points"],
+        "core_range_width_ratio": core["range_width_ratio"],
         "range_covered": model["range_covered"],
         "low_endpoint_covered": model["low_endpoint_covered"],
         "high_endpoint_covered": model["high_endpoint_covered"],
@@ -196,6 +213,16 @@ def run_historical_walk_forward(
         fit_counts.append(len(train_indices))
 
     summary = summarize_shadow_records(records)
+    core_summary = {
+        "nominal_joint_coverage": 0.80,
+        "range_coverage_rate": float(np.mean([row["core_range_covered"] for row in records])),
+        "low_endpoint_coverage_rate": float(np.mean([row["core_low_endpoint_covered"] for row in records])),
+        "high_endpoint_coverage_rate": float(np.mean([row["core_high_endpoint_covered"] for row in records])),
+        "close_inside_rate": float(np.mean([row["core_close_inside_predicted_range"] for row in records])),
+        "mean_winkler_interval_score": float(np.mean([row["core_winkler_interval_score_return_space"] for row in records])),
+        "mean_predicted_width_points": float(np.mean([row["core_predicted_range_width_points"] for row in records])),
+        "mean_width_ratio": float(np.mean([row["core_range_width_ratio"] for row in records])),
+    }
     historical_status = (
         "pass_manual_review"
         if summary.get("shadow_validation_status") == "pass_manual_review"
@@ -217,6 +244,11 @@ def run_historical_walk_forward(
         "training_rows_min": int(min(fit_counts)),
         "training_rows_max": int(max(fit_counts)),
         "summary": summary,
+        "core_range_summary": core_summary,
+        "range_bands": {
+            "core_range": "raw conditional q10/q90 endpoints; nominal joint coverage at least 80% by Bonferroni",
+            "calibrated_range": "asymmetric conformal outer range; nominal joint coverage 90% under exchangeability",
+        },
         "historical_validation_status": historical_status,
         "historical_pass_criteria": {
             "minimum_scored_sessions": 40,
