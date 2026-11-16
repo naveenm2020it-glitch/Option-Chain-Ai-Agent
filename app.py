@@ -90,7 +90,8 @@ def status():
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
-        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False,\n                          "seller_levels_engine": True, "levels_live_data_connected": False},
+        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False,
+                          "seller_levels_engine": True, "levels_live_data_connected": False},
         "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
                     "raw NSE report adapters and live forecast are not enabled yet."
                     if ready else
