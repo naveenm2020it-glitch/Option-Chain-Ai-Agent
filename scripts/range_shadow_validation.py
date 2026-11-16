@@ -504,6 +504,18 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_baseline_width_difference_points": None,
             "mean_baseline_width_ratio": None,
         })
+    core_scored = [item for item in scored if "core_range_covered" in item]
+    if core_scored:
+        summary.update({
+            "core_range_coverage_rate": float(np.mean([item["core_range_covered"] for item in core_scored])),
+            "core_low_endpoint_coverage_rate": float(np.mean([item["core_low_endpoint_covered"] for item in core_scored])),
+            "core_high_endpoint_coverage_rate": float(np.mean([item["core_high_endpoint_covered"] for item in core_scored])),
+            "core_close_inside_rate": float(np.mean([item["core_close_inside_predicted_range"] for item in core_scored])),
+            "core_mean_winkler": float(np.mean([item["core_winkler_interval_score_return_space"] for item in core_scored])),
+            "core_mean_predicted_width_points": float(np.mean([item["core_predicted_range_width_points"] for item in core_scored])),
+            "core_mean_width_ratio": float(np.mean([item["core_range_width_ratio"] for item in core_scored])),
+            "core_scored_sessions": len(core_scored),
+        })
     if comparable:
         model_winkler = np.asarray([
             item["winkler_interval_score_return_space"] for item in comparable
