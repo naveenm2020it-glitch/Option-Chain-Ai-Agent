@@ -234,10 +234,19 @@ def _conformal_adjustment(
     # This lets the calibration margin expand on volatile sessions and contract
     # on quiet sessions, using only information known at each forecast origin.
     calibration_scale = _volatility_scale(X_calibration)
-    scores = np.maximum(lower - actual[:, 0], actual[:, 1] - upper) / calibration_scale
+    # Expansion-only interval calibration: covered calibration rows have a
+    # zero nonconformity score. Negative scores would shrink the base interval
+    # and can silently destroy the intended coverage guarantee.
+    scores = np.maximum.reduce((
+        lower - actual[:, 0],
+        actual[:, 1] - upper,
+        np.zeros(len(actual), dtype=float),
+    )) / calibration_scale
     n = len(scores)
+    if n == 0 or not 0.0 < alpha < 1.0 or not np.isfinite(scores).all():
+        raise ValueError("Invalid conformal calibration scores or alpha")
     rank = min(n, int(np.ceil((n + 1) * (1.0 - alpha))))
-    return float(np.sort(scores)[max(0, rank - 1)])
+    return float(max(0.0, np.sort(scores)[max(0, rank - 1)]))
 
 
 def _range_metrics(
