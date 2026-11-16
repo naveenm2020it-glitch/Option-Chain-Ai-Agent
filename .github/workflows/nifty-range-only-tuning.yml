@@ -139,6 +139,35 @@ jobs:
             --tuning-report models/tuning_artifacts/range_only_report.json \
             --output-dir models/artifacts
 
+      - name: Smoke-test fitted Range bundle on latest verified archive features
+        run: |
+          python - <<'PY'
+          import json
+          import joblib
+          import numpy as np
+          from pathlib import Path
+          from scripts.range_model_bundle import predict_range_bundle
+          from scripts.train_nifty_four_models import build_latest_inference_features
+
+          checkpoint = json.loads(Path("data/historical_audit/checkpoint.json").read_text())
+          rows = checkpoint["features"]
+          latest_date = max(rows)
+          features = build_latest_inference_features(rows)
+          bundle = joblib.load("models/artifacts/nifty_range_candidate.joblib")
+          forecast = predict_range_bundle(bundle, features)
+          values = np.asarray([
+              forecast["low_return"], forecast["high_return"], forecast["close_return"]
+          ], dtype=float)
+          assert np.isfinite(values).all()
+          assert -1.0 < forecast["low_return"] < forecast["high_return"]
+          assert forecast["low_return"] <= forecast["close_return"] <= forecast["high_return"]
+          print("Range bundle inference smoke test: PASS")
+          print("Forecast origin:", latest_date)
+          print("Feature count:", len(features))
+          print("Calibrated alpha:", bundle["calibration_alpha"])
+          print("Predicted next-session low/high return:", forecast["low_return"], forecast["high_return"])
+          PY
+
       - name: Verify Range candidate bundle promotion lock
         run: |
           python - <<'PY'
