@@ -136,6 +136,18 @@ def engine_models():
     }
 
 
+@app.get("/api/seller-intelligence/history")
+def seller_intelligence_history(before: str, limit: int = 22):
+    """Return prior daily seller snapshots for the next 5/22-session calculation."""
+    try:
+        records = database.get_seller_context_history(before, limit)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="before must use YYYY-MM-DD.")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Seller context history is temporarily unavailable.")
+    return {"status": "ready" if records else "empty", "records": records}
+
+
 @app.get("/api/seller-intelligence/latest")
 def seller_intelligence_latest():
     """Return the latest daily seller map and its precomputed 5/22-session context."""
