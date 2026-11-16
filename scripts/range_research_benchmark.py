@@ -229,7 +229,22 @@ def _conformal_adjustment(
     X_calibration: pd.DataFrame,
     alpha: float = ALPHA,
 ) -> float:
-    lower, upper, _ = _base_bounds(predictions)
+    actual = np.asarray(actual, dtype=float)
+    prediction_arrays = tuple(np.asarray(values, dtype=float).reshape(-1) for values in predictions)
+    if actual.ndim != 2 or actual.shape[1] != 3:
+        raise ValueError("Conformal calibration targets must have [low, high, close] columns")
+    row_count = len(actual)
+    if row_count == 0 or len(X_calibration) != row_count:
+        raise ValueError("Conformal calibration features and targets must be non-empty and aligned")
+    if any(len(values) != row_count for values in prediction_arrays):
+        raise ValueError("Conformal calibration predictions are not aligned with targets")
+    if not np.isfinite(actual).all() or any(not np.isfinite(values).all() for values in prediction_arrays):
+        raise ValueError("Conformal calibration contains non-finite values")
+    if np.any(actual[:, 0] <= -1.0) or np.any(actual[:, 0] > actual[:, 2]) or np.any(actual[:, 2] > actual[:, 1]):
+        raise ValueError("Conformal calibration targets violate OHLC return ordering")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("Conformal calibration alpha must be between zero and one")
+    lower, upper, _ = _base_bounds(prediction_arrays)
     # Normalize the joint nonconformity score by forecast-origin volatility.
     # This lets the calibration margin expand on volatile sessions and contract
     # on quiet sessions, using only information known at each forecast origin.
@@ -243,8 +258,8 @@ def _conformal_adjustment(
         np.zeros(len(actual), dtype=float),
     )) / calibration_scale
     n = len(scores)
-    if n == 0 or not 0.0 < alpha < 1.0 or not np.isfinite(scores).all():
-        raise ValueError("Invalid conformal calibration scores or alpha")
+    if not np.isfinite(scores).all():
+        raise ValueError("Invalid conformal calibration scores")
     rank = min(n, int(np.ceil((n + 1) * (1.0 - alpha))))
     return float(max(0.0, np.sort(scores)[max(0, rank - 1)]))
 
