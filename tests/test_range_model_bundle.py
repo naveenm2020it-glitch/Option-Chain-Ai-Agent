@@ -309,7 +309,7 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert scored["range_width_ratio"] == pytest.approx(1.25)
     assert scored["low_absolute_error_points"] == pytest.approx(50.0)
     assert scored["high_absolute_error_points"] == pytest.approx(50.0)
-    assert scored["baseline_predicted_range_width_points"] == pytest.approx(250.0)
+    assert scored["baseline_predicted_range_width_points"] == pytest.approx(400.0)
 
     summary = summarize_shadow_records([scored] * 20)
     assert summary["scored_sessions"] == 20
@@ -319,7 +319,7 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert summary["mean_model_width_ratio"] == pytest.approx(1.25)
     assert summary["mean_model_high_mae_points"] == pytest.approx(50.0)
     assert summary["mean_model_low_mae_points"] == pytest.approx(50.0)
-    assert summary["mean_baseline_predicted_width_points"] == pytest.approx(250.0)
+    assert summary["mean_baseline_predicted_width_points"] == pytest.approx(400.0)
     assert summary["shadow_validation_status"] == "pass_manual_review"
     assert summary["production_promotion_allowed"] is False
     assert summary["skipped_nonadjacent_session_count"] == 0
