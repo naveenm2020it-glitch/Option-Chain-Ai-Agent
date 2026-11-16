@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f2edf3"><title>NIFTY 50 Intelligence — Seller Intelligence</title>
-<link rel="stylesheet" href="/static/style.css?v=20261114-chain1">
+<link rel="stylesheet" href="/static/style.css?v=seller-levels-v1">
 </head>
 <body>
 <main class="app-shell" id="top">
@@ -52,7 +52,7 @@
     <div class="section-title sub-feature-title"><div><p class="eyebrow">SELLER INTELLIGENCE</p><h2>Writing strength &amp; levels</h2></div><span class="soft-tag">Evidence</span></div>
     <div class="feature-grid">
       <article class="feature-card"><div class="feature-heading"><span class="metric-icon peach">⇄</span><div><strong>Seller strength</strong><small>CE vs PE writing balance</small></div></div><div class="strength-track"><span></span><span></span></div><div class="feature-pair"><b>CE —</b><b>PE —</b></div><p>Waiting for validated option-chain data.</p></article>
-      <article class="feature-card"><div class="feature-heading"><span class="metric-icon lilac">⌖</span><div><strong>Support &amp; resistance</strong><small>Important NIFTY levels</small></div></div><div class="level-line"><span>Resistance</span><b>—</b></div><div class="level-line"><span>Spot reference</span><b>—</b></div><div class="level-line"><span>Support</span><b>—</b></div><p>Levels appear after same-session data validation.</p></article>
+      <article class="feature-card"><div class="feature-heading"><span class="metric-icon lilac">⌖</span><div><strong>Support &amp; resistance</strong><small>Important NIFTY levels</small></div></div><div class="level-line"><span>Resistance (CE)</span><b id="seller-resistance-levels">—</b></div><div class="level-line"><span>Spot reference</span><b id="seller-spot-reference">—</b></div><div class="level-line"><span>Support (PE)</span><b id="seller-support-levels">—</b></div><p id="seller-persistence-note">5-session / 22-session seller comparison is awaiting validated data.</p><p id="seller-exit-zones">Seller exit and squeeze-risk zones: —</p></article>
       <article class="feature-card"><div class="feature-heading"><span class="metric-icon yellow">◉</span><div><strong>Seller risk meter</strong><small>Trap and volatility risk</small></div></div><div class="risk-track"><i></i><i></i><i></i></div><div class="risk-caption"><span>Low</span><span>Medium</span><span>High</span></div><strong class="feature-status">NOT YET RATED</strong><p>No risk score until required inputs are available.</p></article>
       <article class="feature-card"><div class="feature-heading"><span class="metric-icon mint">↔</span><div><strong>Prediction vs actual</strong><small>Previous call compared with next session</small></div></div><div class="compare-grid"><div><small>Previous prediction</small><b>—</b></div><div><small>Actual outcome</small><b>—</b></div></div><p>Daily predictions must be saved and evaluated first.</p></article>
       <article class="feature-card alert-feature"><div class="feature-heading"><span class="metric-icon peach">!</span><div><strong>No-trade alert</strong><small>Protect seller capital in uncertain conditions</small></div></div><strong class="feature-status">WAITING FOR DATA</strong><p>If data quality fails, models conflict, or risk is high, the engine will prefer NO TRADE.</p></article>
@@ -162,5 +162,5 @@
 </main>
 <nav class="bottom-nav" aria-label="Main navigation"><a class="active" href="#top"><span>◉</span>Overview</a><a href="#option-chain"><span>▤</span>Chain</a><a href="#analysis"><span>⌁</span>AI</a><a href="#history"><span>▦</span>History</a><a href="#reports"><span>▧</span>Reports</a></nav>
 <button class="floating-action" id="quick-refresh" aria-label="Refresh data">↻</button>
-<script src="/static/app.js?v=20261114-chain1"></script>
+<script src="/static/app.js?v=seller-levels-v1"></script>
 </body></html>
