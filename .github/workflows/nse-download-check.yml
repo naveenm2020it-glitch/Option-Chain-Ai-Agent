@@ -71,11 +71,11 @@ jobs:
                 owner, repo, run_id: run.id, per_page: 100
               });
               const artifact = result.data.artifacts.find(item =>
-                item.name === \`nifty-range-candidate-\${run.id}\` && !item.expired
+                item.name === `nifty-range-candidate-${run.id}` && !item.expired
               );
               if (artifact) {
                 core.setOutput("run_id", String(run.id));
-                core.info(\`Using Range candidate artifact from run \${run.id}\`);
+                core.info(`Using Range candidate artifact from run ${run.id}`);
                 return;
               }
             }
@@ -126,7 +126,7 @@ jobs:
               );
               if (artifact) {
                 core.setOutput("run_id", String(run.id));
-                core.info(\`Restoring Range shadow state from run \${run.id}\`);
+                core.info(`Restoring Range shadow state from run ${run.id}`);
                 return;
               }
             }
