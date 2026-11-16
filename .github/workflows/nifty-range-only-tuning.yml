@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "scripts/tune_nifty_range_only.py"
+      - "scripts/range_research_benchmark.py"
       - "scripts/tune_nifty_four_models.py"
       - "scripts/train_nifty_four_models.py"
       - "requirements-four-models.txt"
@@ -109,6 +110,8 @@ jobs:
           print("Selected config:", report["range"]["selected_config"])
           print("CV pinball:", report["range"]["selected_cv_combined_pinball"])
           print("Baseline CV pinball:", report["range"]["baseline_cv_combined_pinball"])
+          print("CV Winkler improvement (%):", report["range"]["cv_winkler_improvement_pct"])
+          print("CV full-range coverage:", report["range"]["cv_full_range_coverage"])
           print("Holdout diagnostic beats baseline:", report["range"]["holdout_diagnostic_beats_baseline"])
           print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
           PY
