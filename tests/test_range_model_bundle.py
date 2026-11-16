@@ -237,3 +237,91 @@ def test_current_nse_feature_extraction_blocks_missing_critical_context(tmp_path
     )
     with pytest.raises(ValueError, match="participant_volume_data_available"):
         shadow.extract_current_feature_row(tmp_path)
+
+
+def test_run_shadow_creates_forecast_with_verified_manifest_and_zero_b2(tmp_path, monkeypatch):
+    rows = {}
+    start = date(2024, 1, 1)
+    for index in range(494):
+        day = (start + timedelta(days=index)).isoformat()
+        close = 20000.0 + index * 2.0
+        rows[day] = {
+            "session_date": day,
+            "feature_schema_version": shadow.FEATURE_SCHEMA_VERSION,
+            "features": {
+                "spot_close": close,
+                "spot_low": close - 80.0,
+                "spot_high": close + 90.0,
+            },
+            "contracts": [],
+        }
+    origin_date = max(rows)
+    next_date = (date.fromisoformat(origin_date) + timedelta(days=1)).isoformat()
+    current_row = {
+        "session_date": next_date,
+        "feature_schema_version": shadow.FEATURE_SCHEMA_VERSION,
+        "features": {
+            "spot_close": 21000.0,
+            "spot_low": 20900.0,
+            "spot_high": 21100.0,
+        },
+        "contracts": [],
+    }
+
+    checkpoint_path = tmp_path / "checkpoint.json"
+    checkpoint_path.write_text(__import__("json").dumps({"features": rows}), encoding="utf-8")
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    bundle_dir = tmp_path / "models"
+    bundle_dir.mkdir()
+    bundle_path = bundle_dir / "nifty_range_candidate.joblib"
+    bundle_path.write_bytes(b"verified test candidate")
+    candidate = {
+        "schema_version": 1,
+        "candidate": {"name": "test_range"},
+        "feature_names": ["feature_a"],
+        "calibration_alpha": 0.10,
+    }
+    checksum = __import__("hashlib").sha256(bundle_path.read_bytes()).hexdigest()
+    manifest = {
+        "status": "range_research_candidate_built",
+        "forward_shadow_validation_required": True,
+        "deployment_ready": False,
+        "production_promotion_allowed": False,
+        "archive_sessions": 494,
+        "archive_audit_pass": True,
+        "context_repair_pass": True,
+        "feature_count": 1,
+        "calibration_alpha": 0.10,
+        "model_sha256": checksum,
+    }
+    (bundle_dir / "range_candidate_manifest.json").write_text(
+        __import__("json").dumps(manifest), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(shadow, "extract_current_feature_row", lambda _: current_row)
+    monkeypatch.setattr(shadow, "build_latest_inference_features", lambda _: {"feature_a": 1.0})
+    monkeypatch.setattr(shadow.joblib, "load", lambda _: candidate)
+    monkeypatch.setattr(
+        shadow,
+        "predict_range_bundle",
+        lambda *_: {
+            "low_return": -0.01,
+            "high_return": 0.01,
+            "close_return": 0.0,
+            "conformal_margin_return": 0.001,
+        },
+    )
+
+    state_path = tmp_path / "range_shadow_state.json"
+    output_path = tmp_path / "range_shadow_report.json"
+    report = shadow.run_shadow(
+        checkpoint_path, reports_dir, bundle_path, state_path, output_path
+    )
+    state = __import__("json").loads(state_path.read_text(encoding="utf-8"))
+
+    assert report["status"] == "forecast_created"
+    assert report["b2_reads"] == 0 and report["b2_writes"] == 0
+    assert report["shadow_validation_status"] == "collecting"
+    assert state["pending_forecast"]["baseline"]["name"] == "rolling_22_session_empirical_quantile"
+    assert state["pending_forecast"]["calibration_alpha"] == 0.10
