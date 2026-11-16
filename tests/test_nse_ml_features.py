@@ -36,9 +36,9 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=Fals
     )
     index_csv = index_header + "\nNIFTY 50,12-Nov-2026,24900,25100,24850,25000,100,0.4\nINDIA VIX,12-Nov-2026,13,14,12,13.5,0.5,3.8"
     if context_title_rows:
-        participant_oi = "Participant-wise Open Interest\\n" + participant_oi
-        participant_volume = "Participant-wise Volume\\n" + participant_volume
-        index_csv = "Daily Index Close Report\\n" + index_csv
+        participant_oi = "Participant-wise Open Interest\n" + participant_oi
+        participant_volume = "Participant-wise Volume\n" + participant_volume
+        index_csv = "Daily Index Close Report\n" + index_csv
     delta_csv = "Date,Symbol,Expiry Day,Strike Price,Option Type,Delta Factor\n2026-11-12,NIFTY,24-Nov-2026,25000,CE,0.52\n2026-11-12,NIFTY,24-Nov-2026,25100,CE,0.45\n2026-11-12,NIFTY,24-Nov-2026,25000,PE,-0.48\n2026-11-12,NIFTY,24-Nov-2026,25100,PE,-0.55"
     manifest = {
         "results": {
