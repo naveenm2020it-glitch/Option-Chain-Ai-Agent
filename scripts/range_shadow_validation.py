@@ -175,6 +175,12 @@ def _interval_metrics(
         "close_inside_predicted_range": bool(close_inside),
         "winkler_interval_score_return_space": float(winkler),
         "interval_width_return": float(interval_width),
+        "predicted_range_width_points": float(interval_width * origin_close),
+        "actual_range_width_points": float((actual_high_return - actual_low_return) * origin_close),
+        "range_width_difference_points": float((interval_width - (actual_high_return - actual_low_return)) * origin_close),
+        "range_width_ratio": float(interval_width / max(actual_high_return - actual_low_return, 1e-12)),
+        "low_signed_error_points": float((predicted_low_return - actual_low_return) * origin_close),
+        "high_signed_error_points": float((predicted_high_return - actual_high_return) * origin_close),
         "low_absolute_error_points": abs(predicted_low_return - actual_low_return) * origin_close,
         "high_absolute_error_points": abs(predicted_high_return - actual_high_return) * origin_close,
         "close_absolute_error_points": abs(predicted_close_return - actual_close_return) * origin_close,
@@ -320,6 +326,12 @@ def score_range_forecast(
         "low_absolute_error_points": model_metrics["low_absolute_error_points"],
         "high_absolute_error_points": model_metrics["high_absolute_error_points"],
         "close_absolute_error_points": model_metrics["close_absolute_error_points"],
+        "low_signed_error_points": model_metrics["low_signed_error_points"],
+        "high_signed_error_points": model_metrics["high_signed_error_points"],
+        "predicted_range_width_points": model_metrics["predicted_range_width_points"],
+        "actual_range_width_points": model_metrics["actual_range_width_points"],
+        "range_width_difference_points": model_metrics["range_width_difference_points"],
+        "range_width_ratio": model_metrics["range_width_ratio"],
         "winkler_interval_score_return_space": model_metrics["winkler_interval_score_return_space"],
         "mean_interval_width_return": model_metrics["interval_width_return"],
         "calibration_alpha": alpha,
@@ -347,6 +359,10 @@ def score_range_forecast(
             "baseline_low_absolute_error_points": baseline_metrics["low_absolute_error_points"],
             "baseline_high_absolute_error_points": baseline_metrics["high_absolute_error_points"],
             "baseline_close_absolute_error_points": baseline_metrics["close_absolute_error_points"],
+            "baseline_predicted_range_width_points": baseline_metrics["predicted_range_width_points"],
+            "baseline_actual_range_width_points": baseline_metrics["actual_range_width_points"],
+            "baseline_range_width_difference_points": baseline_metrics["range_width_difference_points"],
+            "baseline_range_width_ratio": baseline_metrics["range_width_ratio"],
             "baseline_winkler_interval_score_return_space": baseline_metrics["winkler_interval_score_return_space"],
             "baseline_interval_width_return": baseline_metrics["interval_width_return"],
             "model_beats_baseline_winkler": (
@@ -400,6 +416,15 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "model_winkler_win_rate": None,
             "mean_model_close_mae_points": None,
             "mean_baseline_close_mae_points": None,
+            "mean_model_high_mae_points": None,
+            "mean_model_low_mae_points": None,
+            "mean_model_predicted_width_points": None,
+            "mean_actual_width_points": None,
+            "mean_model_width_difference_points": None,
+            "mean_model_width_ratio": None,
+            "mean_baseline_predicted_width_points": None,
+            "mean_baseline_width_difference_points": None,
+            "mean_baseline_width_ratio": None,
         })
         return summary
 
@@ -414,6 +439,12 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_model_close_mae_points": float(np.mean([
             item["close_absolute_error_points"] for item in scored
         ])),
+        "mean_model_high_mae_points": float(np.mean([item["high_absolute_error_points"] for item in scored])),
+        "mean_model_low_mae_points": float(np.mean([item["low_absolute_error_points"] for item in scored])),
+        "mean_model_predicted_width_points": float(np.mean([item["predicted_range_width_points"] for item in scored])),
+        "mean_actual_width_points": float(np.mean([item["actual_range_width_points"] for item in scored])),
+        "mean_model_width_difference_points": float(np.mean([item["range_width_difference_points"] for item in scored])),
+        "mean_model_width_ratio": float(np.mean([item["range_width_ratio"] for item in scored])),
     })
     if comparable:
         summary.update({
@@ -429,6 +460,9 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_close_inside_rate": float(np.mean([
                 item["baseline_close_inside_predicted_range"] for item in comparable
             ])),
+            "mean_baseline_predicted_width_points": float(np.mean([item["baseline_predicted_range_width_points"] for item in comparable])),
+            "mean_baseline_width_difference_points": float(np.mean([item["baseline_range_width_difference_points"] for item in comparable])),
+            "mean_baseline_width_ratio": float(np.mean([item["baseline_range_width_ratio"] for item in comparable])),
         })
     else:
         summary.update({
@@ -436,6 +470,9 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_low_endpoint_coverage_rate": None,
             "baseline_high_endpoint_coverage_rate": None,
             "baseline_close_inside_rate": None,
+            "mean_baseline_predicted_width_points": None,
+            "mean_baseline_width_difference_points": None,
+            "mean_baseline_width_ratio": None,
         })
     if comparable:
         model_winkler = np.asarray([
