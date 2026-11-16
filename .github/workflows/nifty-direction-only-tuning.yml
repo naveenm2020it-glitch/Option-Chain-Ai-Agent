@@ -1,0 +1,139 @@
+name: NIFTY Direction-Only Research Tuning
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/tune_nifty_direction_only.py"
+      - "tests/test_direction_research.py"
+      - "scripts/train_nifty_four_models.py"
+      - "requirements-four-models.txt"
+      - ".github/workflows/nifty-direction-only-tuning.yml"
+  push:
+    branches:
+      - "model-tuning/**"
+    paths:
+      - "scripts/tune_nifty_direction_only.py"
+      - "tests/test_direction_research.py"
+      - "scripts/train_nifty_four_models.py"
+      - "requirements-four-models.txt"
+      - ".github/workflows/nifty-direction-only-tuning.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nifty-direction-only-tuning
+  cancel-in-progress: true
+
+jobs:
+  direction-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore verified historical audit (GitHub artifact only)
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-historical-audit-43691154808
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43691154808
+          path: data
+
+      - name: Restore repaired 494-session archive (GitHub artifact only)
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-context-repair-43805612526
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43805612526
+          path: data
+
+      - name: Verify archive integrity and zero-B2 policy
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          checkpoint = json.loads(Path("data/historical_audit/checkpoint.json").read_text())
+          audit = json.loads(Path("data/historical_audit/coverage.json").read_text())
+          repair = json.loads(Path("data/context_repair/context_repair_report.json").read_text())
+          assert len(checkpoint.get("features", {})) == 494
+          assert audit.get("model_training_allowed") is True
+          assert audit.get("verified_session_count") == 494
+          assert repair.get("training_allowed") is True
+          assert repair.get("repair_complete") is True
+          assert repair.get("date_alignment_pass") is True
+          assert repair.get("feature_validation", {}).get("pass") is True
+          assert repair.get("missing_context_dates") == {}
+          assert repair.get("b2_requests") == 0
+          print("494/494 archive and repair gates PASS; B2 calls: 0")
+          PY
+
+      - name: Install pinned ML dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-four-models.txt
+
+      - name: Run Direction benchmark unit tests
+        run: |
+          python -m compileall -q scripts/tune_nifty_direction_only.py
+          python -m pytest -q tests/test_direction_research.py tests/test_nifty_four_models.py
+
+      - name: Tune Direction model only
+        run: |
+          python scripts/tune_nifty_direction_only.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --audit-report data/historical_audit/coverage.json \
+            --repair-report data/context_repair/context_repair_report.json \
+            --output models/tuning_artifacts/direction_only_report.json \
+            --bundle models/artifacts/nifty_direction_candidate.joblib
+
+      - name: Enforce Direction research-only and B2-free gates
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("models/tuning_artifacts/direction_only_report.json").read_text())
+          bundle = Path("models/artifacts/nifty_direction_candidate.joblib")
+          assert report["status"] == "direction_only_research_complete"
+          assert report["model_group"] == "Direction"
+          assert report["other_models_tuned"] is False
+          assert report["b2_reads"] == 0 and report["b2_writes"] == 0
+          assert report["deployment_ready"] is False
+          assert report["production_promotion_allowed"] is False
+          assert bundle.is_file()
+          assert report["candidate_bundle_sha256"]
+          assert min(report["class_counts"].values()) >= 30
+          print("Direction-only research run: PASS")
+          print("Selected threshold:", report["selected_threshold"])
+          print("Selected candidate:", report["selected_candidate"])
+          print("CV beats prior baseline:", report["selected_cv_beats_prior_baseline"])
+          print("CV mean metrics:", json.dumps(report["selected_cv"]["mean"], sort_keys=True))
+          print("Historical diagnostic:", json.dumps(report["historical_diagnostic"], sort_keys=True))
+          print("Historical diagnostic baseline:", json.dumps(report["historical_diagnostic_prior_baseline"], sort_keys=True))
+          print("Production promotion: BLOCKED")
+          print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
+          PY
+
+      - name: Publish Direction-only research report and candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-direction-only-${{ github.run_id }}
+          path: |
+            models/tuning_artifacts/direction_only_report.json
+            models/artifacts/nifty_direction_candidate.joblib
+          if-no-files-found: warn
+          retention-days: 90
