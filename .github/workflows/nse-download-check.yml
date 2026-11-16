@@ -35,8 +35,8 @@ jobs:
       - name: Install application dependencies
         run: python -m pip install -r requirements.txt
 
-      # The archive writer is independent from Range shadow validation.
-      # Missing credentials or exhausted B2 quota must not block forward testing.
+      # Keep B2 uploads opt-in while the free transaction quota is constrained.
+      # Range forward-shadow state and checkpoint are stored as GitHub artifacts.
       - name: Check durable B2 configuration
         id: b2-config
         continue-on-error: true
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload durable archive to Backblaze B2
         id: archive-upload
-        if: ${{ steps.b2-config.outcome == 'success' && steps.nse-download.outcome == 'success' }}
+        if: ${{ vars.ENABLE_DAILY_B2_ARCHIVE == 'true' && steps.b2-config.outcome == 'success' && steps.nse-download.outcome == 'success' }}
         continue-on-error: true
         run: |
           COLLECTION_DATE="$(python -c 'import json; print(json.load(open("data/nse_reports/manifest.json"))["requested_end_date"])')"
