@@ -75,6 +75,9 @@ def main() -> None:
         "feature_count": len(feature_names),
         "candidate": candidate,
         "selection_cv": range_result.get("selected_cv", {}),
+        "selected_minimum_fold_full_range_coverage": range_result.get(
+            "selected_minimum_fold_full_range_coverage"
+        ),
         "cv_beats_baseline": True,
         "estimator_fit_samples": bundle["fit_samples"],
         "conformal_calibration_samples": bundle["calibration_samples"],
