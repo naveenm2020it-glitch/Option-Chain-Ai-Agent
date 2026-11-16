@@ -61,7 +61,13 @@ def snapshot_from_contracts(session_date: str, spot: float, contracts: list[dict
         change = float(item.get("change_oi") or 0)
         volume = max(0.0, float(item.get("volume") or 0))
         premium = item.get("premium_return")
-        premium_pct = float(premium) * 100 if premium is not None else None
+        previous_close = float(item.get("previous_close") or 0)
+        close = float(item.get("close") or 0)
+        premium_pct = (
+            float(premium) * 100
+            if premium is not None and previous_close > 0 and close > 0
+            else None
+        )
         row = grouped[strike].setdefault(side, [])
         row.append((oi, change, volume, premium_pct))
     chain = []
