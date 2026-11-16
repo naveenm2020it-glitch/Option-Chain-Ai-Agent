@@ -154,6 +154,82 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
             result["already_present"] + result["downloaded"]
         ) / total if total else 0.0
     report["coverage"] = coverage
+
+    # Validate that every imported report is tied to the same exchange session
+    # and that its raw bytes still match the recorded SHA-256 sidecar.
+    date_alignment_errors = []
+    provenance_verified = {key: 0 for key in SOURCES}
+    provenance_from_verified_archive = {key: 0 for key in SOURCES}
+    feature_validation_errors = []
+    for day, row in sorted(features.items()):
+        if row.get("session_date") != day:
+            feature_validation_errors.append({"date": day, "error": "session_date_key_mismatch"})
+        if row.get("feature_schema_version") != 3:
+            feature_validation_errors.append({"date": day, "error": "feature_schema_version_mismatch"})
+        row_values = row.get("features", {})
+        if float(row_values.get("spot_close", 0.0)) <= 0:
+            feature_validation_errors.append({"date": day, "error": "invalid_or_missing_spot_close"})
+        if float(row_values.get("ce_contract_count", 0.0)) <= 0 or float(row_values.get("pe_contract_count", 0.0)) <= 0:
+            feature_validation_errors.append({"date": day, "error": "NIFTY_CE_PE_contract_coverage_missing"})
+        source_meta_map = row.get("context_sources", {})
+        specs_for_day = {item[0]: item for item in report_specs(date.fromisoformat(day))}
+        for source_key, report_name in SOURCES.items():
+            availability_key = {
+                "index_ohlc": "index_data_available",
+                "participant_oi": "participant_oi_data_available",
+                "participant_volume": "participant_volume_data_available",
+            }[source_key]
+            available = float(row_values.get(availability_key, 0.0)) >= 1.0
+            source_meta = source_meta_map.get(source_key)
+            if not available:
+                continue
+            if not source_meta:
+                # This value was already present in the integrity-verified
+                # historical archive, not fabricated by this repair job.
+                provenance_from_verified_archive[source_key] += 1
+                continue
+            spec = specs_for_day[report_name]
+            expected_path = spec[1]
+            expected_url = (
+                "https://nsearchives.nseindia.com" + expected_path
+                if expected_path.startswith("/archives/")
+                else "https://nsearchives.nseindia.com/content" + expected_path
+            )
+            if source_meta.get("report_date") != day or source_meta.get("url") != expected_url:
+                date_alignment_errors.append({
+                    "date": day, "source": source_key,
+                    "recorded_date": source_meta.get("report_date"),
+                    "url_matches_expected_date": source_meta.get("url") == expected_url,
+                })
+                continue
+            raw_name = Path(str(source_meta.get("file", ""))).name
+            raw_path = output_dir / raw_name
+            sidecar_path = output_dir / f"{raw_name}.sha256"
+            if not raw_path.is_file() or not sidecar_path.is_file():
+                date_alignment_errors.append({
+                    "date": day, "source": source_key, "error": "raw_report_or_sha256_sidecar_missing"
+                })
+                continue
+            actual_hash = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            sidecar_hash = sidecar_path.read_text(encoding="utf-8").strip()
+            recorded_hash = str(source_meta.get("sha256", ""))
+            if actual_hash != recorded_hash or sidecar_hash != recorded_hash:
+                date_alignment_errors.append({
+                    "date": day, "source": source_key, "error": "sha256_mismatch"
+                })
+                continue
+            provenance_verified[source_key] += 1
+
+    report["date_alignment_errors"] = date_alignment_errors
+    report["date_alignment_pass"] = not date_alignment_errors
+    report["provenance_verified"] = provenance_verified
+    report["provenance_from_verified_archive"] = provenance_from_verified_archive
+    report["feature_validation"] = {
+        "validated_rows": total,
+        "error_count": len(feature_validation_errors),
+        "errors": feature_validation_errors[:100],
+        "pass": total == 494 and not feature_validation_errors,
+    }
     report["missing_context_dates"] = {
         key: value["missing_dates"]
         for key, value in report["source_results"].items()
@@ -194,11 +270,14 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
         and bool(audit.get("model_training_allowed"))
     )
     core_gate = all(value >= 0.95 for value in core_market_coverage.values())
-    report["training_allowed"] = bool(report["repair_complete"] and archive_gate and core_gate)
+    report["training_allowed"] = bool(
+        report["repair_complete"] and archive_gate and core_gate
+        and report["date_alignment_pass"] and report["feature_validation"]["pass"]
+    )
     report["training_gate_reason"] = (
-        "PASS: historical archive and core NIFTY data validated; optional context gaps remain explicitly flagged."
+        "PASS: archive integrity, 494 feature rows, date alignment and core NIFTY data validated; any optional context gaps remain explicitly flagged."
         if report["training_allowed"] else
-        f"BLOCKED: repair_complete={report['repair_complete']}, archive_gate={archive_gate}, core_gate={core_gate}"
+        f"BLOCKED: repair_complete={report['repair_complete']}, archive_gate={archive_gate}, core_gate={core_gate}, date_alignment_pass={report['date_alignment_pass']}, feature_validation_pass={report['feature_validation']['pass']}"
     )
     report["repair_status"] = (
         "complete_no_context_gaps" if report["optional_context_ready"]
@@ -219,6 +298,9 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
         "optional_context_ready": report["optional_context_ready"],
         "training_allowed": report["training_allowed"],
         "training_gate_reason": report["training_gate_reason"],
+        "date_alignment_pass": report["date_alignment_pass"],
+        "feature_validation": report["feature_validation"],
+        "provenance_verified": provenance_verified,
         "missing_context_dates": {k: len(v) for k, v in report["missing_context_dates"].items()},
         "b2_requests": 0,
     }, indent=2), flush=True)
