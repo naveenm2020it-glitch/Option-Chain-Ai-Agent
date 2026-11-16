@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: nifty-context-repair
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   repair:
@@ -75,6 +75,35 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --output-dir data/context_repair \
             --delay-seconds "${{ inputs.delay_seconds || '0.35' }}"
+
+      - name: Training readiness gate (no gap imputation)
+        if: success()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("data/historical_audit")
+          repair = json.loads(Path("data/context_repair/context_repair_report.json").read_text())
+          audit = json.loads((root / "coverage.json").read_text())
+          checkpoint = json.loads((root / "checkpoint.json").read_text())
+          assert repair.get("repair_complete") is True, "Repair attempts are incomplete"
+          assert repair.get("date_count") == 494, "Repair date count is not 494"
+          assert repair.get("training_allowed") is True, repair.get("training_gate_reason")
+          assert audit.get("status") == "archive_integrity_complete_calendar_reconciled"
+          assert audit.get("verified_session_count") == 494
+          assert audit.get("feature_session_count") == 494
+          assert audit.get("feature_error_count") == 0
+          assert len(checkpoint.get("features", {})) == 494
+          print("TRAINING GATE: PASS")
+          print("Optional context gaps are reported, not imputed.")
+          print(json.dumps({
+              "context_coverage": repair.get("coverage"),
+              "core_market_coverage": repair.get("core_market_coverage"),
+              "optional_context_ready": repair.get("optional_context_ready"),
+              "reported_gaps": repair.get("missing_context_dates"),
+              "b2_requests": repair.get("b2_requests", 0)
+          }, indent=2))
+          PY
 
       - name: Publish repaired checkpoint, source files and coverage report
         if: always()
