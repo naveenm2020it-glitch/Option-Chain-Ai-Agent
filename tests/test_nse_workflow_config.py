@@ -74,3 +74,16 @@ def test_daily_range_shadow_github_script_template_literals_are_valid():
     assert chr(92) + "${" not in workflow
     assert "item.name === `nifty-range-candidate-${run.id}`" in workflow
     assert "core.info(`Using Range candidate artifact from run ${run.id}`)" in workflow
+
+
+def test_range_only_workflow_smoke_tests_the_real_candidate_bundle():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "nifty-range-only-tuning.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "Smoke-test fitted Range bundle on latest verified archive features" in workflow
+    assert "predict_range_bundle(bundle, features)" in workflow
+    assert "deployment_ready" in workflow
