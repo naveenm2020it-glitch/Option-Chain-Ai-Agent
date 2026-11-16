@@ -198,13 +198,16 @@ def predict_range_bundle(
         raise ValueError("Range inference features contain missing or non-finite values")
 
     raw = _predict_base(bundle, frame)
-    lower, upper, close = _base_bounds(raw)
+    core_lower, core_upper, close = _base_bounds(raw)
     scale = _volatility_scale(frame)
     low_margin = low_adjustment * scale
     high_margin = high_adjustment * scale
-    lower = np.minimum(lower - low_margin, close)
-    upper = np.maximum(upper + high_margin, close)
+    lower = np.minimum(core_lower - low_margin, close)
+    upper = np.maximum(core_upper + high_margin, close)
     result = {
+        "core_low_return": float(core_lower[0]),
+        "core_high_return": float(core_upper[0]),
+        "core_close_return": float(close[0]),
         "low_return": float(lower[0]),
         "high_return": float(upper[0]),
         "close_return": float(close[0]),
