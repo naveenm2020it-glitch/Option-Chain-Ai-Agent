@@ -173,6 +173,9 @@ def test_seller_context_workflow_uses_verified_checkpoint_and_zero_b2_pipeline()
     assert "steps.checkpoint-verify.outcome == 'success'" in workflow
     assert "--checkpoint data/historical_audit/checkpoint.json" in workflow
     assert "seller_context" in workflow
+    assert "Fetch prior daily seller snapshots from PostgreSQL" in workflow
+    assert "--recent-history data/seller_context/prior_history.json" in workflow
+    assert "seller_context_daily" in (root / "database.py").read_text(encoding="utf-8")
     assert '"b2_reads": 0' in adapter
     assert '"b2_writes": 0' in adapter
     assert "last_5_sessions" in adapter
