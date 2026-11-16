@@ -140,10 +140,18 @@ jobs:
           assert diagnostic.get("b2_reads") == 0
           assert diagnostic.get("b2_writes") == 0
           assert diagnostic.get("deployment_ready") is False
+          for side in ("CE", "PE"):
+              stability = report["seller"][side].get("date_stability", {})
+              assert stability.get("holdout_dates", 0) > 0, f"{side} date-wise stability metrics missing"
+              assert 0.0 <= stability.get("date_win_rate", -1.0) <= 1.0
+              assert "date_stability_pass" in report["seller"][side]
 
           print("Tuning completed: PASS")
           print("Baseline checks:", json.dumps(report["baseline_checks"], sort_keys=True))
           print("Research validation PASS:", report["research_validation_pass"])
+          for side in ("CE", "PE"):
+              stability = report["seller"][side]["date_stability"]
+              print(f"{side} date win-rate: {stability['date_win_rate']:.3f}; stability gate: {report['seller'][side]['date_stability_pass']}")
           print("Direction diagnostic threshold:", diagnostic["direction"]["selected_volatility_multiplier_from_training_cv"])
           print("Range baselines:", json.dumps(diagnostic["range"], sort_keys=True))
           print("Deployment ready:", report["deployment_ready"])
