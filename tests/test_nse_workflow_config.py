@@ -58,3 +58,19 @@ def test_range_candidate_workflow_builds_bundle_only_after_cv_pass_and_locks_pro
     assert 'assert manifest["forward_shadow_validation_required"] is True' in workflow
     assert 'assert manifest["deployment_ready"] is False' in workflow
     assert 'assert manifest["production_promotion_allowed"] is False' in workflow
+
+
+def test_daily_range_shadow_github_script_template_literals_are_valid():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "nse-download-check.yml"
+    ).read_text(encoding="utf-8")
+
+    # The GitHub Script action executes these as JavaScript. A stray backslash
+    # before the template delimiter or interpolation marker breaks parsing.
+    assert chr(92) + "`" not in workflow
+    assert chr(92) + "${" not in workflow
+    assert "item.name === `nifty-range-candidate-${run.id}`" in workflow
+    assert "core.info(`Using Range candidate artifact from run ${run.id}`)" in workflow
