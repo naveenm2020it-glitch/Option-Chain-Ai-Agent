@@ -67,24 +67,85 @@ def _blend_probabilities(raw: np.ndarray, prior: np.ndarray, prior_weight: float
     return (1.0 - prior_weight) * raw + prior_weight * prior
 
 
-def _range_prediction(model, matrix: pd.DataFrame) -> np.ndarray:
-    prediction = np.asarray(model.predict(matrix), dtype=float)
-    # Preserve the physical relation low <= close <= high in the published range.
-    prediction[:, 0] = np.minimum(prediction[:, 0], prediction[:, 2])
-    prediction[:, 1] = np.maximum(prediction[:, 1], prediction[:, 2])
-    return prediction
+def _pinball_loss(actual: np.ndarray, predicted: np.ndarray, quantile: float) -> float:
+    error = actual - predicted
+    return float(np.mean(np.maximum(quantile * error, (quantile - 1.0) * error)))
 
 
-def _range_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
+def _quantile_estimator(alpha: float, config: dict[str, Any]):
+    from lightgbm import LGBMRegressor
+    return LGBMRegressor(
+        objective="quantile", alpha=alpha,
+        n_estimators=config["n_estimators"],
+        learning_rate=config["learning_rate"],
+        num_leaves=config["num_leaves"],
+        max_depth=config["max_depth"],
+        min_child_samples=config["min_child_samples"],
+        reg_lambda=config["reg_lambda"],
+        reg_alpha=config["reg_alpha"],
+        colsample_bytree=0.8, subsample=0.85, subsample_freq=1,
+        verbosity=-1, random_state=42, n_jobs=2,
+    )
+
+
+def _close_estimator(config: dict[str, Any]):
+    from lightgbm import LGBMRegressor
+    return LGBMRegressor(
+        objective="regression_l1",
+        n_estimators=config["n_estimators"],
+        learning_rate=config["learning_rate"],
+        num_leaves=config["num_leaves"],
+        max_depth=config["max_depth"],
+        min_child_samples=config["min_child_samples"],
+        reg_lambda=config["reg_lambda"],
+        reg_alpha=config["reg_alpha"],
+        colsample_bytree=0.8, subsample=0.85, subsample_freq=1,
+        verbosity=-1, random_state=42, n_jobs=2,
+    )
+
+
+def _range_interval_metrics(
+    actual: np.ndarray, lower_raw: np.ndarray, upper_raw: np.ndarray,
+    close_pred: np.ndarray, q_low: float, q_high: float,
+) -> dict[str, float]:
+    low_actual, high_actual, close_actual = actual[:, 0], actual[:, 1], actual[:, 2]
+    lower = np.minimum(lower_raw, close_pred)
+    upper = np.maximum(upper_raw, close_pred)
     return {
-        "combined_mae": float(np.mean(np.abs(actual - predicted))),
-        "low_return_mae": float(mean_absolute_error(actual[:, 0], predicted[:, 0])),
-        "high_return_mae": float(mean_absolute_error(actual[:, 1], predicted[:, 1])),
-        "close_return_mae": float(mean_absolute_error(actual[:, 2], predicted[:, 2])),
-        "close_inside_predicted_range_rate": float(np.mean(
-            (actual[:, 2] >= predicted[:, 0]) & (actual[:, 2] <= predicted[:, 1])
-        )),
+        "lower_pinball": _pinball_loss(low_actual, lower_raw, q_low),
+        "upper_pinball": _pinball_loss(high_actual, upper_raw, q_high),
+        "combined_pinball": _pinball_loss(low_actual, lower_raw, q_low) + _pinball_loss(high_actual, upper_raw, q_high),
+        "mean_interval_width": float(np.mean(upper - lower)),
+        "low_containment_rate": float(np.mean(low_actual >= lower)),
+        "high_containment_rate": float(np.mean(high_actual <= upper)),
+        "full_range_coverage": float(np.mean((low_actual >= lower) & (high_actual <= upper))),
+        "close_inside_predicted_range_rate": float(np.mean((close_actual >= lower) & (close_actual <= upper))),
+        "close_return_mae": float(mean_absolute_error(close_actual, close_pred)),
     }
+
+
+def _fit_range_quantiles(
+    X_train: pd.DataFrame, y_train: np.ndarray, X_eval: pd.DataFrame,
+    q_low: float, q_high: float, config: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    lower_model = _quantile_estimator(q_low, config).fit(X_train, y_train[:, 0])
+    upper_model = _quantile_estimator(q_high, config).fit(X_train, y_train[:, 1])
+    close_model = _close_estimator(config).fit(X_train, y_train[:, 2])
+    return (
+        np.asarray(lower_model.predict(X_eval), dtype=float),
+        np.asarray(upper_model.predict(X_eval), dtype=float),
+        np.asarray(close_model.predict(X_eval), dtype=float),
+    )
+
+
+def _constant_range_quantiles(
+    y_train: np.ndarray, length: int, q_low: float, q_high: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        np.full(length, np.quantile(y_train[:, 0], q_low), dtype=float),
+        np.full(length, np.quantile(y_train[:, 1], q_high), dtype=float),
+        np.full(length, np.median(y_train[:, 2]), dtype=float),
+    )
 
 
 def _seller_metrics(actual: np.ndarray, predicted: np.ndarray, dates: list[str]) -> dict[str, float]:
@@ -107,9 +168,9 @@ def _date_folds(dates: list[str], n_splits: int = 3):
         yield set(unique_dates[train_i]), set(unique_dates[valid_i])
 
 
-def tune_direction(X: pd.DataFrame, y: np.ndarray, train_end: int) -> dict[str, Any]:
+def tune_direction(X: pd.DataFrame, close_returns: np.ndarray, train_end: int) -> dict[str, Any]:
     X_train, X_hold = X.iloc[:train_end], X.iloc[train_end:]
-    y_train, y_hold = y[:train_end], y[train_end:]
+    returns_train, returns_hold = close_returns[:train_end], close_returns[train_end:]
     configs = [
         {"name": "lgbm_shallow_unweighted", "class_weight": None, "n_estimators": 100, "learning_rate": 0.025, "num_leaves": 3, "max_depth": 2, "min_child_samples": 25, "reg_lambda": 20.0, "reg_alpha": 3.0},
         {"name": "lgbm_shallow_balanced", "class_weight": "balanced", "n_estimators": 100, "learning_rate": 0.025, "num_leaves": 3, "max_depth": 2, "min_child_samples": 25, "reg_lambda": 20.0, "reg_alpha": 3.0},
@@ -119,117 +180,169 @@ def tune_direction(X: pd.DataFrame, y: np.ndarray, train_end: int) -> dict[str, 
         {"name": "lgbm_regularized_balanced", "class_weight": "balanced", "n_estimators": 180, "learning_rate": 0.02, "num_leaves": 7, "max_depth": 3, "min_child_samples": 45, "reg_lambda": 30.0, "reg_alpha": 5.0},
     ]
     blends = (0.0, 0.2, 0.4, 0.6)
-    results: list[dict[str, Any]] = []
+    thresholds = (0.0015, 0.0025, 0.0030, 0.0035, 0.0040)
     splitter = TimeSeriesSplit(n_splits=3)
-    baseline_folds = []
-    for tr, va in splitter.split(X_train):
-        if len(np.unique(y_train[tr])) < 3:
-            continue
-        baseline = DummyClassifier(strategy="prior").fit(X_train.iloc[tr], y_train[tr])
-        raw = _aligned_probabilities(baseline, X_train.iloc[va])
-        prior = np.bincount(y_train[tr], minlength=3).astype(float) / len(tr)
-        metrics = _direction_metrics(y_train[va], _blend_probabilities(raw, prior, 0.0))
-        baseline_folds.append(metrics)
-    baseline_cv = {
-        key: float(np.mean([row[key] for row in baseline_folds]))
-        for key in ("macro_f1", "multiclass_brier", "accuracy")
-    }
-    for config in configs:
-        fold_raw: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    threshold_results: list[dict[str, Any]] = []
+
+    for threshold in thresholds:
+        y_train = np.where(returns_train > threshold, 2, np.where(returns_train < -threshold, 0, 1)).astype(int)
+        y_hold = np.where(returns_hold > threshold, 2, np.where(returns_hold < -threshold, 0, 1)).astype(int)
+        baseline_folds = []
         for tr, va in splitter.split(X_train):
             if len(np.unique(y_train[tr])) < 3:
                 continue
-            model = _direction_estimator(config)
-            model.fit(X_train.iloc[tr], y_train[tr])
-            raw = _aligned_probabilities(model, X_train.iloc[va])
-            prior = np.bincount(y_train[tr], minlength=3).astype(float) / len(tr)
-            fold_raw.append((raw, prior, y_train[va]))
-        for blend in blends:
-            fold_metrics = [
-                _direction_metrics(actual, _blend_probabilities(raw, prior, blend))
-                for raw, prior, actual in fold_raw
-            ]
-            avg = {
-                key: float(np.mean([row[key] for row in fold_metrics]))
-                for key in ("macro_f1", "multiclass_brier", "accuracy")
-            }
-            results.append({
-                "config": config,
-                "prior_blend": blend,
-                "cv": avg,
-                "cv_score": avg["macro_f1"] - 0.25 * avg["multiclass_brier"],
-            })
-    if not results:
-        raise RuntimeError("Direction tuning could not form valid chronological folds")
-    selected = max(results, key=lambda item: item["cv_score"])
-    estimator = _direction_estimator(selected["config"])
-    estimator.fit(X_train, y_train)
-    prior = np.bincount(y_train, minlength=3).astype(float) / len(y_train)
-    hold_prob = _blend_probabilities(
-        _aligned_probabilities(estimator, X_hold), prior, selected["prior_blend"]
-    )
-    hold_metrics = _direction_metrics(y_hold, hold_prob)
-    baseline = DummyClassifier(strategy="prior").fit(X_train, y_train)
-    base_metrics = _direction_metrics(y_hold, _aligned_probabilities(baseline, X_hold))
-    beats = (
-        hold_metrics["macro_f1"] > base_metrics["macro_f1"]
-        and hold_metrics["multiclass_brier"] < base_metrics["multiclass_brier"]
+            baseline = DummyClassifier(strategy="prior").fit(X_train.iloc[tr], y_train[tr])
+            raw = _aligned_probabilities(baseline, X_train.iloc[va])
+            metrics = _direction_metrics(y_train[va], raw)
+            baseline_folds.append(metrics)
+        baseline_cv = {
+            key: float(np.mean([row[key] for row in baseline_folds]))
+            for key in ("macro_f1", "multiclass_brier", "accuracy")
+        }
+        candidates: list[dict[str, Any]] = []
+        for config in configs:
+            fold_raw: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+            for tr, va in splitter.split(X_train):
+                if len(np.unique(y_train[tr])) < 3:
+                    continue
+                model = _direction_estimator(config).fit(X_train.iloc[tr], y_train[tr])
+                raw = _aligned_probabilities(model, X_train.iloc[va])
+                prior = np.bincount(y_train[tr], minlength=3).astype(float) / len(tr)
+                fold_raw.append((raw, prior, y_train[va]))
+            for blend in blends:
+                fold_metrics = [
+                    _direction_metrics(actual, _blend_probabilities(raw, prior, blend))
+                    for raw, prior, actual in fold_raw
+                ]
+                avg = {
+                    key: float(np.mean([row[key] for row in fold_metrics]))
+                    for key in ("macro_f1", "multiclass_brier", "accuracy")
+                }
+                candidates.append({
+                    "config": config, "prior_blend": blend, "cv": avg,
+                    "cv_score": avg["macro_f1"] - 0.25 * avg["multiclass_brier"],
+                    "cv_beats_baseline": (
+                        avg["macro_f1"] > baseline_cv["macro_f1"]
+                        and avg["multiclass_brier"] < baseline_cv["multiclass_brier"]
+                    ),
+                })
+        feasible = [item for item in candidates if item["cv_beats_baseline"]]
+        pool = feasible if feasible else candidates
+        selected = max(pool, key=lambda item: item["cv_score"])
+        estimator = _direction_estimator(selected["config"]).fit(X_train, y_train)
+        prior = np.bincount(y_train, minlength=3).astype(float) / len(y_train)
+        hold_prob = _blend_probabilities(
+            _aligned_probabilities(estimator, X_hold), prior, selected["prior_blend"]
+        )
+        hold_metrics = _direction_metrics(y_hold, hold_prob)
+        baseline = DummyClassifier(strategy="prior").fit(X_train, y_train)
+        baseline_hold = _direction_metrics(y_hold, _aligned_probabilities(baseline, X_hold))
+        hold_beats = (
+            hold_metrics["macro_f1"] > baseline_hold["macro_f1"]
+            and hold_metrics["multiclass_brier"] < baseline_hold["multiclass_brier"]
+        )
+        threshold_results.append({
+            "threshold": threshold,
+            "selected_config": selected["config"],
+            "selected_prior_blend": selected["prior_blend"],
+            "selected_cv": selected["cv"],
+            "baseline_cv": baseline_cv,
+            "cv_feasible_candidate_count": len(feasible),
+            "candidate_count": len(candidates),
+            "holdout_diagnostic": hold_metrics,
+            "baseline_holdout_diagnostic": baseline_hold,
+            "holdout_diagnostic_beats_baseline": hold_beats,
+            "cv_beats_baseline": selected["cv_beats_baseline"],
+        })
+
+    cv_passes = [item for item in threshold_results if item["cv_beats_baseline"]]
+    selection_pool = cv_passes if cv_passes else threshold_results
+    selected_threshold = max(
+        selection_pool,
+        key=lambda item: item["selected_cv"]["macro_f1"] - 0.25 * item["selected_cv"]["multiclass_brier"],
     )
     return {
-        "selected_config": selected["config"],
-        "selected_prior_blend": selected["prior_blend"],
-        "selected_cv": selected["cv"],
-        "baseline_cv": baseline_cv,
-        "candidate_count": len(results),
-        "holdout": hold_metrics,
-        "baseline_holdout": base_metrics,
-        "date_wise_stability": date_stability,
-        "beats_baseline": beats,
-        "selection_policy": "training-only chronological CV; maximize macro-F1 minus 0.25 x multiclass Brier; final holdout untouched until selected config",
+        "selected_threshold": selected_threshold["threshold"],
+        "selected_config": selected_threshold["selected_config"],
+        "selected_prior_blend": selected_threshold["selected_prior_blend"],
+        "selected_cv": selected_threshold["selected_cv"],
+        "baseline_cv": selected_threshold["baseline_cv"],
+        "cv_beats_baseline": selected_threshold["cv_beats_baseline"],
+        "holdout_diagnostic": selected_threshold["holdout_diagnostic"],
+        "baseline_holdout_diagnostic": selected_threshold["baseline_holdout_diagnostic"],
+        "holdout_diagnostic_beats_baseline": selected_threshold["holdout_diagnostic_beats_baseline"],
+        "threshold_candidates": threshold_results,
+        "selection_policy": "direction threshold, model hyperparameters and prior blend selected only on expanding-window CV within the first 80%; final 20% shown as a previously reused diagnostic, not an untouched test",
+        "promotion_gate": "CV macro-F1 must exceed prior baseline and CV Brier must be lower; holdout diagnostic is informational only",
+        "beats_baseline": selected_threshold["cv_beats_baseline"],
     }
 
 
 def tune_range(X: pd.DataFrame, y: np.ndarray, train_end: int) -> dict[str, Any]:
     X_train, X_hold = X.iloc[:train_end], X.iloc[train_end:]
     y_train, y_hold = y[:train_end], y[train_end:]
-    candidates = [
-        ("rf_depth4_leaf10", lambda: RandomForestRegressor(n_estimators=180, max_depth=4, min_samples_leaf=10, max_features=0.8, random_state=42, n_jobs=2)),
-        ("rf_depth6_leaf8", lambda: RandomForestRegressor(n_estimators=220, max_depth=6, min_samples_leaf=8, max_features=0.8, random_state=42, n_jobs=2)),
-        ("rf_depth8_leaf12", lambda: RandomForestRegressor(n_estimators=220, max_depth=8, min_samples_leaf=12, max_features=0.75, random_state=42, n_jobs=2)),
-        ("extra_trees_depth5_leaf10", lambda: ExtraTreesRegressor(n_estimators=180, max_depth=5, min_samples_leaf=10, max_features=0.8, random_state=42, n_jobs=2)),
-        ("extra_trees_depth8_leaf12", lambda: ExtraTreesRegressor(n_estimators=180, max_depth=8, min_samples_leaf=12, max_features=0.75, random_state=42, n_jobs=2)),
+    configs = [
+        {"name": "quantile_compact", "n_estimators": 100, "learning_rate": 0.025, "num_leaves": 3, "max_depth": 2, "min_child_samples": 25, "reg_lambda": 20.0, "reg_alpha": 3.0},
+        {"name": "quantile_regularized", "n_estimators": 140, "learning_rate": 0.02, "num_leaves": 5, "max_depth": 2, "min_child_samples": 35, "reg_lambda": 30.0, "reg_alpha": 5.0},
     ]
+    quantiles = ((0.05, 0.95), (0.10, 0.90), (0.15, 0.85))
+    candidate_rows = []
     splitter = TimeSeriesSplit(n_splits=3)
-    baseline_fold_mae = []
-    scores = []
-    for tr, va in splitter.split(X_train):
-        baseline = DummyRegressor(strategy="median").fit(X_train.iloc[tr], y_train[tr])
-        baseline_fold_mae.append(_range_metrics(y_train[va], _range_prediction(baseline, X_train.iloc[va]))["combined_mae"])
-    baseline_cv = float(np.mean(baseline_fold_mae))
-    for name, factory in candidates:
-        fold_mae = []
+
+    for q_low, q_high in quantiles:
+        base_fold_scores = []
         for tr, va in splitter.split(X_train):
-            model = factory()
-            model.fit(X_train.iloc[tr], y_train[tr])
-            fold_mae.append(_range_metrics(y_train[va], _range_prediction(model, X_train.iloc[va]))["combined_mae"])
-        scores.append({"name": name, "cv_combined_mae": float(np.mean(fold_mae)), "folds": len(fold_mae)})
-    selected = min(scores, key=lambda item: item["cv_combined_mae"])
-    model = dict((name, factory) for name, factory in candidates)[selected["name"]]()
-    model.fit(X_train, y_train)
-    hold_pred = _range_prediction(model, X_hold)
-    baseline = DummyRegressor(strategy="median").fit(X_train, y_train)
-    baseline_pred = _range_prediction(baseline, X_hold)
-    hold_metrics = _range_metrics(y_hold, hold_pred)
-    baseline_metrics = _range_metrics(y_hold, baseline_pred)
+            lo, hi, _ = _constant_range_quantiles(y_train[tr], len(va), q_low, q_high)
+            baseline_metrics = _range_interval_metrics(y_train[va], lo, hi, np.full(len(va), np.median(y_train[tr, 2])), q_low, q_high)
+            base_fold_scores.append(baseline_metrics["combined_pinball"])
+        baseline_cv = float(np.mean(base_fold_scores))
+        for config in configs:
+            fold_scores = []
+            fold_coverages = []
+            for tr, va in splitter.split(X_train):
+                lower, upper, close = _fit_range_quantiles(
+                    X_train.iloc[tr], y_train[tr], X_train.iloc[va], q_low, q_high, config
+                )
+                metrics = _range_interval_metrics(y_train[va], lower, upper, close, q_low, q_high)
+                fold_scores.append(metrics["combined_pinball"])
+                fold_coverages.append(metrics["full_range_coverage"])
+            candidate_rows.append({
+                "config": config, "q_low": q_low, "q_high": q_high,
+                "cv_combined_pinball": float(np.mean(fold_scores)),
+                "cv_full_range_coverage": float(np.mean(fold_coverages)),
+                "baseline_cv_combined_pinball": baseline_cv,
+                "cv_beats_baseline": float(np.mean(fold_scores)) < baseline_cv,
+            })
+    feasible = [item for item in candidate_rows if item["cv_beats_baseline"]]
+    pool = feasible if feasible else candidate_rows
+    selected = min(pool, key=lambda item: item["cv_combined_pinball"])
+    lower, upper, close = _fit_range_quantiles(
+        X_train, y_train, X_hold, selected["q_low"], selected["q_high"], selected["config"]
+    )
+    hold_metrics = _range_interval_metrics(
+        y_hold, lower, upper, close, selected["q_low"], selected["q_high"]
+    )
+    base_lower, base_upper, base_close = _constant_range_quantiles(
+        y_train, len(X_hold), selected["q_low"], selected["q_high"]
+    )
+    baseline_metrics = _range_interval_metrics(
+        y_hold, base_lower, base_upper, base_close, selected["q_low"], selected["q_high"]
+    )
+    hold_beats = hold_metrics["combined_pinball"] < baseline_metrics["combined_pinball"]
     return {
-        "selected_config": selected["name"],
-        "selected_cv_combined_mae": selected["cv_combined_mae"],
-        "baseline_cv_combined_mae": baseline_cv,
-        "candidates": scores,
-        "holdout": hold_metrics,
-        "baseline_holdout": baseline_metrics,
-        "beats_baseline": hold_metrics["combined_mae"] < baseline_metrics["combined_mae"],
-        "postprocessing": "enforce predicted next-session low return <= close return <= high return",
+        "model": "three LightGBM heads within one Range Intelligence group: lower quantile of next low, upper quantile of next high, and median next close",
+        "selected_config": selected["config"],
+        "selected_quantiles": {"low": selected["q_low"], "high": selected["q_high"]},
+        "selected_cv_combined_pinball": selected["cv_combined_pinball"],
+        "baseline_cv_combined_pinball": selected["baseline_cv_combined_pinball"],
+        "cv_beats_baseline": selected["cv_beats_baseline"],
+        "cv_full_range_coverage": selected["cv_full_range_coverage"],
+        "candidate_results": candidate_rows,
+        "holdout_diagnostic": hold_metrics,
+        "baseline_holdout_diagnostic": baseline_metrics,
+        "holdout_diagnostic_beats_baseline": hold_beats,
+        "beats_baseline": selected["cv_beats_baseline"],
+        "selection_policy": "quantile levels and estimator configuration selected only by expanding-window training CV pinball loss; final 20% reported as a previously reused diagnostic",
     }
 
 
@@ -342,10 +455,15 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         ],
         "policy": "Equal-weight date-level comparison; contracts within a date are averaged before dates are compared.",
     }
-    beats = (
+    cv_beats = (
+        selected["cv_pooled_mae"] < float(np.mean(baseline_fold_pool))
+        and selected["cv_date_balanced_mae"] < float(np.mean(baseline_fold_date))
+    )
+    holdout_beats = (
         hold_metrics["pooled_mae"] < base_metrics["pooled_mae"]
         and hold_metrics["date_balanced_mae"] < base_metrics["date_balanced_mae"]
     )
+    beats = cv_beats and holdout_beats
     return {
         "selected_config": selected["config"],
         "selected_cv_pooled_mae": selected["cv_pooled_mae"],
@@ -355,10 +473,13 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         "candidate_results": candidate_rows,
         "holdout": hold_metrics,
         "baseline_holdout": base_metrics,
+        "cv_beats_baseline": cv_beats,
+        "holdout_diagnostic_beats_baseline": holdout_beats,
         "beats_baseline": beats,
         "holdout_start": cutoff_date,
         "holdout_end": max(hold_dates),
         "split_policy": "chronological split and three expanding-window folds by trading date; no random contract-row split",
+        "promotion_policy": "requires both training-only date-grouped CV and the reused historical holdout diagnostic to beat the baseline on pooled and date-balanced MAE",
     }
 
 
@@ -391,7 +512,7 @@ def main() -> None:
         "origin_start": rolling[0]["origin_date"],
         "origin_end": rolling[-1]["origin_date"],
         "feature_count": len(feature_names),
-        "direction": tune_direction(X_daily, targets["direction"], split),
+        "direction": tune_direction(X_daily, targets["close_return"], split),
         "range": tune_range(X_daily, range_targets, split),
     }
 
@@ -413,8 +534,10 @@ def main() -> None:
         "training_archive_sessions": len(feature_rows),
         "daily_rolling_feature_count": len(feature_names),
         "rolling_windows": {"recent_sessions": 5, "monthly_sessions": 22, "both_include_latest_completed_origin_session": True},
-        "tuning_method": "chronological expanding-window validation; hyperparameters selected only on training portion; final 20 percent holdout evaluated once after selection",
-        "seller_validation_method": "grouped by trading date, not random contract rows; reports both pooled and equal-weight per-date MAE",
+        "tuning_method": "chronological expanding-window validation; direction threshold/hyperparameters, range quantiles/config and seller hyperparameters selected only on training portion",
+        "historical_holdout_policy": "The final 20 percent has been inspected in prior training/tuning runs. It is reported only as a diagnostic and is not treated as an untouched independent test. Promotion gates rely on training-only walk-forward CV plus future shadow results.",
+        "seller_validation_method": "grouped by trading date, not random contract rows; reports pooled and equal-weight per-date MAE; must beat baseline on both measures in both training CV and historical holdout diagnostic",
+        "range_validation_method": "quantile pinball loss for predicted low/high bands, with interval coverage and width reported; quantile constants form the naive baseline",
         "missing_value_policy": "strict; source gaps block tuning, no imputation",
         "input_dataset_sha256": str(repair.get("checkpoint_sha256", "")),
         "b2_reads": 0,
