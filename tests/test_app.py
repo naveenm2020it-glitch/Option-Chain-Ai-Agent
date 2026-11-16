@@ -43,7 +43,11 @@ def test_history_api_explains_unconfigured_storage(monkeypatch):
 
 
 def make_manifest(dates):
+    session_dates = set(dates.values())
+    aligned_date = next(iter(session_dates)) if len(session_dates) == 1 else None
     return {
+        "core_session_status": "aligned" if aligned_date else "blocked",
+        "core_session_date": aligned_date,
         "results": {
             name: {
                 "status": "downloaded",
@@ -53,6 +57,10 @@ def make_manifest(dates):
             for name in CORE_REPORTS
         }
     }
+
+
+def aligned_manifest(day):
+    return make_manifest({name: day for name in CORE_REPORTS})
 
 
 def test_mixed_core_report_dates_block_analysis():
@@ -142,7 +150,7 @@ def test_daily_report_ingestion_requires_bearer_token(monkeypatch):
     monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
     response = client.post(
         "/api/internal/daily-report",
-        json={"collection_date": "2026-11-13", "manifest": {"results": {}}},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13")},
     )
     assert response.status_code == 401
 
@@ -272,6 +280,36 @@ def test_daily_ingest_persists_seller_context_with_manifest(monkeypatch):
     assert response.status_code == 200
     assert response.json()["seller_context_stored"] is True
     assert captured["seller_context"]["lookback"]["last_22_sessions"]["sessions_analyzed"] == 22
+
+
+def test_daily_ingest_rejects_manifest_session_mismatch(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    manifest = aligned_manifest("2026-11-13")
+    manifest["core_session_date"] = "2026-11-12"
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-13", "manifest": manifest},
+    )
+    assert response.status_code == 422
+
+
+def test_daily_ingest_rejects_seller_context_date_mismatch(monkeypatch):
+    monkeypatch.setenv("DAILY_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    seller_context = {
+        "schema_version": 1, "status": "ready", "session_date": "2026-11-12",
+        "current": {"status": "analysis_complete", "session_date": "2026-11-12"},
+        "lookback": {"last_5_sessions": {}, "last_22_sessions": {}},
+    }
+    response = client.post(
+        "/api/internal/daily-report",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"collection_date": "2026-11-13", "manifest": aligned_manifest("2026-11-13"),
+              "seller_context": seller_context},
+    )
+    assert response.status_code == 422
 
 
 def test_seller_context_latest_reads_postgres_cache(monkeypatch):
