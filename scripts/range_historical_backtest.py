@@ -272,8 +272,8 @@ def run_historical_walk_forward(
         "summary": summary,
         "core_range_summary": core_summary,
         "range_bands": {
-            "core_range": "raw conditional q10/q90 endpoints; nominal joint coverage at least 80% by Bonferroni",
-            "calibrated_range": "asymmetric conformal outer range; nominal joint coverage 90% under exchangeability",
+            "core_range": "raw conditional q10/q90 endpoints with an 80% nominal target; uncalibrated and empirical coverage must be read from the validation report",
+            "calibrated_range": "asymmetric conformal outer range with a 90% nominal joint target under exchangeability; empirical coverage must be read from the validation report",
         },
         "historical_validation_status": historical_status,
         "historical_pass_criteria": {
