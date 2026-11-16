@@ -8,7 +8,7 @@ import pytest
 from scripts.nse_ml_features import extract_nifty_features
 
 
-def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=False, fii_fpi_label=False, context_title_rows=False):
+def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=False, fii_fpi_label=False, context_title_rows=False, non_finite_close=False, mismatched_trade_date=False):
     rows = [
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "CE", 100, 110, 1000, 100, 2000, 25000],
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
@@ -16,6 +16,10 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=Fals
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25100, "PE", 140, 150, 1300, 150, 1600, 25000],
         ["2026-11-12", "NIFTY", "IDF", "2026-11-24", 0, "", 25050, 25000, 5000, 100, 1000, 25000],
     ]
+    if non_finite_close:
+        rows[0][6] = "inf"
+    if mismatched_trade_date:
+        rows[0][0] = "2026-11-11"
     headers = "TradDt,TckrSymb,FinInstrmTp,XpryDt,StrkPric,OptnTp,ClsPric,PrvsClsgPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,UndrlygPric"
     csv_data = headers + "\n" + "\n".join(",".join(map(str, row)) for row in rows)
     inner = io.BytesIO()
@@ -104,3 +108,13 @@ def test_extract_supports_nse_compact_headers_and_fii_fpi_label():
     assert result["features"]["participant_oi_data_available"] == 1
     assert result["features"]["participant_volume_data_available"] == 1
     assert result["features"]["participant_oi_fii_future_index_net"] == -100
+
+
+def test_extract_rejects_non_finite_option_prices():
+    with pytest.raises(ValueError, match="non-finite numeric fields"):
+        extract_nifty_features(_nested_archive(non_finite_close=True), date(2026, 11, 12))
+
+
+def test_extract_rejects_any_missing_or_mismatched_trade_date():
+    with pytest.raises(ValueError, match="trade date is missing or does not match"):
+        extract_nifty_features(_nested_archive(mismatched_trade_date=True), date(2026, 11, 12))
