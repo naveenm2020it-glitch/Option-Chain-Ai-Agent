@@ -91,9 +91,11 @@ def status():
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
         "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False,
-                          "seller_levels_engine": True, "levels_live_data_connected": False},
-        "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
-                    "raw NSE report adapters and live forecast are not enabled yet."
+                          "seller_levels_engine": True, "levels_live_data_connected": False,
+                          "daily_eod_adapter": True, "seller_context_windows": [5, 22],
+                          "seller_context_persistence": "postgresql"},
+        "message": ("Core NSE reports are aligned in the latest stored collection. The daily EOD seller-level adapter is implemented; "
+                    "dashboard levels require successful PostgreSQL persistence. Intraday feed and predictive forecast are not enabled."
                     if ready else
                     "Prediction blocked: core NSE reports must be present and from one trading session."),
     }
