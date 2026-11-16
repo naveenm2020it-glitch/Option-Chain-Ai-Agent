@@ -237,7 +237,8 @@ async function loadSellerContext(){
    const fiveResistance=(five.resistance_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+five.sessions_analyzed+")").join(", ")||"—";
    const monthSupport=(month.support_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+month.sessions_analyzed+")").join(", ")||"—";
    const monthResistance=(month.resistance_persistence||[]).slice(0,3).map(x=>x.level+" ("+x.sessions_present+"/"+month.sessions_analyzed+")").join(", ")||"—";
-   note.textContent="Last 5 sessions — PE support: "+fiveSupport+"; CE resistance: "+fiveResistance+". Last 22 sessions — PE support: "+monthSupport+"; CE resistance: "+monthResistance+".";
+   const coverageWarnings=[five,month].filter(x=>x.coverage_status!=="complete").map(x=>x.requested_sessions+"-session window has a possible data/calendar gap");
+   note.textContent="EOD session "+data.session_date+". Last 5 sessions — PE support: "+fiveSupport+"; CE resistance: "+fiveResistance+". Last 22 sessions — PE support: "+monthSupport+"; CE resistance: "+monthResistance+"."+ (coverageWarnings.length?" Coverage warning: "+coverageWarnings.join("; ")+".":"");
   }
   const exits=(current.seller_exit_zones||[]).slice(0,4).map(x=>x.side+" "+x.level+" ("+x.risk+")").join(", ")||"None flagged";
   setText("seller-exit-zones","Seller exit / squeeze-risk zones: "+exits);
