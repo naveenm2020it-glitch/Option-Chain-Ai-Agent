@@ -44,8 +44,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-historical-audit-43691154808
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          repository: \${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
           run-id: 43691154808
           path: data
 
@@ -53,8 +53,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-context-repair-43805612526
-          github-token: \${{ secrets.GITHUB_TOKEN }}
-          repository: \${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
           run-id: 43805612526
           path: data
 
@@ -129,7 +129,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-four-model-tuning-\${{ github.run_id }}
+          name: nifty-four-model-tuning-${{ github.run_id }}
           path: models/tuning_artifacts/
           if-no-files-found: warn
           retention-days: 30
