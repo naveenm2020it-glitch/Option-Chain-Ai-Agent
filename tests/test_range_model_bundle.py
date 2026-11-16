@@ -95,6 +95,17 @@ def test_shadow_scoring_uses_actual_range_and_skips_stale_forecasts():
     stale = score_range_forecast(forecast, "2026-11-23", actual)
     assert stale["status"] == "skipped_stale_gap"
 
+    # A missing Tuesday/Wednesday report must not cause a later weekday to be
+    # mislabeled as the next-session outcome.
+    nonadjacent = score_range_forecast(forecast, "2026-11-18", actual)
+    assert nonadjacent["status"] == "skipped_nonadjacent_session"
+    assert nonadjacent["weekday_steps"] == 2
+
+    # A normal Friday-to-Monday weekend remains a valid next-session gap.
+    friday_forecast = dict(forecast, origin_date="2026-11-20")
+    monday = score_range_forecast(friday_forecast, "2026-11-23", actual)
+    assert monday["status"] == "scored"
+
 
 def test_shadow_state_is_idempotent_and_scores_only_subsequent_session():
     bundle, features = _bundle_and_features()
@@ -185,6 +196,7 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert summary["scored_sessions"] == 20
     assert summary["shadow_validation_status"] == "pass_manual_review"
     assert summary["production_promotion_allowed"] is False
+    assert summary["skipped_nonadjacent_session_count"] == 0
 
 
 def test_current_nse_feature_extraction_blocks_missing_critical_context(tmp_path, monkeypatch):
