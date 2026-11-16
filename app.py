@@ -204,14 +204,41 @@ def ingest_daily_report(payload: dict, authorization: str | None = Header(defaul
     if not database.database_configured():
         raise HTTPException(status_code=503, detail="Database persistence is not configured.")
     try:
+        from datetime import date
+        date.fromisoformat(collection_date)
+        quality = assess_manifest(manifest)
+        declared_session = manifest.get("core_session_date")
+        if (not quality.get("aligned") or not quality.get("session_date")
+                or declared_session != quality.get("session_date")):
+            raise HTTPException(status_code=422, detail="Manifest core reports must pass same-session validation.")
         seller_context = payload.get("seller_context")
-        if isinstance(seller_context, dict):
+        if seller_context is not None:
+            if not isinstance(seller_context, dict):
+                raise HTTPException(status_code=422, detail="seller_context must be a JSON object.")
+            context_date = seller_context.get("session_date")
+            current = seller_context.get("current")
+            if context_date != quality.get("session_date"):
+                raise HTTPException(status_code=422, detail="Seller context session_date must match the validated manifest.")
+            if seller_context.get("schema_version") != 1 or seller_context.get("status") != "ready":
+                raise HTTPException(status_code=422, detail="Seller context schema/status is not valid.")
+            if not isinstance(current, dict) or current.get("status") != "analysis_complete":
+                raise HTTPException(status_code=422, detail="Current seller levels are not analysis_complete.")
+            if current.get("session_date") != context_date:
+                raise HTTPException(status_code=422, detail="Current seller levels date does not match seller context.")
+            lookback = seller_context.get("lookback")
+            if not isinstance(lookback, dict) or not all(
+                isinstance(lookback.get(key), dict)
+                for key in ("last_5_sessions", "last_22_sessions")
+            ):
+                raise HTTPException(status_code=422, detail="Both 5-session and 22-session lookback summaries are required.")
             result = database.upsert_daily_report(collection_date, manifest, seller_context)
         else:
             result = database.upsert_daily_report(collection_date, manifest)
-        return {"stored": True, "seller_context_stored": isinstance(seller_context, dict), **result}
+        return {"stored": True, "seller_context_stored": seller_context is not None, **result}
+    except HTTPException:
+        raise
     except ValueError:
-        raise HTTPException(status_code=400, detail="collection_date must use YYYY-MM-DD.")
+        raise HTTPException(status_code=400, detail="Dates must use YYYY-MM-DD.")
     except Exception:
         raise HTTPException(status_code=503, detail="Could not persist daily report metadata.")
 
