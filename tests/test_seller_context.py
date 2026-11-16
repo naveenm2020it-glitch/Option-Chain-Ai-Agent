@@ -34,6 +34,32 @@ def test_snapshot_uses_front_expiry_and_builds_both_sides():
     assert result["support"][0]["evidence"]["oi"] < 999999
 
 
+def test_snapshot_rejects_duplicate_expiry_strike_side_contracts():
+    rows = _contracts()
+    rows.append(dict(rows[0]))
+    import pytest
+    with pytest.raises(ValueError, match="Duplicate NIFTY option contract"):
+        snapshot_from_contracts("2026-11-16", 25100, rows)
+
+
+def test_snapshot_rejects_missing_core_numeric_contract_fields():
+    rows = _contracts()
+    del rows[0]["oi"]
+    import pytest
+    with pytest.raises(ValueError, match="missing valid oi"):
+        snapshot_from_contracts("2026-11-16", 25100, rows)
+
+
+def test_snapshot_does_not_infer_premium_direction_without_baseline():
+    rows = _contracts()
+    for row in rows:
+        row["previous_close"] = None
+    result = snapshot_from_contracts("2026-11-16", 25100, rows)
+    candidates = result["support"] + result["resistance"]
+    assert candidates
+    assert all(item["evidence"]["premium_change_pct"] is None for item in candidates)
+
+
 def test_window_summary_counts_level_persistence_by_session():
     levels = snapshot_from_contracts("2026-11-16", 25100, _contracts())
     history = [(f"2026-11-{day:02d}", levels) for day in range(9, 14)]
