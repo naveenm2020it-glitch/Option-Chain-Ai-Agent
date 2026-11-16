@@ -27,7 +27,24 @@ def _outer_csv_frame(outer_bytes: bytes, report_key: str) -> pd.DataFrame | None
         if not isinstance(item, dict) or not item.get("file"):
             return None
         payload = outer.read(item["file"])
-    return pd.read_csv(io.BytesIO(payload), dtype=str, encoding="utf-8-sig", low_memory=False)
+    # NSE has used both compact and expanded CSV headers. Some report exports
+    # also prepend a title line; locate the real header before parsing.
+    decoded = payload.decode("utf-8-sig")
+    lines = decoded.splitlines()
+    header_index = 0
+    if report_key in {"fo_participant_oi", "fo_participant_volume"}:
+        for index, line in enumerate(lines[:10]):
+            normalized = _normalised_name(line)
+            if "clienttype" in normalized and "futureindexlong" in normalized:
+                header_index = index
+                break
+    elif report_key == "nifty_index_close_all":
+        for index, line in enumerate(lines[:10]):
+            normalized = _normalised_name(line)
+            if "indexname" in normalized and ("closing" in normalized or "close" in normalized):
+                header_index = index
+                break
+    return pd.read_csv(io.StringIO("\\n".join(lines[header_index:])), dtype=str, low_memory=False)
 
 
 def _normalised_name(value: str) -> str:
@@ -44,7 +61,7 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
     )
     result = {f"{prefix}_data_available": 0.0}
     categories = {
-        "fii": ("fii", "fpi"),
+        "fii": ("fii", "fpi", "fii/fpi", "foreign institutional investor", "foreign portfolio investor"),
         "dii": ("dii",),
         "client": ("client", "clients"),
         "pro": ("pro", "proprietary"),
@@ -66,10 +83,11 @@ def _participant_features(frame: pd.DataFrame | None, prefix: str) -> dict[str, 
         ("total_long", "totallongcontracts"),
         ("total_short", "totalshortcontracts"),
     )
-    participant_values = frame[participant_column].astype(str).str.strip().str.lower()
+    participant_values = frame[participant_column].astype(str).map(_normalised_name)
     categories_found = set()
     for category, aliases in categories.items():
-        matches = frame.loc[participant_values.isin(aliases)]
+        normalized_aliases = {_normalised_name(alias) for alias in aliases}
+        matches = frame.loc[participant_values.isin(normalized_aliases)]
         if matches.empty:
             continue
         categories_found.add(category)
@@ -163,11 +181,13 @@ def _index_features(frame: pd.DataFrame | None) -> dict[str, float]:
         return defaults
     row = nifty.iloc[-1]
     vix_row = vix.iloc[-1] if not vix.empty else None
-    close = value(row, ("closingindexvalue", "closeindexvalue", "close"))
+    # NSE archive variants use either "Open Index Value"/"Closing Index Value"
+    # or the compact "Open"/"Closing" names.
+    close = value(row, ("closingindexvalue", "closeindexvalue", "closing", "close"))
     high = value(row, ("highindexvalue", "high"))
     low = value(row, ("lowindexvalue", "low"))
     open_value = value(row, ("openindexvalue", "open"))
-    vix_close = value(vix_row, ("closingindexvalue", "closeindexvalue", "close"))
+    vix_close = value(vix_row, ("closingindexvalue", "closeindexvalue", "closing", "close"))
     return {
         "index_data_available": 1.0 if close > 0 and open_value > 0 and high >= close and low > 0 and high > low else 0.0,
         "index_close": close,
