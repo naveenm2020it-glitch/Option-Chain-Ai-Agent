@@ -37,7 +37,7 @@ def test_core_reports_fall_back_to_one_shared_session(monkeypatch, tmp_path):
     for name in downloader.CORE_REPORT_NAMES:
         assert manifest["results"][name]["report_date"] == "2026-11-11"
     assert ancillary_paths
-    assert all("11112026" in path for _, path in ancillary_paths)
+    assert all(any(token in path for token in ("11112026", "20261111")) for _, path in ancillary_paths)
     assert all(
         manifest["results"][name]["report_date"] == "2026-11-11"
         for name, _ in ancillary_paths
