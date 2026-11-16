@@ -29,7 +29,8 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      # Reuse the already verified historical checkpoint published on Nov 15.
+      # 2026-11-16: B2-free training rerun using the existing verified 494-session checkpoint.
+# Reuse the already verified historical checkpoint published on Nov 15.
       # This workflow does not contact Backblaze B2 or NSE.
       - name: Restore verified 494-session feature checkpoint
         uses: actions/download-artifact@v4
