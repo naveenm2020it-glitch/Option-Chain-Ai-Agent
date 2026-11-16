@@ -176,6 +176,35 @@ jobs:
           mkdir -p range-checkpoint-retained/historical_audit
           cp data/historical_audit/checkpoint.json range-checkpoint-retained/historical_audit/checkpoint.json
 
+      - name: Fetch prior daily seller snapshots from PostgreSQL
+        id: seller-history
+        if: ${{ always() && steps.nse-download.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          mkdir -p data/seller_context
+          python - <<'PY'
+          import json, os, pathlib, requests
+          manifest = json.loads(pathlib.Path("data/nse_reports/manifest.json").read_text())
+          output = pathlib.Path("data/seller_context/prior_history.json")
+          output.write_text('{"records":[]}', encoding="utf-8")
+          base = os.environ.get("APP_INGEST_URL", "").rstrip("/")
+          if not base:
+              print("PostgreSQL history endpoint not configured; verified checkpoint will be used.")
+              raise SystemExit(0)
+          before = manifest.get("core_session_date")
+          if not before:
+              print("No aligned current session; historical seller context fetch skipped.")
+              raise SystemExit(0)
+          response = requests.get(
+              base + "/api/seller-intelligence/history",
+              params={"before": before, "limit": 22},
+              timeout=30,
+          )
+          response.raise_for_status()
+          output.write_text(json.dumps(response.json()), encoding="utf-8")
+          print("Restored prior seller snapshots:", len(response.json().get("records", [])))
+          PY
+
       - name: Build seller levels and 5/22-session context (zero B2 I/O)
         id: seller-context
         if: ${{ always() && steps.nse-download.outcome == 'success' && steps.checkpoint-verify.outcome == 'success' }}
