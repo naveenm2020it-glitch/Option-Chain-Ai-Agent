@@ -276,6 +276,9 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     forecast = {
         "origin_date": "2026-11-16",
         "origin_close": 25000.0,
+        "core_low_return": -0.008,
+        "core_high_return": 0.008,
+        "core_close_return": 0.0004,
         "predicted_low_return": -0.01,
         "predicted_high_return": 0.01,
         "predicted_close_return": 0.0004,
@@ -286,11 +289,11 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
         "calibration_alpha": 0.10,
         "baseline": {
             "name": "rolling_22_session_empirical_quantile",
-            "predicted_low_return": -0.005,
-            "predicted_high_return": 0.005,
+            "predicted_low_return": -0.004,
+            "predicted_high_return": 0.012,
             "predicted_close_return": 0.0,
-            "predicted_low": 24875.0,
-            "predicted_high": 25125.0,
+            "predicted_low": 24900.0,
+            "predicted_high": 25300.0,
             "predicted_close": 25000.0,
         },
     }
