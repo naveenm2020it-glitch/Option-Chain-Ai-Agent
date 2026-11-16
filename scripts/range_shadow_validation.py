@@ -123,6 +123,10 @@ def make_range_forecast(
     low_return = returns["low_return"]
     high_return = returns["high_return"]
     close_return = returns["close_return"]
+    core_low_return = float(returns.get("core_low_return", low_return))
+    core_high_return = float(returns.get("core_high_return", high_return))
+    core_low_price = origin_close * (1.0 + core_low_return)
+    core_high_price = origin_close * (1.0 + core_high_return)
     low_price = origin_close * (1.0 + low_return)
     high_price = origin_close * (1.0 + high_return)
     close_price = origin_close * (1.0 + close_return)
@@ -132,6 +136,11 @@ def make_range_forecast(
         "status": "pending",
         "origin_date": origin_date,
         "origin_close": float(origin_close),
+        "core_low_return": core_low_return,
+        "core_high_return": core_high_return,
+        "core_close_return": float(returns.get("core_close_return", close_return)),
+        "core_predicted_low": float(core_low_price),
+        "core_predicted_high": float(core_high_price),
         "predicted_low_return": float(low_return),
         "predicted_high_return": float(high_return),
         "predicted_close_return": float(close_return),
