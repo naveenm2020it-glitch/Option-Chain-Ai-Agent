@@ -123,15 +123,30 @@ def make_range_forecast(
     low_return = returns["low_return"]
     high_return = returns["high_return"]
     close_return = returns["close_return"]
+    core_low_return = float(returns.get("core_low_return", low_return))
+    core_high_return = float(returns.get("core_high_return", high_return))
+    core_low_price = origin_close * (1.0 + core_low_return)
+    core_high_price = origin_close * (1.0 + core_high_return)
     low_price = origin_close * (1.0 + low_return)
     high_price = origin_close * (1.0 + high_return)
     close_price = origin_close * (1.0 + close_return)
-    if low_price <= 0 or high_price <= low_price or not low_price <= close_price <= high_price:
-        raise ValueError("Range forecast failed price-bound sanity checks")
+    if (
+        core_low_price <= 0 or core_high_price <= core_low_price
+        or not core_low_price <= close_price <= core_high_price
+        or low_price <= 0 or high_price <= low_price
+        or not low_price <= close_price <= high_price
+        or low_price > core_low_price or high_price < core_high_price
+    ):
+        raise ValueError("Core or calibrated Range forecast failed price-bound sanity checks")
     return {
         "status": "pending",
         "origin_date": origin_date,
         "origin_close": float(origin_close),
+        "core_low_return": core_low_return,
+        "core_high_return": core_high_return,
+        "core_close_return": float(returns.get("core_close_return", close_return)),
+        "core_predicted_low": float(core_low_price),
+        "core_predicted_high": float(core_high_price),
         "predicted_low_return": float(low_return),
         "predicted_high_return": float(high_return),
         "predicted_close_return": float(close_return),
@@ -338,6 +353,27 @@ def score_range_forecast(
         "evaluation_note": "First subsequent aligned EOD session within the four-calendar-day safety window; no trading P&L is inferred.",
     }
 
+    if "core_low_return" in forecast and "core_high_return" in forecast:
+        core_metrics = _interval_metrics(
+            float(forecast["core_low_return"]),
+            float(forecast["core_high_return"]),
+            float(forecast.get("core_close_return", predicted_close_return)),
+            actual_low_return,
+            actual_high_return,
+            actual_close_return,
+            origin_close,
+            0.20,
+        )
+        result.update({
+            "core_range_covered": core_metrics["range_covered"],
+            "core_low_endpoint_covered": core_metrics["low_endpoint_covered"],
+            "core_high_endpoint_covered": core_metrics["high_endpoint_covered"],
+            "core_close_inside_predicted_range": core_metrics["close_inside_predicted_range"],
+            "core_winkler_interval_score_return_space": core_metrics["winkler_interval_score_return_space"],
+            "core_predicted_range_width_points": core_metrics["predicted_range_width_points"],
+            "core_range_width_ratio": core_metrics["range_width_ratio"],
+        })
+
     baseline = forecast.get("baseline")
     if isinstance(baseline, dict):
         baseline_metrics = _interval_metrics(
@@ -350,6 +386,16 @@ def score_range_forecast(
             origin_close,
             alpha,
         )
+        core_baseline_metrics = _interval_metrics(
+            float(baseline["predicted_low_return"]),
+            float(baseline["predicted_high_return"]),
+            float(baseline["predicted_close_return"]),
+            actual_low_return,
+            actual_high_return,
+            actual_close_return,
+            origin_close,
+            0.20,
+        ) if "core_low_return" in forecast else None
         result.update({
             "baseline_name": baseline.get("name", "rolling_22_session_empirical_quantile"),
             "baseline_range_covered": baseline_metrics["range_covered"],
@@ -374,6 +420,17 @@ def score_range_forecast(
                 <= baseline_metrics["close_absolute_error_points"]
             ),
         })
+        if core_baseline_metrics is not None:
+            result.update({
+                "core_baseline_range_covered": core_baseline_metrics["range_covered"],
+                "core_baseline_winkler_interval_score_return_space": core_baseline_metrics["winkler_interval_score_return_space"],
+                "core_baseline_predicted_range_width_points": core_baseline_metrics["predicted_range_width_points"],
+                "core_baseline_range_width_ratio": core_baseline_metrics["range_width_ratio"],
+                "core_model_beats_baseline_winkler": (
+                    result["core_winkler_interval_score_return_space"]
+                    < core_baseline_metrics["winkler_interval_score_return_space"]
+                ),
+            })
     return result
 
 
@@ -474,6 +531,36 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_baseline_width_difference_points": None,
             "mean_baseline_width_ratio": None,
         })
+    core_scored = [item for item in scored if "core_range_covered" in item]
+    core_comparable = [
+        item for item in core_scored
+        if "core_baseline_winkler_interval_score_return_space" in item
+    ]
+    if core_scored:
+        summary.update({
+            "core_range_coverage_rate": float(np.mean([item["core_range_covered"] for item in core_scored])),
+            "core_low_endpoint_coverage_rate": float(np.mean([item["core_low_endpoint_covered"] for item in core_scored])),
+            "core_high_endpoint_coverage_rate": float(np.mean([item["core_high_endpoint_covered"] for item in core_scored])),
+            "core_close_inside_rate": float(np.mean([item["core_close_inside_predicted_range"] for item in core_scored])),
+            "core_mean_winkler": float(np.mean([item["core_winkler_interval_score_return_space"] for item in core_scored])),
+            "core_mean_predicted_width_points": float(np.mean([item["core_predicted_range_width_points"] for item in core_scored])),
+            "core_mean_width_ratio": float(np.mean([item["core_range_width_ratio"] for item in core_scored])),
+            "core_scored_sessions": len(core_scored),
+        })
+    if core_comparable:
+        core_model_winkler = np.asarray(
+            [item["core_winkler_interval_score_return_space"] for item in core_comparable], dtype=float
+        )
+        core_baseline_winkler = np.asarray(
+            [item["core_baseline_winkler_interval_score_return_space"] for item in core_comparable], dtype=float
+        )
+        summary.update({
+            "core_baseline_range_coverage_rate": float(np.mean([item["core_baseline_range_covered"] for item in core_comparable])),
+            "core_mean_baseline_winkler": float(np.mean(core_baseline_winkler)),
+            "core_mean_baseline_predicted_width_points": float(np.mean([item["core_baseline_predicted_range_width_points"] for item in core_comparable])),
+            "core_mean_baseline_width_ratio": float(np.mean([item["core_baseline_range_width_ratio"] for item in core_comparable])),
+            "core_winkler_win_rate": float(np.mean(core_model_winkler < core_baseline_winkler)),
+        })
     if comparable:
         model_winkler = np.asarray([
             item["winkler_interval_score_return_space"] for item in comparable
@@ -498,12 +585,26 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "mean_baseline_close_mae_points": baseline_close_mae,
         })
         if len(comparable) >= SHADOW_MIN_SESSIONS:
-            passed = (
+            core_gate = (
+                bool(core_comparable)
+                and summary.get("core_range_coverage_rate", 0.0)
+                    >= summary.get("core_baseline_range_coverage_rate", 1.0) - 0.10
+                and summary.get("core_mean_winkler", float("inf"))
+                    <= summary.get("core_mean_baseline_winkler", 0.0) * 1.05
+                and summary.get("core_winkler_win_rate", 0.0) >= SHADOW_MIN_BASELINE_WIN_RATE
+                and summary.get("core_mean_predicted_width_points", float("inf"))
+                    <= summary.get("core_mean_baseline_predicted_width_points", 0.0)
+            )
+            outer_gate = (
                 summary["range_coverage_rate"] >= SHADOW_MIN_RANGE_COVERAGE
                 and mean_model_winkler < mean_baseline_winkler
-                and win_rate >= SHADOW_MIN_BASELINE_WIN_RATE
                 and model_close_mae <= max(baseline_close_mae, 1e-9) * SHADOW_MAX_CLOSE_MAE_RATIO
+                and summary.get("mean_model_width_ratio", float("inf"))
+                    <= summary.get("mean_baseline_width_ratio", 0.0) * 1.60
             )
+            passed = core_gate and outer_gate
+            summary["core_gate_pass"] = bool(core_gate)
+            summary["outer_gate_pass"] = bool(outer_gate)
             summary["shadow_validation_status"] = "pass_manual_review" if passed else "fail"
     return summary
 
@@ -614,7 +715,7 @@ def run_shadow(
         raise RuntimeError("Range candidate SHA256 does not match its manifest")
 
     bundle = joblib.load(bundle_path)
-    if bundle.get("schema_version") != 1:
+    if bundle.get("schema_version") not in (1, 2):
         raise RuntimeError("Unsupported Range candidate bundle")
     if abs(float(bundle.get("calibration_alpha", -1.0)) - float(manifest.get("calibration_alpha", -2.0))) > 1e-12:
         raise RuntimeError("Range candidate calibration metadata does not match its manifest")

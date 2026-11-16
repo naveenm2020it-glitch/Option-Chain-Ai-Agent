@@ -15,7 +15,7 @@ import pytest
 import scripts.range_shadow_validation as shadow
 
 from scripts.range_model_bundle import fit_range_bundle, predict_range_bundle
-from scripts.range_research_benchmark import _conformal_adjustment
+from scripts.range_research_benchmark import _asymmetric_conformal_adjustment, _conformal_adjustment
 from scripts.range_shadow_validation import (
     advance_shadow_state,
     make_range_forecast,
@@ -139,9 +139,30 @@ def test_range_inference_rejects_empty_or_multirow_inputs_and_negative_margin():
         predict_range_bundle(bundle, pd.DataFrame())
     with pytest.raises(ValueError, match="exactly one"):
         predict_range_bundle(bundle, pd.DataFrame([features, features]))
-    corrupted = dict(bundle, normalized_adjustment=-0.01)
+    corrupted = dict(bundle, normalized_adjustment={"low": -0.01, "high": 0.0})
     with pytest.raises(ValueError, match="nonnegative"):
         predict_range_bundle(corrupted, features)
+
+
+def test_asymmetric_conformal_calibration_keeps_endpoint_margins_separate():
+    X = pd.DataFrame({
+        "realized_volatility_5_sessions": [0.01] * 40,
+        "realized_volatility_22_sessions": [0.01] * 40,
+    })
+    predictions = (
+        np.full(40, -0.02),
+        np.full(40, 0.02),
+        np.zeros(40),
+    )
+    actual = np.column_stack((
+        np.full(40, -0.01),
+        np.full(40, 0.03),
+        np.zeros(40),
+    ))
+    margins = _asymmetric_conformal_adjustment(predictions, actual, X, alpha=0.10)
+    assert set(margins) == {"low", "high"}
+    assert margins["low"] == pytest.approx(0.0)
+    assert margins["high"] > margins["low"]
 
 
 def test_range_bundle_produces_finite_ordered_next_session_returns():
@@ -157,6 +178,8 @@ def test_range_forecast_translates_returns_to_positive_price_levels():
     bundle, features = _bundle_and_features()
     forecast = make_range_forecast(bundle, "2026-11-16", 25000.0, features)
     assert forecast["status"] == "pending"
+    assert 0 < forecast["core_predicted_low"] <= forecast["core_predicted_high"]
+    assert forecast["core_low_return"] <= forecast["core_close_return"] <= forecast["core_high_return"]
     assert 0 < forecast["predicted_low"] <= forecast["predicted_close"]
     assert forecast["predicted_close"] <= forecast["predicted_high"]
 
@@ -253,6 +276,9 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     forecast = {
         "origin_date": "2026-11-16",
         "origin_close": 25000.0,
+        "core_low_return": -0.008,
+        "core_high_return": 0.008,
+        "core_close_return": 0.0004,
         "predicted_low_return": -0.01,
         "predicted_high_return": 0.01,
         "predicted_close_return": 0.0004,
@@ -263,11 +289,11 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
         "calibration_alpha": 0.10,
         "baseline": {
             "name": "rolling_22_session_empirical_quantile",
-            "predicted_low_return": -0.005,
-            "predicted_high_return": 0.005,
+            "predicted_low_return": -0.004,
+            "predicted_high_return": 0.012,
             "predicted_close_return": 0.0,
-            "predicted_low": 24875.0,
-            "predicted_high": 25125.0,
+            "predicted_low": 24900.0,
+            "predicted_high": 25300.0,
             "predicted_close": 25000.0,
         },
     }
@@ -283,7 +309,7 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert scored["range_width_ratio"] == pytest.approx(1.25)
     assert scored["low_absolute_error_points"] == pytest.approx(50.0)
     assert scored["high_absolute_error_points"] == pytest.approx(50.0)
-    assert scored["baseline_predicted_range_width_points"] == pytest.approx(250.0)
+    assert scored["baseline_predicted_range_width_points"] == pytest.approx(400.0)
 
     summary = summarize_shadow_records([scored] * 20)
     assert summary["scored_sessions"] == 20
@@ -293,7 +319,7 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert summary["mean_model_width_ratio"] == pytest.approx(1.25)
     assert summary["mean_model_high_mae_points"] == pytest.approx(50.0)
     assert summary["mean_model_low_mae_points"] == pytest.approx(50.0)
-    assert summary["mean_baseline_predicted_width_points"] == pytest.approx(250.0)
+    assert summary["mean_baseline_predicted_width_points"] == pytest.approx(400.0)
     assert summary["shadow_validation_status"] == "pass_manual_review"
     assert summary["production_promotion_allowed"] is False
     assert summary["skipped_nonadjacent_session_count"] == 0
