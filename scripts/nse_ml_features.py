@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+import numpy as np
 from datetime import date
 
 import pandas as pd
@@ -10,7 +11,7 @@ import pandas as pd
 
 FEATURE_SCHEMA_VERSION = 3
 REQUIRED_COLUMNS = {
-    "TCKRSYMB", "FININSTRMTP", "XPRYDT", "STRKPRIC", "OPTNTP", "CLSPRIC",
+    "TCKRSYMB", "FININSTRMTP", "TRADDT", "XPRYDT", "STRKPRIC", "OPTNTP", "CLSPRIC",
     "PRVSCLSGPRIC", "OPNINTRST", "CHNGINOPNINTRST",
     "TTLTRADGVOL", "UNDRLYGPRIC",
 }
@@ -236,10 +237,9 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     if nifty_rows.empty:
         raise ValueError("No NIFTY instruments found in F&O bhavcopy")
 
-    if "TRADDT" in nifty_rows.columns:
-        trade_dates = pd.to_datetime(nifty_rows["TRADDT"], errors="coerce").dt.date.dropna().unique()
-        if len(trade_dates) and set(trade_dates) != {session_date}:
-            raise ValueError("F&O bhavcopy trade date does not match archive session date")
+    trade_dates = pd.to_datetime(nifty_rows["TRADDT"], errors="coerce").dt.date
+    if trade_dates.isna().any() or set(trade_dates.unique()) != {session_date}:
+        raise ValueError("F&O bhavcopy trade date is missing or does not match archive session date")
 
     for column in (
         "STRKPRIC", "CLSPRIC", "PRVSCLSGPRIC", "OPNINTRST",
@@ -258,6 +258,11 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     if option_frame[required_numeric].isna().any().any():
         bad = [column for column in required_numeric if option_frame[column].isna().any()]
         raise ValueError("NIFTY option rows contain missing required numeric fields: " + ", ".join(bad))
+    finite_mask = np.isfinite(option_frame[required_numeric].to_numpy(dtype=float))
+    if not finite_mask.all():
+        bad = [column for column in required_numeric
+               if not np.isfinite(option_frame[column].to_numpy(dtype=float)).all()]
+        raise ValueError("NIFTY option rows contain non-finite numeric fields: " + ", ".join(bad))
     if (option_frame[["STRKPRIC", "CLSPRIC", "OPNINTRST", "TTLTRADGVOL", "UNDRLYGPRIC"]] < 0).any().any():
         raise ValueError("NIFTY option rows contain negative strike, price, OI, volume or underlying values")
     if (option_frame["STRKPRIC"] <= 0).any() or (option_frame["CLSPRIC"] <= 0).any():
