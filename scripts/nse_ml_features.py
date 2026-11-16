@@ -44,7 +44,7 @@ def _outer_csv_frame(outer_bytes: bytes, report_key: str) -> pd.DataFrame | None
             if "indexname" in normalized and ("closing" in normalized or "close" in normalized):
                 header_index = index
                 break
-    return pd.read_csv(io.StringIO("\\n".join(lines[header_index:])), dtype=str, low_memory=False)
+    return pd.read_csv(io.StringIO("\n".join(lines[header_index:])), dtype=str, low_memory=False)
 
 
 def _normalised_name(value: str) -> str:
