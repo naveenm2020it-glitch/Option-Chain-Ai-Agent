@@ -328,6 +328,12 @@ jobs:
         if: ${{ always() && steps.range-state-init.outputs.ready == 'true' && steps.range-dependencies.outcome == 'success' && steps.nse-download.outcome == 'success' }}
         continue-on-error: true
         run: |
+          echo "execute_retrospective=false" >> "$GITHUB_OUTPUT"
+          if [ "$(date -u +%F)" != "2026-11-16" ]; then
+            echo "13-to-16 retrospective is date-pinned; skipping outside 2026-11-16."
+            exit 0
+          fi
+          echo "execute_retrospective=true" >> "$GITHUB_OUTPUT"
           python scripts/nse_download_check.py --date 2026-11-13 --lookback-days 1 --output data/nse_reports_2026_11_13
           python - <<'PY'
           import json
@@ -340,7 +346,7 @@ jobs:
 
       - name: Generate 13-Nov forecast and score against 16-Nov actual
         id: range-retro-score
-        if: ${{ always() && steps.range-retro-13-download.outcome == 'success' && steps.nse-download.outcome == 'success' && steps.range-dependencies.outcome == 'success' }}
+        if: ${{ always() && steps.range-retro-13-download.outcome == 'success' && steps.range-retro-13-download.outputs.execute_retrospective == 'true' && steps.nse-download.outcome == 'success' && steps.range-dependencies.outcome == 'success' }}
         continue-on-error: true
         env:
           PYTHONPATH: ${{ github.workspace }}/range-code
