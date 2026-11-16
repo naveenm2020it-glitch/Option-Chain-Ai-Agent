@@ -7,6 +7,7 @@ from scripts.train_nifty_four_models import (
     ROLLING_SOURCE_KEYS,
     build_latest_inference_features,
     build_rolling_feature_rows,
+    _select_model_feature_vector,
 )
 
 
@@ -17,6 +18,7 @@ def _synthetic_rows(count: int = 494):
         features = {key: float(i + 1) for key in ROLLING_SOURCE_KEYS}
         features.update({
             "spot_close": 20000.0 + i,
+            "spot_open": 19990.0 + i,
             "spot_high": 20100.0 + i,
             "spot_low": 19900.0 + i,
             "ce_oi": 1000.0 + i,
@@ -93,3 +95,14 @@ def test_inference_needs_enough_history_for_full_month_window():
         assert "23 stored sessions" in str(exc)
     else:
         raise AssertionError("Inference must not shorten the required 22-session history")
+
+def test_compact_model_feature_selector_is_shared_by_training_and_inference():
+    rows = _synthetic_rows()
+    samples = build_rolling_feature_rows(rows)
+    selected = _select_model_feature_vector(samples[-1]["features"])
+    inference = build_latest_inference_features(rows)
+    assert 70 <= len(selected) <= 100
+    assert set(selected) == set(inference)
+    assert "latest__spot_open_gap_pct" in selected
+    assert "mean5__pcr_oi" in selected
+    assert "change5__participant_oi_fii_future_index_net" in selected
