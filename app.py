@@ -136,6 +136,20 @@ def engine_models():
     }
 
 
+@app.get("/api/seller-intelligence/latest")
+def seller_intelligence_latest():
+    """Return the latest daily seller map and its precomputed 5/22-session context."""
+    if not database.database_configured():
+        return {"status": "unavailable", "reason": "PostgreSQL persistence is not configured."}
+    try:
+        payload = database.get_cached_json("seller_context:latest")
+    except Exception:
+        raise HTTPException(status_code=503, detail="Seller context store is temporarily unavailable.")
+    return payload if isinstance(payload, dict) else {
+        "status": "unavailable", "reason": "No validated daily seller context has been ingested yet."
+    }
+
+
 @app.get("/api/history")
 def history():
     if database.database_configured():
@@ -176,8 +190,12 @@ def ingest_daily_report(payload: dict, authorization: str | None = Header(defaul
     if not database.database_configured():
         raise HTTPException(status_code=503, detail="Database persistence is not configured.")
     try:
-        result = database.upsert_daily_report(collection_date, manifest)
-        return {"stored": True, **result}
+        seller_context = payload.get("seller_context")
+        if isinstance(seller_context, dict):
+            result = database.upsert_daily_report(collection_date, manifest, seller_context)
+        else:
+            result = database.upsert_daily_report(collection_date, manifest)
+        return {"stored": True, "seller_context_stored": isinstance(seller_context, dict), **result}
     except ValueError:
         raise HTTPException(status_code=400, detail="collection_date must use YYYY-MM-DD.")
     except Exception:
