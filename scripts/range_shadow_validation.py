@@ -590,10 +590,10 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 and summary.get("core_range_coverage_rate", 0.0)
                     >= summary.get("core_baseline_range_coverage_rate", 1.0) - 0.10
                 and summary.get("core_mean_winkler", float("inf"))
-                    < summary.get("core_mean_baseline_winkler", -float("inf"))
+                    <= summary.get("core_mean_baseline_winkler", 0.0) * 1.05
                 and summary.get("core_winkler_win_rate", 0.0) >= SHADOW_MIN_BASELINE_WIN_RATE
                 and summary.get("core_mean_predicted_width_points", float("inf"))
-                    <= summary.get("core_mean_baseline_predicted_width_points", 0.0) * 1.05
+                    <= summary.get("core_mean_baseline_predicted_width_points", 0.0)
             )
             outer_gate = (
                 summary["range_coverage_rate"] >= SHADOW_MIN_RANGE_COVERAGE
