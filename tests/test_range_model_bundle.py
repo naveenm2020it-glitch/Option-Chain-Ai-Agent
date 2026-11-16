@@ -15,6 +15,7 @@ import pytest
 import scripts.range_shadow_validation as shadow
 
 from scripts.range_model_bundle import fit_range_bundle, predict_range_bundle
+from scripts.range_research_benchmark import _conformal_adjustment
 from scripts.range_shadow_validation import (
     advance_shadow_state,
     make_range_forecast,
@@ -56,6 +57,33 @@ def _bundle_and_features():
     bundle = fit_range_bundle(candidate, X, y)
     features = X.iloc[-1].to_dict()
     return bundle, features
+
+
+
+
+def test_conformal_calibration_never_shrinks_interval_and_expands_for_misses():
+    X = pd.DataFrame({
+        "realized_volatility_5_sessions": [0.01] * 30,
+        "realized_volatility_22_sessions": [0.01] * 30,
+    })
+    predictions = (
+        np.full(30, -0.02),
+        np.full(30, 0.02),
+        np.zeros(30),
+    )
+    fully_covered = np.column_stack((
+        np.full(30, -0.01),
+        np.full(30, 0.01),
+        np.zeros(30),
+    ))
+    # All rows are already inside the base interval: calibration must not
+    # return a negative margin that contracts it.
+    assert _conformal_adjustment(predictions, fully_covered, X) == 0.0
+
+    misses = fully_covered.copy()
+    misses[-1, 1] = 0.04
+    adjustment = _conformal_adjustment(predictions, misses, X)
+    assert adjustment >= 0.0
 
 
 def test_range_bundle_produces_finite_ordered_next_session_returns():
