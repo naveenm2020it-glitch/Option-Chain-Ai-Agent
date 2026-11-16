@@ -191,23 +191,23 @@ def test_shadow_scoring_compares_model_with_rolling_baseline_and_sets_review_gat
     assert scored["range_covered"] is True
     assert scored["baseline_range_covered"] is False
     assert scored["model_beats_baseline_winkler"] is True
-    assert scored["predicted_range_width_points"] == 500.0
-    assert scored["actual_range_width_points"] == 400.0
-    assert scored["range_width_difference_points"] == 100.0
-    assert scored["range_width_ratio"] == 1.25
-    assert scored["low_absolute_error_points"] == 50.0
-    assert scored["high_absolute_error_points"] == 50.0
-    assert scored["baseline_predicted_range_width_points"] == 250.0
+    assert scored["predicted_range_width_points"] == pytest.approx(500.0)
+    assert scored["actual_range_width_points"] == pytest.approx(400.0)
+    assert scored["range_width_difference_points"] == pytest.approx(100.0)
+    assert scored["range_width_ratio"] == pytest.approx(1.25)
+    assert scored["low_absolute_error_points"] == pytest.approx(50.0)
+    assert scored["high_absolute_error_points"] == pytest.approx(50.0)
+    assert scored["baseline_predicted_range_width_points"] == pytest.approx(250.0)
 
     summary = summarize_shadow_records([scored] * 20)
     assert summary["scored_sessions"] == 20
-    assert summary["mean_model_predicted_width_points"] == 500.0
-    assert summary["mean_actual_width_points"] == 400.0
-    assert summary["mean_model_width_difference_points"] == 100.0
-    assert summary["mean_model_width_ratio"] == 1.25
-    assert summary["mean_model_high_mae_points"] == 50.0
-    assert summary["mean_model_low_mae_points"] == 50.0
-    assert summary["mean_baseline_predicted_width_points"] == 250.0
+    assert summary["mean_model_predicted_width_points"] == pytest.approx(500.0)
+    assert summary["mean_actual_width_points"] == pytest.approx(400.0)
+    assert summary["mean_model_width_difference_points"] == pytest.approx(100.0)
+    assert summary["mean_model_width_ratio"] == pytest.approx(1.25)
+    assert summary["mean_model_high_mae_points"] == pytest.approx(50.0)
+    assert summary["mean_model_low_mae_points"] == pytest.approx(50.0)
+    assert summary["mean_baseline_predicted_width_points"] == pytest.approx(250.0)
     assert summary["shadow_validation_status"] == "pass_manual_review"
     assert summary["production_promotion_allowed"] is False
     assert summary["skipped_nonadjacent_session_count"] == 0
