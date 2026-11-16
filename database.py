@@ -37,6 +37,13 @@ def _ensure_schema(conn) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS seller_context_daily (
+            session_date DATE PRIMARY KEY,
+            payload JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
 
 
 def get_cached_json(key: str) -> Any | None:
@@ -102,12 +109,23 @@ def upsert_daily_report(collection_date: str, manifest: dict[str, Any], seller_c
              json.dumps(manifest, separators=(",", ":"), ensure_ascii=False)),
         )
         if seller_context is not None:
+            encoded_context = json.dumps(seller_context, separators=(",", ":"), ensure_ascii=False)
+            context_date = seller_context.get("session_date")
+            if context_date:
+                date.fromisoformat(str(context_date))
+                conn.execute(
+                    """INSERT INTO seller_context_daily(session_date, payload, updated_at)
+                       VALUES (%s, %s::jsonb, NOW())
+                       ON CONFLICT(session_date) DO UPDATE
+                       SET payload = EXCLUDED.payload, updated_at = NOW()""",
+                    (context_date, encoded_context),
+                )
             conn.execute(
                 """INSERT INTO app_json_cache(cache_key, payload, updated_at)
                    VALUES ('seller_context:latest', %s::jsonb, NOW())
                    ON CONFLICT(cache_key) DO UPDATE
                    SET payload = EXCLUDED.payload, updated_at = NOW()""",
-                (json.dumps(seller_context, separators=(",", ":"), ensure_ascii=False),),
+                (encoded_context,),
             )
     return {
         "collection_date": collection_date,
@@ -163,3 +181,21 @@ def get_daily_report_manifest(collection_date: str) -> dict[str, Any] | None:
             (collection_date,),
         ).fetchone()
         return row[0] if row else None
+
+
+
+def get_seller_context_history(before_date: str, limit: int = 22) -> list[dict[str, Any]]:
+    from datetime import date
+    date.fromisoformat(before_date)
+    limit = max(1, min(int(limit), 100))
+    if not database_configured():
+        return []
+    with _connect() as conn:
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """SELECT payload FROM seller_context_daily
+               WHERE session_date < %s
+               ORDER BY session_date DESC LIMIT %s""",
+            (before_date, limit),
+        ).fetchall()
+    return [row[0] for row in reversed(rows) if isinstance(row[0], dict)]
