@@ -37,7 +37,7 @@ def test_snapshot_uses_front_expiry_and_builds_both_sides():
 def test_window_summary_counts_level_persistence_by_session():
     levels = snapshot_from_contracts("2026-11-16", 25100, _contracts())
     history = [(f"2026-11-{day:02d}", levels) for day in range(9, 14)]
-    result = _window_summary(history, 5)
+    result = _window_summary(history, 5, "2026-11-16")
     assert result["sessions_available"] == 5
     assert result["sessions_analyzed"] == 5
     assert result["support_persistence"]
@@ -48,7 +48,7 @@ def test_window_summary_counts_level_persistence_by_session():
 def test_window_summary_uses_only_requested_trailing_sessions():
     levels = snapshot_from_contracts("2026-11-16", 25100, _contracts())
     history = [(f"2026-10-{day:02d}", levels) for day in range(1, 24)]
-    result = _window_summary(history, 22)
+    result = _window_summary(history, 22, "2026-10-24")
     assert result["sessions_available"] == 22
     assert result["sessions_analyzed"] == 22
 
@@ -62,3 +62,12 @@ def test_missing_previous_close_does_not_confirm_option_writing():
     candidates = result["support"] + result["resistance"]
     assert candidates
     assert all(item["evidence"]["classification"] != "writing_candidate" for item in candidates)
+
+
+
+def test_window_summary_flags_missing_weekday_context():
+    levels = snapshot_from_contracts("2026-11-16", 25100, _contracts())
+    history = [("2026-11-09", levels), ("2026-11-11", levels)]
+    result = _window_summary(history, 5, "2026-11-16")
+    assert result["coverage_status"] == "incomplete_or_exchange_holiday_gap"
+    assert result["possible_missing_weekdays"] >= 1
