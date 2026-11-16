@@ -348,7 +348,10 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "scored_sessions": len(scored),
         "minimum_sessions_required": SHADOW_MIN_SESSIONS,
-        "nominal_full_range_coverage": 0.90,
+        "nominal_full_range_coverage": (
+            float(np.mean([1.0 - float(item.get("calibration_alpha", 0.10)) for item in scored]))
+            if scored else 0.90
+        ),
         "minimum_acceptable_shadow_coverage": SHADOW_MIN_RANGE_COVERAGE,
         "shadow_validation_status": "collecting",
         "production_promotion_allowed": False,
@@ -360,6 +363,10 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "low_endpoint_coverage_rate": None,
             "high_endpoint_coverage_rate": None,
             "close_inside_rate": None,
+            "baseline_range_coverage_rate": None,
+            "baseline_low_endpoint_coverage_rate": None,
+            "baseline_high_endpoint_coverage_rate": None,
+            "baseline_close_inside_rate": None,
             "mean_model_winkler": None,
             "mean_baseline_winkler": None,
             "model_winkler_win_rate": None,
@@ -380,6 +387,28 @@ def summarize_shadow_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             item["close_absolute_error_points"] for item in scored
         ])),
     })
+    if comparable:
+        summary.update({
+            "baseline_range_coverage_rate": float(np.mean([
+                item["baseline_range_covered"] for item in comparable
+            ])),
+            "baseline_low_endpoint_coverage_rate": float(np.mean([
+                item["baseline_low_endpoint_covered"] for item in comparable
+            ])),
+            "baseline_high_endpoint_coverage_rate": float(np.mean([
+                item["baseline_high_endpoint_covered"] for item in comparable
+            ])),
+            "baseline_close_inside_rate": float(np.mean([
+                item["baseline_close_inside_predicted_range"] for item in comparable
+            ])),
+        })
+    else:
+        summary.update({
+            "baseline_range_coverage_rate": None,
+            "baseline_low_endpoint_coverage_rate": None,
+            "baseline_high_endpoint_coverage_rate": None,
+            "baseline_close_inside_rate": None,
+        })
     if comparable:
         model_winkler = np.asarray([
             item["winkler_interval_score_return_space"] for item in comparable
@@ -524,6 +553,12 @@ def run_shadow(
         raise RuntimeError("Unsupported Range candidate bundle")
     if abs(float(bundle.get("calibration_alpha", -1.0)) - float(manifest.get("calibration_alpha", -2.0))) > 1e-12:
         raise RuntimeError("Range candidate calibration metadata does not match its manifest")
+    if not 0.0 < float(bundle.get("calibration_alpha", 0.0)) < 1.0:
+        raise RuntimeError("Range candidate has an invalid conformal calibration alpha")
+    if manifest.get("context_repair_pass") is not True:
+        raise RuntimeError("Range candidate manifest does not pass context repair")
+    if manifest.get("feature_count") != len(bundle.get("feature_names", [])):
+        raise RuntimeError("Range candidate feature count does not match its manifest")
     state = (
         json.loads(state_path.read_text(encoding="utf-8"))
         if state_path.is_file()
