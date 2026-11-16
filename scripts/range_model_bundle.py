@@ -116,6 +116,10 @@ def fit_range_bundle(
         raise ValueError("Range training matrix has duplicate columns or missing values")
     if not np.isfinite(X.to_numpy(dtype=float)).all() or not np.isfinite(y).all():
         raise ValueError("Range training data contains non-finite values")
+    # Every target row represents one real OHLC session relative to the
+    # previous close. Reject impossible price geometry before fitting.
+    if np.any(y[:, 0] <= -1.0) or np.any(y[:, 0] > y[:, 2]) or np.any(y[:, 2] > y[:, 1]):
+        raise ValueError("Range targets must satisfy -100% < low_return <= close_return <= high_return")
 
     calibration_size = max(25, int(np.ceil(len(X) * calibration_fraction)))
     fit_end = len(X) - calibration_size
@@ -163,6 +167,13 @@ def predict_range_bundle(
     else:
         frame = pd.DataFrame([features])
     names = bundle["feature_names"]
+    if not names or len(set(names)) != len(names):
+        raise ValueError("Range bundle feature schema is empty or contains duplicates")
+    if len(frame) != 1:
+        raise ValueError("Range inference expects exactly one forecast-origin row")
+    adjustment = bundle.get("normalized_adjustment")
+    if adjustment is None or not np.isfinite(float(adjustment)) or float(adjustment) < 0.0:
+        raise ValueError("Range bundle conformal adjustment must be finite and nonnegative")
     missing = [name for name in names if name not in frame.columns]
     if missing:
         raise ValueError("Range inference is missing model features: " + ", ".join(missing[:10]))
