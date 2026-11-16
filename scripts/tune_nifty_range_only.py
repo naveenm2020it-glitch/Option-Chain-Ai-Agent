@@ -2,26 +2,33 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from scripts.train_nifty_four_models import (
-    EXPECTED_SESSIONS, _build_daily_targets, _check_artifact_gates,
-    _feature_matrix, build_rolling_feature_rows,
+    EXPECTED_SESSIONS,
+    _build_daily_targets,
+    _check_artifact_gates,
+    _feature_matrix,
+    build_rolling_feature_rows,
 )
-from scripts.tune_nifty_four_models import _load_dependencies, tune_range
+from scripts.range_research_benchmark import tune_range_research
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Range-only NIFTY research tuning.")
+    parser = argparse.ArgumentParser(description="Range-only NIFTY specialist research benchmark.")
     parser.add_argument("--checkpoint", type=Path, default=Path("data/historical_audit/checkpoint.json"))
     parser.add_argument("--audit-report", type=Path, default=Path("data/historical_audit/coverage.json"))
     parser.add_argument("--repair-report", type=Path, default=Path("data/context_repair/context_repair_report.json"))
     parser.add_argument("--output", type=Path, default=Path("models/tuning_artifacts/range_only_report.json"))
     args = parser.parse_args()
 
-    _load_dependencies()
     checkpoint, audit, repair = _check_artifact_gates(args.checkpoint, args.audit_report, args.repair_report)
     feature_rows = checkpoint["features"]
     if len(feature_rows) != EXPECTED_SESSIONS:
@@ -31,7 +38,7 @@ def main() -> None:
     targets = _build_daily_targets(rolling, feature_rows)
     split = int(len(X) * 0.8)
     y = np.column_stack((targets["low_return"], targets["high_return"], targets["close_return"]))
-    result = tune_range(X, y, split)
+    result = tune_range_research(X, y, split)
 
     report = {
         "status": "range_only_tuning_complete",
