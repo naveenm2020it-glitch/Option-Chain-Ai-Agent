@@ -170,20 +170,17 @@ def _window_summary(history_rows: list[tuple[str, dict]], window: int, as_of_dat
             -item["sessions_present"], -item["average_strength"], item["level"]
         ))[:5]
 
-    gap_weekdays = sum(
-        _weekday_gap(left[0], right[0])
-        for left, right in zip(selected, selected[1:])
-    )
-    if selected:
-        gap_weekdays += _weekday_gap(selected[-1][0], as_of_date)
-    complete = len(selected) == window and used == len(selected) and gap_weekdays == 0
+    count_complete = len(selected) == window and used == len(selected)
     return {
         "requested_sessions": window,
         "sessions_available": len(selected),
         "sessions_analyzed": used,
         "latest_prior_session": selected[-1][0] if selected else None,
-        "possible_missing_weekdays": gap_weekdays,
-        "coverage_status": "complete" if complete else "incomplete_or_exchange_holiday_gap",
+        "session_calendar_verified": False,
+        "coverage_status": (
+            "count_complete_calendar_unverified" if count_complete
+            else "incomplete_missing_or_invalid_sessions"
+        ),
         "support_persistence": rank(support),
         "resistance_persistence": rank(resistance),
     }
