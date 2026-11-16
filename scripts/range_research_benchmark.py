@@ -8,7 +8,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 
-ALPHA = 0.20
+ALPHA = 0.10
 Q_LOW = 0.10
 Q_HIGH = 0.90
 RANDOM_STATE = 42
@@ -385,6 +385,7 @@ def tune_range_research(
             and mean_cv["combined_pinball"] <= baseline_cv["combined_pinball"] * 1.03
             and mean_cv["close_return_mae"] <= baseline_cv["close_return_mae"] * 1.10
             and mean_cv["full_range_coverage"] >= max(0.78, baseline_cv["full_range_coverage"] - 0.01)
+            and min(metric["full_range_coverage"] for metric in fold_metrics) >= 0.70
             and fold_wins >= 2
         )
         candidate_rows.append({
@@ -393,6 +394,9 @@ def tune_range_research(
             "cv": mean_cv,
             "fold_metrics": fold_metrics,
             "folds_won_on_winkler": fold_wins,
+            "minimum_fold_full_range_coverage": float(
+                min(metric["full_range_coverage"] for metric in fold_metrics)
+            ),
             "cv_beats_baseline": bool(passes),
         })
 
@@ -434,7 +438,7 @@ def tune_range_research(
     selected_hold_metrics = _range_metrics(selected_hold, y_hold, selected_adjustment, X_hold)
 
     return {
-        "model": "Range-specialist benchmark: quantile models plus 80% joint conformal calibration",
+        "model": "Range-specialist benchmark: quantile models plus 90% joint conformal calibration",
         "selected_config": chosen,
         "selected_cv": selected["cv"],
         "selected_cv_combined_pinball": selected["cv"]["combined_pinball"],
@@ -463,12 +467,13 @@ def tune_range_research(
         },
         "validation_policy": {
             "candidate_selection": "three expanding-window chronological folds within the first 80% of samples",
-            "primary_metric": "80% joint-range Winkler interval score (lower is better)",
+            "primary_metric": f"{1.0 - ALPHA:.0%} joint-range Winkler interval score (lower is better)",
             "guardrails": [
                 "mean CV Winkler score beats the fold-matched calibrated quantile baseline",
                 "mean CV combined pinball loss is no more than 3% worse than baseline",
                 "mean CV close-return MAE is no more than 10% worse than baseline",
                 "mean CV full-range coverage is at least 78% and no more than 1 percentage point below baseline",
+                "no individual chronological fold has full-range coverage below 70%",
                 "candidate wins Winkler score in at least two of three chronological folds",
             ],
             "all_transforms_fit_inside_fold": True,
