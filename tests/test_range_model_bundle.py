@@ -178,6 +178,8 @@ def test_range_forecast_translates_returns_to_positive_price_levels():
     bundle, features = _bundle_and_features()
     forecast = make_range_forecast(bundle, "2026-11-16", 25000.0, features)
     assert forecast["status"] == "pending"
+    assert 0 < forecast["core_predicted_low"] <= forecast["core_predicted_high"]
+    assert forecast["core_low_return"] <= forecast["core_close_return"] <= forecast["core_high_return"]
     assert 0 < forecast["predicted_low"] <= forecast["predicted_close"]
     assert forecast["predicted_close"] <= forecast["predicted_high"]
 
