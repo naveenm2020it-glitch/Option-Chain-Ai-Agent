@@ -96,4 +96,5 @@ def test_window_summary_flags_missing_weekday_context():
     history = [("2026-11-09", levels), ("2026-11-11", levels)]
     result = _window_summary(history, 5, "2026-11-16")
     assert result["coverage_status"] == "incomplete_missing_or_invalid_sessions"
-    assert result["possible_missing_weekdays"] >= 1
+    assert result["session_calendar_verified"] is False
+    assert "possible_missing_weekdays" not in result
