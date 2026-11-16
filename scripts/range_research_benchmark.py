@@ -268,16 +268,49 @@ def _conformal_adjustment(
     return float(max(0.0, np.sort(scores)[max(0, rank - 1)]))
 
 
+def _asymmetric_conformal_adjustment(
+    predictions: tuple[np.ndarray, np.ndarray, np.ndarray],
+    actual: np.ndarray,
+    X_calibration: pd.DataFrame,
+    alpha: float = ALPHA,
+) -> dict[str, float]:
+    """Calibrate each interval endpoint independently with Bonferroni coverage."""
+    actual = np.asarray(actual, dtype=float)
+    lower, upper, _ = _base_bounds(predictions)
+    if actual.ndim != 2 or actual.shape[1] != 3:
+        raise ValueError("Asymmetric calibration targets must have [low, high, close] columns")
+    if len(actual) != len(X_calibration) or len(actual) == 0:
+        raise ValueError("Asymmetric calibration features and targets must be aligned and non-empty")
+    if not np.isfinite(actual).all() or not np.isfinite(lower).all() or not np.isfinite(upper).all():
+        raise ValueError("Asymmetric calibration contains non-finite values")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("Asymmetric calibration alpha must be between zero and one")
+    scale = _volatility_scale(X_calibration)
+    low_scores = np.maximum(lower - actual[:, 0], 0.0) / scale
+    high_scores = np.maximum(actual[:, 1] - upper, 0.0) / scale
+    tail_alpha = alpha / 2.0
+    rank = min(len(actual), int(np.ceil((len(actual) + 1) * (1.0 - tail_alpha))))
+    return {
+        "low": float(max(0.0, np.sort(low_scores)[max(0, rank - 1)])),
+        "high": float(max(0.0, np.sort(high_scores)[max(0, rank - 1)])),
+    }
+
+
 def _range_metrics(
     predictions: tuple[np.ndarray, np.ndarray, np.ndarray],
     actual: np.ndarray,
-    normalized_adjustment: float,
+    normalized_adjustment: float | dict[str, float],
     X_eval: pd.DataFrame,
 ) -> dict[str, float]:
     lower, upper, close = _base_bounds(predictions)
-    row_adjustment = normalized_adjustment * _volatility_scale(X_eval)
-    lower = np.minimum(lower - row_adjustment, close)
-    upper = np.maximum(upper + row_adjustment, close)
+    scale = _volatility_scale(X_eval)
+    if isinstance(normalized_adjustment, dict):
+        low_adjustment = float(normalized_adjustment["low"]) * scale
+        high_adjustment = float(normalized_adjustment["high"]) * scale
+    else:
+        low_adjustment = high_adjustment = float(normalized_adjustment) * scale
+    lower = np.minimum(lower - low_adjustment, close)
+    upper = np.maximum(upper + high_adjustment, close)
     low_actual, high_actual, close_actual = actual[:, 0], actual[:, 1], actual[:, 2]
     low_miss = np.maximum(lower - low_actual, 0.0)
     high_miss = np.maximum(high_actual - upper, 0.0)
@@ -366,7 +399,7 @@ def tune_range_research(
             raise RuntimeError("Not enough inner-fit samples for calibrated chronological CV")
         fit_idx, calibration_idx = fold_train[:-calibration_size], fold_train[-calibration_size:]
         base_cal = _baseline_predictions(y_train[fit_idx], len(calibration_idx))
-        base_adjustment = _conformal_adjustment(base_cal, y_train[calibration_idx], X_train.iloc[calibration_idx])
+        base_adjustment = _asymmetric_conformal_adjustment(base_cal, y_train[calibration_idx], X_train.iloc[calibration_idx])
         base_valid = _baseline_predictions(y_train[fit_idx], len(fold_valid))
         baseline_fold_metrics.append(
             _range_metrics(base_valid, y_train[fold_valid], base_adjustment, X_train.iloc[fold_valid])
@@ -388,7 +421,7 @@ def tune_range_research(
                 calibration_y = y_train[calibration_idx]
 
                 calibration_predictions = _predict_candidate(candidate, fit_X, fit_y, calibration_X)
-                adjustment = _conformal_adjustment(calibration_predictions, calibration_y, calibration_X)
+                adjustment = _asymmetric_conformal_adjustment(calibration_predictions, calibration_y, calibration_X)
                 valid_predictions = _predict_candidate(candidate, fit_X, fit_y, valid_X)
                 fold_metrics.append(_range_metrics(valid_predictions, y_train[fold_valid], adjustment, valid_X))
         except Exception as exc:
@@ -473,12 +506,12 @@ def tune_range_research(
     final_cal_y = y_train[final_cal_idx]
 
     base_cal = _baseline_predictions(final_fit_y, len(final_cal_idx))
-    baseline_adjustment = _conformal_adjustment(base_cal, final_cal_y, final_cal_X)
+    baseline_adjustment = _asymmetric_conformal_adjustment(base_cal, final_cal_y, final_cal_X)
     base_hold = _baseline_predictions(final_fit_y, len(X_hold))
     baseline_hold_metrics = _range_metrics(base_hold, y_hold, baseline_adjustment, X_hold)
 
     selected_cal = _predict_candidate(chosen, final_fit_X, final_fit_y, final_cal_X)
-    selected_adjustment = _conformal_adjustment(selected_cal, final_cal_y, final_cal_X)
+    selected_adjustment = _asymmetric_conformal_adjustment(selected_cal, final_cal_y, final_cal_X)
     selected_hold = _predict_candidate(chosen, final_fit_X, final_fit_y, X_hold)
     selected_hold_metrics = _range_metrics(selected_hold, y_hold, selected_adjustment, X_hold)
 
@@ -508,10 +541,10 @@ def tune_range_research(
         "holdout_is_selection_independent": False,
         "holdout_note": "This final 20% segment has been inspected in earlier research runs. It is diagnostic only, not an untouched test set.",
         "calibration": {
-            "method": "volatility-normalized split conformal calibration on chronological inner calibration block",
+            "method": "asymmetric volatility-normalized split conformal calibration with Bonferroni endpoint allocation",
             "nominal_joint_full_range_coverage": 1.0 - ALPHA,
-            "normalization": "joint range nonconformity score divided by origin-session rolling volatility scale; the fitted quantile is multiplied by each forecast session's volatility scale",
-            "score": "max(predicted_low - actual_low, actual_high - predicted_high)",
+            "normalization": "separate lower- and upper-endpoint nonconformity scores divided by origin-session rolling volatility scale",
+            "score": "lower=max(predicted_low-actual_low,0); upper=max(actual_high-predicted_high,0); each tail uses alpha/2",
             "fit_calibration_split": "first 80% fit, most recent 20% of each training fold calibrates; validation follows calibration chronologically",
         },
         "validation_policy": {
