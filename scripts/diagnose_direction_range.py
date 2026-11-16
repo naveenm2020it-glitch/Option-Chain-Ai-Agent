@@ -5,9 +5,11 @@ import json
 from pathlib import Path
 
 import numpy as np
-from sklearn.dummy import DummyClassifier
-from sklearn.model_selection import TimeSeriesSplit
+import pandas as pd
 from lightgbm import LGBMClassifier
+from sklearn.dummy import DummyClassifier, DummyRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
+from sklearn.model_selection import TimeSeriesSplit
 
 from train_nifty_four_models import (
     EXPECTED_SESSIONS, _check_artifact_gates, _build_daily_targets,
@@ -33,93 +35,171 @@ def _classifier():
     )
 
 
-def _threshold_labels(returns, threshold):
-    return np.where(returns > threshold, 2, np.where(returns < -threshold, 0, 1)).astype(int)
+def _enhanced_features(X: pd.DataFrame) -> pd.DataFrame:
+    """Add scale-normalized 5-session versus 22-session regime shifts."""
+    out = X.copy()
+    sources = (
+        "future_return", "future_oi_change_pct", "pcr_oi", "pcr_change_oi",
+        "pcr_volume", "ce_writer_build_share", "pe_writer_build_share",
+        "participant_oi_fii_future_index_net",
+        "participant_oi_client_future_index_net",
+        "participant_oi_fii_option_index_call_net",
+        "participant_oi_fii_option_index_put_net",
+        "participant_volume_fii_option_index_call_net",
+        "participant_volume_fii_option_index_put_net",
+        "spot_return_1d", "spot_open_gap_pct", "spot_close_location",
+    )
+    for source in sources:
+        five, month = f"mean5__{source}", f"mean22__{source}"
+        if five in X.columns and month in X.columns:
+            out[f"relative_regime_shift__{source}"] = (
+                X[five"] - X[month]
+            ) / (np.abs(X[month]) + 1e-6)
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _adaptive_labels(returns: np.ndarray, volatility: np.ndarray, multiplier: float):
+    # Volatility is calculated only from completed sessions at each forecast origin.
+    threshold = np.clip(volatility * multiplier, 0.001, 0.006)
+    labels = np.where(returns > threshold, 2, np.where(returns < -threshold, 0, 1))
+    return labels.astype(int), threshold
 
 
 def diagnose_direction(X, close_returns, split):
-    X_train, X_hold = X.iloc[:split], X.iloc[split:]
-    returns_train, returns_hold = close_returns[:split], close_returns[split:]
+    volatility = np.maximum(X["realized_volatility_22_sessions"].to_numpy(), 0.001)
+    variants = {"base": X, "relative_regime_features": _enhanced_features(X)}
     candidates = []
-    for threshold in (0.001, 0.0015, 0.002, 0.0025, 0.003, 0.004):
-        y_train = _threshold_labels(returns_train, threshold)
-        y_hold = _threshold_labels(returns_hold, threshold)
-        if set(np.unique(y_train)) != {0, 1, 2}:
-            continue
-        fold_model, fold_base = [], []
-        for tr, va in TimeSeriesSplit(n_splits=3).split(X_train):
-            y_tr, y_va = y_train[tr], y_train[va]
-            if set(np.unique(y_tr)) != {0, 1, 2}:
+    for variant_name, features in variants.items():
+        for multiplier in (0.50, 0.75, 1.00, 1.25):
+            labels, thresholds = _adaptive_labels(close_returns, volatility, multiplier)
+            train_labels = labels[:split]
+            if set(np.unique(train_labels)) != {0, 1, 2}:
                 continue
-            model = _classifier().fit(X_train.iloc[tr], y_tr)
-            prior = DummyClassifier(strategy="prior").fit(X_train.iloc[tr], y_tr)
-            fold_model.append(_direction_metrics(y_va, _aligned(model, X_train.iloc[va])))
-            fold_base.append(_direction_metrics(y_va, _aligned(prior, X_train.iloc[va])))
-        if not fold_model:
-            continue
-        keys = ("macro_f1", "multiclass_brier", "accuracy")
-        cv = {k: float(np.mean([m[k] for m in fold_model])) for k in keys}
-        baseline_cv = {k: float(np.mean([m[k] for m in fold_base])) for k in keys}
-        candidates.append({
-            "threshold": threshold,
-            "train_class_counts": {str(i): int(np.sum(y_train == i)) for i in range(3)},
-            "holdout_class_counts": {str(i): int(np.sum(y_hold == i)) for i in range(3)},
-            "cv": cv, "baseline_cv": baseline_cv,
-            "selection_score": cv["macro_f1"] - 0.25 * cv["multiclass_brier"],
-        })
+            fold_metrics, fold_baselines = [], []
+            for tr, va in TimeSeriesSplit(n_splits=3).split(features.iloc[:split]):
+                if set(np.unique(train_labels[tr])) != {0, 1, 2}:
+                    continue
+                model = _classifier().fit(features.iloc[tr], train_labels[tr])
+                baseline = DummyClassifier(strategy="prior").fit(features.iloc[tr], train_labels[tr])
+                fold_metrics.append(_direction_metrics(
+                    train_labels[va], _aligned(model, features.iloc[va])
+                ))
+                fold_baselines.append(_direction_metrics(
+                    train_labels[va], _aligned(baseline, features.iloc[va])
+                ))
+            if not fold_metrics:
+                continue
+            metric_keys = ("macro_f1", "multiclass_brier", "accuracy")
+            cv = {k: float(np.mean([m[k] for m in fold_metrics])) for k in metric_keys}
+            base_cv = {k: float(np.mean([m[k] for m in fold_baselines])) for k in metric_keys}
+            candidates.append({
+                "feature_variant": variant_name,
+                "volatility_threshold_multiplier": multiplier,
+                "cv": cv,
+                "prior_baseline_cv": base_cv,
+                "cv_score": cv["macro_f1"] - 0.25 * cv["multiclass_brier"],
+                "mean_training_threshold": float(np.mean(thresholds[:split])),
+                "training_class_counts": {
+                    str(k): int(np.sum(train_labels == k)) for k in range(3)
+                },
+            })
     if not candidates:
-        raise RuntimeError("No direction threshold produced valid three-class chronological folds")
-    selected = max(candidates, key=lambda x: x["selection_score"])
-    threshold = selected["threshold"]
-    y_train = _threshold_labels(returns_train, threshold)
-    y_hold = _threshold_labels(returns_hold, threshold)
-    model = _classifier().fit(X_train, y_train)
-    baseline = DummyClassifier(strategy="prior").fit(X_train, y_train)
-    holdout = _direction_metrics(y_hold, _aligned(model, X_hold))
-    baseline_holdout = _direction_metrics(y_hold, _aligned(baseline, X_hold))
+        raise RuntimeError("No adaptive direction candidate produced valid chronological folds")
+    selected = max(candidates, key=lambda item: item["cv_score"])
+    selected_features = variants[selected["feature_variant"]]
+    labels, thresholds = _adaptive_labels(
+        close_returns, volatility, selected["volatility_threshold_multiplier"]
+    )
+    model = _classifier().fit(selected_features.iloc[:split], labels[:split])
+    baseline = DummyClassifier(strategy="prior").fit(selected_features.iloc[:split], labels[:split])
+    model_hold = _direction_metrics(labels[split:], _aligned(model, selected_features.iloc[split:]))
+    baseline_hold = _direction_metrics(labels[split:], _aligned(baseline, selected_features.iloc[split:]))
     return {
-        "threshold_candidates": candidates,
-        "selected_threshold_from_training_cv": threshold,
-        "selected_model_holdout": holdout,
-        "prior_baseline_holdout": baseline_holdout,
-        "holdout_beats_baseline": (
-            holdout["macro_f1"] > baseline_holdout["macro_f1"]
-            and holdout["multiclass_brier"] < baseline_holdout["multiclass_brier"]
+        "selected_feature_variant_from_training_cv": selected["feature_variant"],
+        "selected_volatility_multiplier_from_training_cv": selected["volatility_threshold_multiplier"],
+        "selected_training_cv": selected["cv"],
+        "selected_prior_baseline_cv": selected["prior_baseline_cv"],
+        "candidate_count": len(candidates),
+        "candidate_cv_summary": candidates,
+        "exploratory_holdout": model_hold,
+        "exploratory_prior_baseline_holdout": baseline_hold,
+        "exploratory_holdout_beats_baseline": (
+            model_hold["macro_f1"] > baseline_hold["macro_f1"]
+            and model_hold["multiclass_brier"] < baseline_hold["multiclass_brier"]
         ),
-        "policy": "threshold chosen only by expanding-window CV on first 80%; locked final 20% evaluated once",
+        "label_policy": "Per-origin neutral band = clipped trailing-22-session realized volatility times a multiplier; volatility uses completed sessions only.",
     }
 
 
-def diagnose_range_baselines(range_targets, split):
-    # Each origin can use only outcomes from earlier origins; no target leakage.
-    predictions = []
-    for i in range(len(range_targets)):
-        history = range_targets[max(0, i - 5):i]
-        if len(history) < 3:
-            predictions.append(np.median(range_targets[:max(1, i)], axis=0))
-        else:
-            predictions.append(np.median(history, axis=0))
-    pred = np.asarray(predictions)
-    actual = range_targets[split:]
-    rolling = pred[split:]
-    global_median = np.median(range_targets[:split], axis=0)
-    median_pred = np.repeat(global_median[None, :], len(actual), axis=0)
-    def metrics(y, p):
-        return {
-            "combined_mae": float(np.mean(np.abs(y - p))),
-            "low_mae": float(np.mean(np.abs(y[:, 0] - p[:, 0]))),
-            "high_mae": float(np.mean(np.abs(y[:, 1] - p[:, 1]))),
-            "close_mae": float(np.mean(np.abs(y[:, 2] - p[:, 2]))),
-            "close_inside_predicted_range": float(np.mean((y[:, 2] >= p[:, 0]) & (y[:, 2] <= p[:, 1]))),
-        }
-    # Enforce physical ordering for both baseline ranges.
-    for p in (rolling, median_pred):
-        p[:, 0] = np.minimum(p[:, 0], p[:, 2])
-        p[:, 1] = np.maximum(p[:, 1], p[:, 2])
+def _range_metrics(actual, prediction):
+    low, high, close = prediction[:, 0], prediction[:, 1], prediction[:, 2]
     return {
-        "previous_five_sessions_median": metrics(actual, rolling),
-        "training_global_median": metrics(actual, median_pred),
-        "rolling_baseline_policy": "At each origin, use only the preceding up-to-five realized session outcomes; never the current target.",
+        "combined_mae": float(np.mean(np.abs(actual - prediction))),
+        "low_mae": float(np.mean(np.abs(actual[:, 0] - low))),
+        "high_mae": float(np.mean(np.abs(actual[:, 1] - high))),
+        "close_mae": float(np.mean(np.abs(actual[:, 2] - close))),
+        "close_inside_predicted_range": float(np.mean(
+            (actual[:, 2] >= low) & (actual[:, 2] <= high)
+        )),
+    }
+
+
+def _ordered_range(prediction):
+    out = np.asarray(prediction, dtype=float).copy()
+    out[:, 0] = np.minimum(out[:, 0], out[:, 2])
+    out[:, 1] = np.maximum(out[:, 1], out[:, 2])
+    return out
+
+
+def diagnose_range(X, targets, split):
+    # Scale each day's low/high/close return by volatility known at its origin.
+    scale = np.maximum(X["realized_volatility_22_sessions"].to_numpy(), 0.001)
+    normalized = targets / scale[:, None]
+    candidates = [
+        ("extra_trees_normalized", lambda: ExtraTreesRegressor(
+            n_estimators=220, max_depth=5, min_samples_leaf=10,
+            max_features=0.8, random_state=42, n_jobs=2,
+        )),
+        ("random_forest_normalized", lambda: RandomForestRegressor(
+            n_estimators=220, max_depth=5, min_samples_leaf=10,
+            max_features=0.8, random_state=42, n_jobs=2,
+        )),
+    ]
+    splitter = TimeSeriesSplit(n_splits=3)
+    baseline_scores, model_scores = [], {name: [] for name, _ in candidates}
+    for tr, va in splitter.split(X.iloc[:split]):
+        baseline = DummyRegressor(strategy="median").fit(X.iloc[tr], normalized[tr])
+        baseline_pred = _ordered_range(baseline.predict(X.iloc[va]) * scale[va, None])
+        baseline_scores.append(_range_metrics(targets[va], baseline_pred)["combined_mae"])
+        for name, factory in candidates:
+            model = factory().fit(X.iloc[tr], normalized[tr])
+            prediction = _ordered_range(model.predict(X.iloc[va]) * scale[va, None])
+            model_scores[name].append(_range_metrics(targets[va], prediction)["combined_mae"])
+    baseline_cv = float(np.mean(baseline_scores))
+    candidate_cv = {
+        name: float(np.mean(scores)) for name, scores in model_scores.items()
+    }
+    selected_name = min(candidate_cv, key=candidate_cv.get)
+    selected_factory = dict(candidates)[selected_name]
+    model = selected_factory().fit(X.iloc[:split], normalized[:split])
+    prediction = _ordered_range(model.predict(X.iloc[split:]) * scale[split:, None])
+    baseline = DummyRegressor(strategy="median").fit(X.iloc[:split], normalized[:split])
+    baseline_prediction = _ordered_range(
+        baseline.predict(X.iloc[split:]) * scale[split:, None]
+    )
+    model_hold = _range_metrics(targets[split:], prediction)
+    baseline_hold = _range_metrics(targets[split:], baseline_prediction)
+    return {
+        "target_policy": "Next-session low/high/close returns normalized by trailing-22-session realized volatility known at forecast origin.",
+        "selected_model_from_training_cv": selected_name,
+        "candidate_cv_combined_mae": candidate_cv,
+        "normalized_median_baseline_cv_combined_mae": baseline_cv,
+        "exploratory_holdout": model_hold,
+        "exploratory_baseline_holdout": baseline_hold,
+        "exploratory_holdout_beats_baseline": (
+            model_hold["combined_mae"] < baseline_hold["combined_mae"]
+        ),
+        "prediction_ordering": "low <= close <= high enforced after inverse volatility scaling",
     }
 
 
@@ -138,16 +218,19 @@ def main():
     X, names = _feature_matrix(rolling)
     targets = _build_daily_targets(rolling, rows)
     split = int(len(X) * 0.8)
-    close_returns = targets["close_return"]
-    range_targets = np.column_stack((targets["low_return"], targets["high_return"], targets["close_return"]))
+    range_targets = np.column_stack((
+        targets["low_return"], targets["high_return"], targets["close_return"]
+    ))
     report = {
         "status": "diagnostics_complete",
         "archive_sessions": len(rows),
         "daily_samples": len(X),
         "feature_count": len(names),
         "locked_holdout_samples": len(X) - split,
-        "direction": diagnose_direction(X, close_returns, split),
-        "range_baselines": diagnose_range_baselines(range_targets, split),
+        "direction": diagnose_direction(X, targets["close_return"], split),
+        "range": diagnose_range(X, range_targets, split),
+        "holdout_status": "exploratory_only_existing_holdout_has_already_been_inspected; do_not_use_for_promotion",
+        "validation_policy": "Candidate selection uses training-only expanding-window CV. The historical final 20% is reported for diagnosis only because earlier iterations already inspected it; a fresh future-period shadow test is required for promotion.",
         "b2_reads": 0,
         "b2_writes": 0,
         "deployment_ready": False,
