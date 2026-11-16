@@ -253,6 +253,18 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         & (nifty_rows["FININSTRMTP"].astype(str).str.upper() == "IDO")
     ].copy()
     option_frame = option_frame.dropna(subset=["XPRYDT", "STRKPRIC", "CLSPRIC", "UNDRLYGPRIC"])
+    required_numeric = ["STRKPRIC", "CLSPRIC", "OPNINTRST", "CHNGINOPNINTRST",
+                        "TTLTRADGVOL", "UNDRLYGPRIC"]
+    if option_frame[required_numeric].isna().any().any():
+        bad = [column for column in required_numeric if option_frame[column].isna().any()]
+        raise ValueError("NIFTY option rows contain missing required numeric fields: " + ", ".join(bad))
+    if (option_frame[["STRKPRIC", "CLSPRIC", "OPNINTRST", "TTLTRADGVOL", "UNDRLYGPRIC"]] < 0).any().any():
+        raise ValueError("NIFTY option rows contain negative strike, price, OI, volume or underlying values")
+    if (option_frame["STRKPRIC"] <= 0).any() or (option_frame["CLSPRIC"] <= 0).any():
+        raise ValueError("NIFTY option rows contain non-positive strike or close")
+    duplicate_keys = option_frame.duplicated(["XPRYDT", "STRKPRIC", "OPTNTP"], keep=False)
+    if duplicate_keys.any():
+        raise ValueError("NIFTY option bhavcopy contains duplicate expiry/strike/option-type contracts")
     option_frame = option_frame.loc[
         (option_frame["CLSPRIC"] > 0)
         & (option_frame["UNDRLYGPRIC"] > 0)
