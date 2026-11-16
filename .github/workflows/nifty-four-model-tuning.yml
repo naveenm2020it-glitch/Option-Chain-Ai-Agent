@@ -1,0 +1,135 @@
+name: NIFTY Four-Model Chronological Tuning
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - model-tuning/**
+    paths:
+      - "scripts/tune_nifty_four_models.py"
+      - "scripts/train_nifty_four_models.py"
+      - "tests/test_nifty_four_models.py"
+      - "requirements-four-models.txt"
+      - ".github/workflows/nifty-four-model-tuning.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nifty-four-model-tuning
+  cancel-in-progress: true
+
+jobs:
+  chronological-tuning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      # Restore verified historical archive artifacts only.
+      # These downloads do not contact NSE or Backblaze B2.
+      - name: Restore verified historical audit (GitHub artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-historical-audit-43691154808
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          repository: \${{ github.repository }}
+          run-id: 43691154808
+          path: data
+
+      - name: Restore repaired 494-session checkpoint (GitHub artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-context-repair-43805612526
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          repository: \${{ github.repository }}
+          run-id: 43805612526
+          path: data
+
+      - name: Verify archive gates and zero-B2 policy
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          checkpoint = json.loads(Path("data/historical_audit/checkpoint.json").read_text())
+          audit = json.loads(Path("data/historical_audit/coverage.json").read_text())
+          repair = json.loads(Path("data/context_repair/context_repair_report.json").read_text())
+
+          assert len(checkpoint.get("features", {})) == 494
+          assert audit.get("model_training_allowed") is True
+          assert audit.get("verified_session_count") == 494
+          assert audit.get("feature_error_count") == 0
+          assert repair.get("training_allowed") is True
+          assert repair.get("repair_complete") is True
+          assert repair.get("date_alignment_pass") is True
+          assert repair.get("feature_validation", {}).get("pass") is True
+          assert repair.get("missing_context_dates") == {}
+          assert repair.get("b2_requests") == 0
+          assert all(float(v) >= 0.95 for v in repair.get("coverage", {}).values())
+
+          print("Verified sessions: 494/494")
+          print("Context gaps: 0")
+          print("Date alignment and feature validation: PASS")
+          print("B2 API requests: 0")
+          PY
+
+      - name: Install pinned training dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-four-models.txt
+
+      - name: Re-run shared rolling engine regression tests
+        run: python -m pytest -q tests/test_nifty_four_models.py
+
+      - name: Tune four model groups with chronological validation
+        run: |
+          python scripts/tune_nifty_four_models.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --audit-report data/historical_audit/coverage.json \
+            --repair-report data/context_repair/context_repair_report.json \
+            --output models/tuning_artifacts/four_model_tuning_report.json
+
+      - name: Validate tuning report and print promotion gate
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("models/tuning_artifacts/four_model_tuning_report.json").read_text())
+          assert report.get("status") == "tuning_evaluation_complete"
+          assert report.get("model_group_count") == 4
+          assert report.get("training_archive_sessions") == 494
+          assert report.get("b2_reads") == 0
+          assert report.get("b2_writes") == 0
+          assert report.get("deployment_ready") is False
+          assert set(report.get("baseline_checks", {})) == {"direction", "range", "CE_seller", "PE_seller"}
+
+          print("Tuning completed: PASS")
+          print("Baseline checks:", json.dumps(report["baseline_checks"], sort_keys=True))
+          print("Research validation PASS:", report["research_validation_pass"])
+          print("Deployment ready:", report["deployment_ready"])
+          print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
+          print("Report: models/tuning_artifacts/four_model_tuning_report.json")
+          PY
+
+      - name: Publish tuning report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-four-model-tuning-\${{ github.run_id }}
+          path: models/tuning_artifacts/
+          if-no-files-found: warn
+          retention-days: 30
