@@ -12,6 +12,7 @@ import secrets
 import database
 from data_quality import assess_manifest
 from seller_engine import analyze_seller_market
+from seller_levels import build_seller_levels
 from storage import history_catalog, b2_configured, read_catalog, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
@@ -89,7 +90,7 @@ def status():
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
-        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False},
+        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False,\n                          "seller_levels_engine": True, "levels_live_data_connected": False},
         "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
                     "raw NSE report adapters and live forecast are not enabled yet."
                     if ready else
@@ -106,7 +107,7 @@ def engine_analyze(payload: dict):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.get("/api/engine/models")
+@app.post("/api/engine/levels")\ndef engine_levels(payload: dict):\n    """Return seller support, resistance and exit-risk zones from validated normalized data."""\n    try:\n        return build_seller_levels(payload)\n    except ValueError as exc:\n        raise HTTPException(status_code=400, detail=str(exc))\n\n\n@app.get("/api/engine/models")
 def engine_models():
     return {
         "orientation": "seller_first",
