@@ -185,6 +185,9 @@ def run_historical_walk_forward(
         forecast = {
             "origin_date": origin_date,
             "origin_close": origin_close,
+            "core_low_return": float(forecast_returns.get("core_low_return", low_return)),
+            "core_high_return": float(forecast_returns.get("core_high_return", high_return)),
+            "core_close_return": float(forecast_returns.get("core_close_return", close_return)),
             "predicted_low_return": low_return,
             "predicted_high_return": high_return,
             "predicted_close_return": close_return,
