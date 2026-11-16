@@ -88,6 +88,29 @@ def test_conformal_calibration_never_shrinks_interval_and_expands_for_misses():
 
 
 
+
+
+def test_conformal_calibration_rejects_misaligned_or_impossible_targets():
+    X = pd.DataFrame({
+        "realized_volatility_5_sessions": [0.01] * 3,
+        "realized_volatility_22_sessions": [0.01] * 3,
+    })
+    predictions = (
+        np.full(3, -0.02),
+        np.full(3, 0.02),
+        np.zeros(3),
+    )
+    valid = np.column_stack((np.full(3, -0.01), np.full(3, 0.01), np.zeros(3)))
+    with pytest.raises(ValueError, match="aligned"):
+        _conformal_adjustment(predictions, valid[:2], X)
+    impossible = valid.copy()
+    impossible[0, 2] = 0.02
+    with pytest.raises(ValueError, match="OHLC return ordering"):
+        _conformal_adjustment(predictions, impossible, X)
+    with pytest.raises(ValueError, match="alpha"):
+        _conformal_adjustment(predictions, valid, X, alpha=1.0)
+
+
 def test_range_bundle_rejects_impossible_ohlc_targets():
     rng = np.random.default_rng(11)
     count = 180
