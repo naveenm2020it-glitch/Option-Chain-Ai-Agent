@@ -73,7 +73,7 @@ def delete_cached_json(key: str) -> None:
         conn.execute("DELETE FROM app_json_cache WHERE cache_key = %s", (key,))
 
 
-def upsert_daily_report(collection_date: str, manifest: dict[str, Any]) -> dict[str, Any]:
+def upsert_daily_report(collection_date: str, manifest: dict[str, Any], seller_context: dict[str, Any] | None = None) -> dict[str, Any]:
     from datetime import date
     date.fromisoformat(collection_date)
     results = manifest.get("results", {}) if isinstance(manifest, dict) else {}
@@ -101,6 +101,14 @@ def upsert_daily_report(collection_date: str, manifest: dict[str, Any]) -> dict[
             (collection_date, session_date, status,
              json.dumps(manifest, separators=(",", ":"), ensure_ascii=False)),
         )
+        if seller_context is not None:
+            conn.execute(
+                """INSERT INTO app_json_cache(cache_key, payload, updated_at)
+                   VALUES ('seller_context:latest', %s::jsonb, NOW())
+                   ON CONFLICT(cache_key) DO UPDATE
+                   SET payload = EXCLUDED.payload, updated_at = NOW()""",
+                (json.dumps(seller_context, separators=(",", ":"), ensure_ascii=False),),
+            )
     return {
         "collection_date": collection_date,
         "report_count": report_count,
