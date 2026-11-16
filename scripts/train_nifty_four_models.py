@@ -74,15 +74,28 @@ MODEL_CORE_SOURCE_KEYS = (
 
 
 def _select_model_feature_vector(values: dict[str, float]) -> dict[str, float]:
-    selected = {
-        key: value for key, value in values.items()
-        if key.startswith((
-            "spot_return_", "spot_open_gap", "spot_candle", "spot_intraday",
-            "spot_close_location", "realized_volatility", "high_distance", "low_distance",
-        ))
-        or any(key in (f"latest__{source}", f"mean5__{source}", f"change5__{source}")
-               for source in MODEL_CORE_SOURCE_KEYS)
-    }
+    # Preserve both recent-week (5-session) and monthly (22-session) context.
+    # OHLC-derived price-action signals are explicitly selected by aggregate key;
+    # do not rely on raw-prefix matching because rolling keys are namespaced.
+    selected_keys: set[str] = set()
+    core_aggregates = ("latest", "mean5", "mean22", "change5")
+    price_action_sources = (
+        "spot_return_1d", "spot_open_gap_pct", "spot_candle_body_pct",
+        "spot_intraday_range_pct", "spot_close_location",
+    )
+    for source in MODEL_CORE_SOURCE_KEYS:
+        selected_keys.update(f"{aggregate}__{source}" for aggregate in core_aggregates)
+    for source in price_action_sources:
+        selected_keys.update(
+            f"{aggregate}__{source}" for aggregate in ("latest", "mean5", "change5")
+        )
+    selected_keys.update({
+        "std5__spot_return_1d", "std22__spot_return_1d",
+        "realized_volatility_5_sessions", "realized_volatility_22_sessions",
+        "high_distance_5_sessions", "low_distance_5_sessions",
+        "high_distance_22_sessions", "low_distance_22_sessions",
+    })
+    selected = {key: values[key] for key in sorted(selected_keys) if key in values}
     if not selected:
         raise ValueError("Selected model feature vector is empty")
     if not all(math.isfinite(float(value)) for value in selected.values()):
