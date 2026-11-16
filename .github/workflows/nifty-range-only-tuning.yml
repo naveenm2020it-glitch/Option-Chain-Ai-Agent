@@ -23,6 +23,7 @@ on:
       - "scripts/tune_nifty_range_only.py"
       - "scripts/range_research_benchmark.py"
       - "scripts/range_model_bundle.py"
+      - "scripts/range_historical_backtest.py"
       - "scripts/build_nifty_range_bundle.py"
       - "scripts/train_nifty_four_models.py"
       - "tests/test_range_model_bundle.py"
