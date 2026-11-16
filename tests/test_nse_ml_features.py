@@ -34,7 +34,7 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=Fals
         if compact_index_headers else
         "Index Name,Index Date,Open Index Value,High Index Value,Low Index Value,Closing Index Value,Points Change,Change(%)"
     )
-    index_csv = index_header + "\\nNIFTY 50,12-Nov-2026,24900,25100,24850,25000,100,0.4\\nINDIA VIX,12-Nov-2026,13,14,12,13.5,0.5,3.8"
+    index_csv = index_header + "\nNIFTY 50,12-Nov-2026,24900,25100,24850,25000,100,0.4\\nINDIA VIX,12-Nov-2026,13,14,12,13.5,0.5,3.8"
     if context_title_rows:
         participant_oi = "Participant-wise Open Interest\\n" + participant_oi
         participant_volume = "Participant-wise Volume\\n" + participant_volume
