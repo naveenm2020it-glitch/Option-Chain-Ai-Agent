@@ -369,6 +369,9 @@ def _direction_metrics(y_true: np.ndarray, probabilities: np.ndarray) -> dict[st
 
 def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path, output_dir: Path) -> dict:
     _load_training_dependencies()
+    import lightgbm
+    import platform
+    import sklearn
     checkpoint, audit, repair = _check_artifact_gates(checkpoint_path, audit_path, repair_path)
     feature_rows = checkpoint["features"]
     rolling_samples = build_rolling_feature_rows(feature_rows)
@@ -559,6 +562,14 @@ def train_four_models(checkpoint_path: Path, audit_path: Path, repair_path: Path
     manifest = {
         "model_version": bundle["model_version"],
         "pipeline_version": PIPELINE_VERSION,
+        "training_runtime": {
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+            "scikit_learn": sklearn.__version__,
+            "lightgbm": lightgbm.__version__,
+            "joblib": joblib.__version__,
+        },
         "status": "trained_research_candidate",
         "deployment_ready": False,
         "promotion_note": "Four model artifacts were trained. Live inference wiring, shadow/paper validation and production promotion are separate steps; no automatic trading is enabled.",
