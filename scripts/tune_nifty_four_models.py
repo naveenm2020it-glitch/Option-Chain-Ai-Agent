@@ -178,6 +178,10 @@ def tune_direction(X: pd.DataFrame, close_returns: np.ndarray, train_end: int) -
         {"name": "lgbm_compact_balanced", "class_weight": "balanced", "n_estimators": 140, "learning_rate": 0.025, "num_leaves": 5, "max_depth": 2, "min_child_samples": 35, "reg_lambda": 20.0, "reg_alpha": 3.0},
         {"name": "lgbm_regularized", "class_weight": None, "n_estimators": 180, "learning_rate": 0.02, "num_leaves": 7, "max_depth": 3, "min_child_samples": 45, "reg_lambda": 30.0, "reg_alpha": 5.0},
         {"name": "lgbm_regularized_balanced", "class_weight": "balanced", "n_estimators": 180, "learning_rate": 0.02, "num_leaves": 7, "max_depth": 3, "min_child_samples": 45, "reg_lambda": 30.0, "reg_alpha": 5.0},
+        {"name": "lgbm_extra_shallow", "class_weight": None, "n_estimators": 220, "learning_rate": 0.015, "num_leaves": 3, "max_depth": 2, "min_child_samples": 55, "reg_lambda": 40.0, "reg_alpha": 8.0},
+        {"name": "lgbm_extra_shallow_balanced", "class_weight": "balanced", "n_estimators": 220, "learning_rate": 0.015, "num_leaves": 3, "max_depth": 2, "min_child_samples": 55, "reg_lambda": 40.0, "reg_alpha": 8.0},
+        {"name": "lgbm_mid_regularized", "class_weight": None, "n_estimators": 160, "learning_rate": 0.02, "num_leaves": 9, "max_depth": 3, "min_child_samples": 60, "reg_lambda": 35.0, "reg_alpha": 6.0},
+        {"name": "lgbm_mid_regularized_balanced", "class_weight": "balanced", "n_estimators": 160, "learning_rate": 0.02, "num_leaves": 9, "max_depth": 3, "min_child_samples": 60, "reg_lambda": 35.0, "reg_alpha": 6.0},
     ]
     blends = (0.0, 0.2, 0.4, 0.6)
     thresholds = (0.0015, 0.0025, 0.0030, 0.0035, 0.0040)
@@ -284,6 +288,8 @@ def tune_range(X: pd.DataFrame, y: np.ndarray, train_end: int) -> dict[str, Any]
     configs = [
         {"name": "quantile_compact", "n_estimators": 100, "learning_rate": 0.025, "num_leaves": 3, "max_depth": 2, "min_child_samples": 25, "reg_lambda": 20.0, "reg_alpha": 3.0},
         {"name": "quantile_regularized", "n_estimators": 140, "learning_rate": 0.02, "num_leaves": 5, "max_depth": 2, "min_child_samples": 35, "reg_lambda": 30.0, "reg_alpha": 5.0},
+        {"name": "quantile_extra_regularized", "n_estimators": 180, "learning_rate": 0.015, "num_leaves": 3, "max_depth": 2, "min_child_samples": 55, "reg_lambda": 45.0, "reg_alpha": 8.0},
+        {"name": "quantile_smooth_mid", "n_estimators": 120, "learning_rate": 0.02, "num_leaves": 7, "max_depth": 3, "min_child_samples": 60, "reg_lambda": 35.0, "reg_alpha": 6.0},
     ]
     quantiles = ((0.05, 0.95), (0.10, 0.90), (0.15, 0.85))
     candidate_rows = []
@@ -380,6 +386,10 @@ def tune_seller(side: str, X: pd.DataFrame, y: np.ndarray, dates: list[str]) -> 
         {"name": "lgbm_current_compact", "n_estimators": 130, "num_leaves": 7, "max_depth": 3, "min_child_samples": 60, "reg_lambda": 15.0, "reg_alpha": 2.0},
         {"name": "lgbm_more_regularized", "n_estimators": 100, "num_leaves": 5, "max_depth": 2, "min_child_samples": 100, "reg_lambda": 30.0, "reg_alpha": 5.0},
         {"name": "lgbm_smoother", "n_estimators": 160, "num_leaves": 9, "max_depth": 3, "min_child_samples": 100, "reg_lambda": 25.0, "reg_alpha": 4.0},
+        {"name": "lgbm_extra_regularized", "n_estimators": 180, "num_leaves": 3, "max_depth": 2, "min_child_samples": 140, "reg_lambda": 45.0, "reg_alpha": 8.0},
+        {"name": "lgbm_mid_capacity", "n_estimators": 220, "num_leaves": 5, "max_depth": 2, "min_child_samples": 80, "reg_lambda": 25.0, "reg_alpha": 4.0},
+        {"name": "lgbm_low_bias", "n_estimators": 100, "num_leaves": 9, "max_depth": 3, "min_child_samples": 45, "reg_lambda": 20.0, "reg_alpha": 3.0},
+        {"name": "lgbm_high_capacity", "n_estimators": 180, "num_leaves": 15, "max_depth": 4, "min_child_samples": 80, "reg_lambda": 35.0, "reg_alpha": 6.0},
     ]
     baseline_fold_pool, baseline_fold_date = [], []
     for fold_train_dates, fold_valid_dates in _date_folds(train_dates):
