@@ -98,7 +98,18 @@ def snapshot_from_contracts(session_date: str, spot: float, contracts: list[dict
     })
 
 
-def _window_summary(history_rows: list[tuple[str, dict]], window: int) -> dict:
+def _weekday_gap(start: str, end: str) -> int:
+    left, right = date.fromisoformat(start), date.fromisoformat(end)
+    count = 0
+    cursor = left.fromordinal(left.toordinal() + 1)
+    while cursor < right:
+        if cursor.weekday() < 5:
+            count += 1
+        cursor = cursor.fromordinal(cursor.toordinal() + 1)
+    return count
+
+
+def _window_summary(history_rows: list[tuple[str, dict]], window: int, as_of_date: str) -> dict:
     selected = history_rows[-window:]
     support: dict[int, list[float]] = defaultdict(list)
     resistance: dict[int, list[float]] = defaultdict(list)
@@ -125,16 +136,26 @@ def _window_summary(history_rows: list[tuple[str, dict]], window: int) -> dict:
             -item["sessions_present"], -item["average_strength"], item["level"]
         ))[:5]
 
+    gap_weekdays = sum(
+        _weekday_gap(left[0], right[0])
+        for left, right in zip(selected, selected[1:])
+    )
+    if selected:
+        gap_weekdays += _weekday_gap(selected[-1][0], as_of_date)
+    complete = len(selected) == window and used == len(selected) and gap_weekdays == 0
     return {
         "requested_sessions": window,
         "sessions_available": len(selected),
         "sessions_analyzed": used,
+        "latest_prior_session": selected[-1][0] if selected else None,
+        "possible_missing_weekdays": gap_weekdays,
+        "coverage_status": "complete" if complete else "incomplete_or_exchange_holiday_gap",
         "support_persistence": rank(support),
         "resistance_persistence": rank(resistance),
     }
 
 
-def build_context(reports_dir: Path, checkpoint_path: Path) -> dict:
+def build_context(reports_dir: Path, checkpoint_path: Path, recent_history_path: Path | None = None) -> dict:
     manifest = json.loads((reports_dir / "manifest.json").read_text(encoding="utf-8"))
     session_date = str(manifest.get("core_session_date") or "")
     if manifest.get("core_session_status") != "aligned" or not session_date:
@@ -152,7 +173,7 @@ def build_context(reports_dir: Path, checkpoint_path: Path) -> dict:
     feature_rows = checkpoint.get("features")
     if not isinstance(feature_rows, dict) or len(feature_rows) != 494:
         raise ValueError("Historical context requires the verified 494-session checkpoint")
-    history = []
+    history_by_date = {}
     for day in sorted(feature_rows):
         if day >= session_date:
             continue
@@ -162,7 +183,20 @@ def build_context(reports_dir: Path, checkpoint_path: Path) -> dict:
         if not contracts or float(values.get("spot_close") or 0) <= 0:
             continue
         levels = snapshot_from_contracts(day, float(values["spot_close"]), contracts)
-        history.append((day, levels))
+        history_by_date[day] = levels
+
+    if recent_history_path and recent_history_path.is_file():
+        recent_payload = json.loads(recent_history_path.read_text(encoding="utf-8"))
+        recent_records = recent_payload.get("records", []) if isinstance(recent_payload, dict) else recent_payload
+        for record in recent_records if isinstance(recent_records, list) else []:
+            if not isinstance(record, dict):
+                continue
+            day = str(record.get("session_date") or "")
+            levels = record.get("current")
+            if day and day < session_date and isinstance(levels, dict):
+                history_by_date[day] = levels
+
+    history = sorted(history_by_date.items())
 
     return {
         "schema_version": 1,
@@ -172,8 +206,8 @@ def build_context(reports_dir: Path, checkpoint_path: Path) -> dict:
         "spot_reference": current.get("spot_reference"),
         "current": current,
         "lookback": {
-            "last_5_sessions": _window_summary(history, 5),
-            "last_22_sessions": _window_summary(history, 22),
+            "last_5_sessions": _window_summary(history, 5, session_date),
+            "last_22_sessions": _window_summary(history, 22, session_date),
         },
         "provenance": {
             "current_source": "NSE EOD UDiFF F&O bhavcopy; same-session validated",
@@ -195,8 +229,9 @@ def main() -> None:
     parser.add_argument("--reports-dir", type=Path, default=Path("data/nse_reports"))
     parser.add_argument("--checkpoint", type=Path, default=Path("data/historical_audit/checkpoint.json"))
     parser.add_argument("--output", type=Path, default=Path("data/seller_context/seller_context.json"))
+    parser.add_argument("--recent-history", type=Path, default=None)
     args = parser.parse_args()
-    payload = build_context(args.reports_dir, args.checkpoint)
+    payload = build_context(args.reports_dir, args.checkpoint, args.recent_history)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps({
