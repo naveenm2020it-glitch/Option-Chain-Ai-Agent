@@ -321,37 +321,16 @@ def _contract_feature_vector(session_features: dict[str, float], contract: dict[
     oi = float(contract["oi"])
     volume = float(contract["volume"])
     change_oi = float(contract["change_oi"])
-    moneyness = float(contract["moneyness"])
-    days_to_expiry = max(0.0, float(contract["days_to_expiry"]))
-    delta_factor = float(contract.get("delta_factor", 0.0))
-    oi_change_ratio = change_oi / max(1.0, oi - change_oi)
-    volume_oi_ratio = volume / max(1.0, oi)
-    premium_log = math.log1p(max(0.0, close))
-    dte_scale = math.sqrt(days_to_expiry + 1.0)
     result.update({
-        "contract_moneyness": moneyness,
-        "contract_abs_moneyness": abs(moneyness),
-        "contract_moneyness_signed_squared": math.copysign(moneyness * moneyness, moneyness),
-        "contract_days_to_expiry": days_to_expiry,
-        "contract_days_to_expiry_log": math.log1p(days_to_expiry),
+        "contract_moneyness": float(contract["moneyness"]),
+        "contract_days_to_expiry": float(contract["days_to_expiry"]),
         "contract_premium_return": float(contract["premium_return"]),
-        "contract_delta_factor": delta_factor,
-        "contract_abs_delta_factor": abs(delta_factor),
+        "contract_delta_factor": float(contract.get("delta_factor", 0.0)),
         "contract_oi_log": math.log1p(max(0.0, oi)),
         "contract_volume_log": math.log1p(max(0.0, volume)),
-        "contract_change_oi_pct": oi_change_ratio,
-        "contract_volume_oi_ratio": volume_oi_ratio,
+        "contract_change_oi_pct": change_oi / max(1.0, oi - change_oi),
         "contract_is_ce": 1.0 if side == "CE" else 0.0,
-        "contract_close_log": premium_log,
-        # Interactions use only the current completed-session contract snapshot.
-        "contract_premium_per_oi": close / max(1.0, oi),
-        "contract_premium_per_volume": close / max(1.0, volume),
-        "contract_liquidity_log": math.log1p(max(0.0, oi + volume)),
-        "contract_theta_time_proxy": 1.0 / dte_scale,
-        "contract_moneyness_time_interaction": abs(moneyness) / dte_scale,
-        "contract_delta_time_interaction": abs(delta_factor) / dte_scale,
-        "contract_oi_change_volume_interaction": oi_change_ratio * math.log1p(max(0.0, volume)),
-        "contract_premium_moneyness_interaction": premium_log * abs(moneyness),
+        "contract_close_log": math.log1p(max(0.0, close)),
     })
     if not all(math.isfinite(value) for value in result.values()):
         raise ValueError("Contract-level feature contains non-finite value")
