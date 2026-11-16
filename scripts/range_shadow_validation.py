@@ -274,10 +274,13 @@ def score_range_forecast(
     actual_high_return = actual_high / origin_close - 1.0
     actual_close_return = actual_close / origin_close - 1.0
     alpha = float(forecast.get("calibration_alpha", 0.10))
+    predicted_close_return = float(
+        forecast.get("predicted_close_return", float(forecast["predicted_close"]) / origin_close - 1.0)
+    )
     model_metrics = _interval_metrics(
         float(forecast["predicted_low_return"]),
         float(forecast["predicted_high_return"]),
-        float(forecast["predicted_close_return"]),
+        predicted_close_return,
         actual_low_return,
         actual_high_return,
         actual_close_return,
