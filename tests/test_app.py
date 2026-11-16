@@ -282,3 +282,16 @@ def test_seller_context_latest_reads_postgres_cache(monkeypatch):
     response = client.get("/api/seller-intelligence/latest")
     assert response.status_code == 200
     assert response.json()["session_date"] == "2026-11-16"
+
+
+
+def test_seller_context_history_returns_prior_records(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("database.get_seller_context_history", lambda before, limit: [
+        {"session_date": "2026-11-13", "current": {"status": "analysis_complete"}}
+    ])
+    response = client.get("/api/seller-intelligence/history?before=2026-11-16&limit=22")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["records"][0]["session_date"] == "2026-11-13"
