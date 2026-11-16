@@ -34,8 +34,13 @@ def _outer_archive(reports_dir: Path) -> bytes:
                 raise FileNotFoundError(f"Manifest report file missing: {filename.name}")
             payload = path.read_bytes()
             expected = item.get("sha256")
-            if expected and hashlib.sha256(payload).hexdigest() != expected:
-                raise ValueError(f"Report SHA-256 mismatch: {filename.name}")
+            if name in {"fo_udiff_bhavcopy", "fo_participant_oi",
+                        "fo_participant_volume", "fo_market_activity"} and not expected:
+                raise ValueError(f"Core report SHA-256 is missing: {filename.name}")
+            if expected:
+                actual = hashlib.sha256(payload).hexdigest()
+                if not isinstance(expected, str) or actual.lower() != expected.lower():
+                    raise ValueError(f"Report SHA-256 mismatch: {filename.name}")
             archive.writestr(filename.name, payload)
     return buffer.getvalue()
 
