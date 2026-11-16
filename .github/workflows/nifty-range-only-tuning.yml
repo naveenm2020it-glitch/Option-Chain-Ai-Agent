@@ -111,6 +111,8 @@ jobs:
           assert report["b2_reads"] == 0 and report["b2_writes"] == 0
           assert report["deployment_ready"] is False
           assert report["range"]["cv_beats_baseline"] is True
+          assert report["range"]["selected_minimum_fold_full_range_coverage"] >= 0.70
+          assert report["range"]["selected_calibration_alpha"] == 0.10
           print("Range-only workflow: PASS")
           print("CV beats baseline:", report["range"]["cv_beats_baseline"])
           print("Selected config:", report["range"]["selected_config"])
@@ -140,6 +142,8 @@ jobs:
           manifest = json.loads((root / "range_candidate_manifest.json").read_text())
           assert (root / manifest["model_file"]).is_file()
           assert manifest["cv_beats_baseline"] is True
+          assert manifest["calibration_alpha"] == 0.10
+          assert manifest["selected_minimum_fold_full_range_coverage"] >= 0.70
           assert manifest["forward_shadow_validation_required"] is True
           assert manifest["deployment_ready"] is False
           assert manifest["production_promotion_allowed"] is False
