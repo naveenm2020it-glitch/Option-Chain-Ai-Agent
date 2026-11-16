@@ -1,6 +1,6 @@
 name: NSE report download and durable archive
-# Run only on schedule or explicit operator request. A code deploy must never
-# trigger extra NSE downloads or B2 transactions.
+# Scheduled or operator-triggered only. The Range forward-shadow validation
+# reuses this workflow's single NSE download and never calls Backblaze B2 itself.
 
 on:
   workflow_dispatch:
@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: nse-b2-archive
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   download-and-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     env:
       B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
       B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
@@ -30,26 +31,40 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install application dependencies
         run: python -m pip install -r requirements.txt
-      - name: Require durable B2 configuration
+
+      # The archive writer is independent from Range shadow validation.
+      # Missing credentials or exhausted B2 quota must not block forward testing.
+      - name: Check durable B2 configuration
+        id: b2-config
+        continue-on-error: true
         run: |
           python - <<'PY'
           import os
           required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
           missing = [key for key in required if not os.getenv(key)]
           if missing:
-              raise SystemExit("Durable archive blocked; missing GitHub Actions secrets: " + ", ".join(missing))
+              raise SystemExit("B2 archive skipped; missing secrets: " + ", ".join(missing))
           print("Backblaze B2 configuration is present.")
           PY
+
       - name: Download latest available NSE EOD reports
+        id: nse-download
+        continue-on-error: true
         run: python scripts/nse_download_check.py --lookback-days 7 --output data/nse_reports
+
       - name: Upload durable archive to Backblaze B2
+        id: archive-upload
+        if: ${{ steps.b2-config.outcome == 'success' && steps.nse-download.outcome == 'success' }}
+        continue-on-error: true
         run: |
           COLLECTION_DATE="$(python -c 'import json; print(json.load(open("data/nse_reports/manifest.json"))["requested_end_date"])')"
           python scripts/archive_to_b2.py --directory data/nse_reports --collection-date "$COLLECTION_DATE"
+
       - name: Persist daily report manifest in application database (optional)
-        if: ${{ env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
+        if: ${{ always() && steps.nse-download.outcome == 'success' && env.APP_INGEST_URL != '' && env.DAILY_INGEST_TOKEN != '' }}
         continue-on-error: true
         run: |
           python - <<'PY'
@@ -64,11 +79,210 @@ jobs:
           response.raise_for_status()
           print("Persisted daily report metadata:", response.json())
           PY
+
+      # Use a Range candidate built from the exact current research-branch SHA.
+      # This keeps PR #23 open and avoids using an artifact from stale code.
+      - name: Find exact-commit successful Range candidate artifact
+        id: range-bundle
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const branch = "model-tuning/research-validation-v1";
+            const branchInfo = await github.rest.repos.getBranch({ owner, repo, branch });
+            const headSha = branchInfo.data.commit.sha;
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: "nifty-range-only-tuning.yml",
+              branch, status: "success", per_page: 50
+            });
+            for (const run of runs.data.workflow_runs) {
+              if (run.head_branch !== branch || run.head_sha !== headSha) continue;
+              const response = await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: run.id, per_page: 100
+              });
+              const artifact = response.data.artifacts.find(item =>
+                item.name === `nifty-range-candidate-${run.id}` && !item.expired
+              );
+              if (artifact) {
+                core.setOutput("run_id", String(run.id));
+                core.setOutput("head_sha", headSha);
+                core.info(`Using Range candidate run ${run.id} at ${headSha}`);
+                return;
+              }
+            }
+            throw new Error(`No successful Range candidate artifact matches current branch SHA ${headSha}`);
+
+      - name: Checkout exact Range research revision
+        id: range-code
+        if: ${{ always() && steps.range-bundle.outcome == 'success' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.range-bundle.outputs.head_sha }}
+          path: range-code
+          persist-credentials: false
+
+      - name: Download calibrated Range candidate bundle
+        id: range-download
+        if: ${{ always() && steps.range-bundle.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-range-candidate-${{ steps.range-bundle.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.range-bundle.outputs.run_id }}
+          path: models/artifacts
+
+      - name: Restore frozen 494-session historical feature checkpoint
+        id: range-checkpoint
+        if: ${{ always() && steps.range-bundle.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-historical-audit-43691154808
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43691154808
+          path: data
+
+      - name: Find previous Range shadow state artifact
+        id: range-state
+        if: ${{ always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: "nse-download-check.yml",
+              status: "completed", per_page: 100
+            });
+            for (const run of runs.data.workflow_runs) {
+              if (run.id === context.runId) continue;
+              const response = await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: run.id, per_page: 100
+              });
+              const artifact = response.data.artifacts.find(item =>
+                item.name === "nifty-range-shadow-state" && !item.expired
+              );
+              if (artifact) {
+                core.setOutput("run_id", String(run.id));
+                core.info(`Restoring Range shadow state from run ${run.id}`);
+                return;
+              }
+            }
+            core.info("No previous Range shadow state artifact; this is the first run.");
+
+      - name: Restore previous Range shadow state
+        id: state-download
+        if: ${{ always() && steps.range-state.outcome == 'success' && steps.range-state.outputs.run_id != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-range-shadow-state
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.range-state.outputs.run_id }}
+          path: data/range-shadow-previous
+
+      - name: Initialize or safely restore Range shadow state
+        id: range-state-init
+        if: ${{ always() }}
+        env:
+          RANGE_BUNDLE_OUTCOME: ${{ steps.range-bundle.outcome }}
+          RANGE_CODE_OUTCOME: ${{ steps.range-code.outcome }}
+          RANGE_DOWNLOAD_OUTCOME: ${{ steps.range-download.outcome }}
+          RANGE_CHECKPOINT_OUTCOME: ${{ steps.range-checkpoint.outcome }}
+          RANGE_STATE_LOOKUP_OUTCOME: ${{ steps.range-state.outcome }}
+          RANGE_STATE_DOWNLOAD_OUTCOME: ${{ steps.state-download.outcome }}
+          PREVIOUS_STATE_RUN_ID: ${{ steps.range-state.outputs.run_id }}
+        run: |
+          mkdir -p data/range_shadow
+          if [ "$RANGE_BUNDLE_OUTCOME" != "success" ] || [ "$RANGE_CODE_OUTCOME" != "success" ] || [ "$RANGE_DOWNLOAD_OUTCOME" != "success" ] || [ "$RANGE_CHECKPOINT_OUTCOME" != "success" ]; then
+            printf '{"status":"blocked","reason":"candidate_code_or_archive_checkpoint_unavailable","b2_reads":0,"b2_writes":0,"deployment_ready":false}\n' > data/range_shadow/range_shadow_report.json
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$RANGE_STATE_LOOKUP_OUTCOME" != "success" ]; then
+            printf '{"status":"blocked","reason":"previous_state_lookup_failed; history was not reset","b2_reads":0,"b2_writes":0,"deployment_ready":false}\n' > data/range_shadow/range_shadow_report.json
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$PREVIOUS_STATE_RUN_ID" ]; then
+            if [ "$RANGE_STATE_DOWNLOAD_OUTCOME" != "success" ] || [ ! -f data/range-shadow-previous/range_shadow_state.json ]; then
+              printf '{"status":"blocked","reason":"previous_state_restore_failed; history was not reset","b2_reads":0,"b2_writes":0,"deployment_ready":false}\n' > data/range_shadow/range_shadow_report.json
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cp data/range-shadow-previous/range_shadow_state.json data/range_shadow/range_shadow_state.json
+          else
+            printf '{"schema_version":1,"records":[],"pending_forecast":null}\n' > data/range_shadow/range_shadow_state.json
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install Range inference dependencies
+        id: range-dependencies
+        if: ${{ always() && steps.range-state-init.outputs.ready == 'true' }}
+        continue-on-error: true
+        run: python -m pip install -r range-code/requirements-four-models.txt
+
+      - name: Create current Range forecast and score prior session
+        id: range-shadow
+        if: ${{ always() && steps.range-state-init.outputs.ready == 'true' && steps.nse-download.outcome == 'success' && steps.range-dependencies.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/range-code
+        run: |
+          python range-code/scripts/range_shadow_validation.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --reports-dir data/nse_reports \
+            --bundle models/artifacts/nifty_range_candidate.joblib \
+            --state data/range_shadow/range_shadow_state.json \
+            --output data/range_shadow/range_shadow_report.json
+
+      - name: Record blocked Range shadow attempt without resetting state
+        if: ${{ always() && steps.range-state-init.outputs.ready == 'true' && steps.range-shadow.outcome != 'success' }}
+        env:
+          NSE_DOWNLOAD_OUTCOME: ${{ steps.nse-download.outcome }}
+          DEPENDENCY_OUTCOME: ${{ steps.range-dependencies.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("data/range_shadow").mkdir(parents=True, exist_ok=True)
+          reasons = []
+          if os.environ.get("NSE_DOWNLOAD_OUTCOME") != "success":
+              reasons.append("nse_reports_unavailable")
+          if os.environ.get("DEPENDENCY_OUTCOME") != "success":
+              reasons.append("range_dependencies_unavailable")
+          Path("data/range_shadow/range_shadow_report.json").write_text(json.dumps({
+              "status": "blocked",
+              "reason": ";".join(reasons) or "range_shadow_step_not_completed",
+              "b2_reads": 0,
+              "b2_writes": 0,
+              "deployment_ready": False
+          }, indent=2), encoding="utf-8")
+          PY
+
+      - name: Publish Range shadow state and report
+        if: ${{ always() && hashFiles('data/range_shadow/range_shadow_state.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-range-shadow-state
+          path: data/range_shadow/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Show Range forward-shadow status
+        if: ${{ always() && hashFiles('data/range_shadow/range_shadow_report.json') != '' }}
+        run: cat data/range_shadow/range_shadow_report.json
+
       - name: Explain skipped optional database persistence
-        if: ${{ env.APP_INGEST_URL == '' || env.DAILY_INGEST_TOKEN == '' }}
-        run: echo "Optional PostgreSQL metadata mirror skipped. The B2 archive has already been stored."
-      - name: Upload diagnostic artifact
-        if: always()
+        if: ${{ always() && steps.nse-download.outcome == 'success' && (env.APP_INGEST_URL == '' || env.DAILY_INGEST_TOKEN == '') }}
+        run: echo "Optional PostgreSQL metadata mirror skipped."
+
+      - name: Upload diagnostic NSE report artifact
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: nse-eod-report-download-${{ github.run_id }}
