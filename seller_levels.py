@@ -34,12 +34,12 @@ def _score_rows(rows: list[dict], side: str) -> list[dict]:
         premium = _number(row.get(premium_key))
         if strike is None or strike <= 0:
             continue
-        parsed.append({"strike": strike, "oi": max(0, oi or 0),
-                       "change": change, "volume": max(0, volume or 0),
+        parsed.append({"strike": strike, "oi": max(0, oi) if oi is not None else None,
+                       "oi_value": max(0, oi or 0), "change": change, "volume": max(0, volume or 0),
                        "premium_change_pct": premium})
     if not parsed:
         return []
-    max_oi = max((log1p(r["oi"]) for r in parsed), default=0) or 1
+    max_oi = max((log1p(r["oi_value"]) for r in parsed), default=0) or 1
     max_change = max((log1p(max(0, r["change"] or 0)) for r in parsed), default=0) or 1
     max_volume = max((log1p(r["volume"]) for r in parsed), default=0) or 1
     output = []
@@ -47,7 +47,7 @@ def _score_rows(rows: list[dict], side: str) -> list[dict]:
         writing = row["change"] is not None and row["change"] > 0 and row["premium_change_pct"] is not None and row["premium_change_pct"] <= 0
         squeeze = row["change"] is not None and row["change"] > 0 and row["premium_change_pct"] is not None and row["premium_change_pct"] > 0
         unwinding = row["change"] is not None and row["change"] < 0
-        oi_strength = log1p(row["oi"]) / max_oi
+        oi_strength = log1p(row["oi_value"]) / max_oi
         change_strength = log1p(max(0, row["change"] or 0)) / max_change
         volume_strength = log1p(row["volume"]) / max_volume
         premium_confirmation = 1.0 if writing else 0.0
@@ -114,14 +114,15 @@ def build_seller_levels(data: dict) -> dict:
     support = select(pe, "PE")
     resistance = select(ce, "CE")
     exits = []
-    for row in ce + pe:
-        if row["unwinding"] or row["seller_pressure_risk"]:
-            exits.append({
-                "level": int(round(row["strike"])),
-                "side": "CE" if row in ce else "PE",
-                "risk": "seller_pressure" if row["seller_pressure_risk"] else "unwinding",
-                "confidence": row["confidence"],
-            })
+    for side, side_rows in (("CE", ce), ("PE", pe)):
+        for row in side_rows:
+            if row["unwinding"] or row["seller_pressure_risk"]:
+                exits.append({
+                    "level": int(round(row["strike"])),
+                    "side": side,
+                    "risk": "seller_pressure" if row["seller_pressure_risk"] else "unwinding",
+                    "confidence": row["confidence"],
+                })
     exits.sort(key=lambda r: -r["confidence"])
     return {
         "status": "analysis_complete", "session_date": quality["session_date"],
