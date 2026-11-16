@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "scripts/tune_nifty_four_models.py"
+      - "scripts/diagnose_direction_range.py"
       - "scripts/train_nifty_four_models.py"
       - "tests/test_nifty_four_models.py"
       - "requirements-four-models.txt"
@@ -16,6 +17,7 @@ on:
       - model-tuning/**
     paths:
       - "scripts/tune_nifty_four_models.py"
+      - "scripts/diagnose_direction_range.py"
       - "scripts/train_nifty_four_models.py"
       - "tests/test_nifty_four_models.py"
       - "requirements-four-models.txt"
@@ -110,6 +112,14 @@ jobs:
             --repair-report data/context_repair/context_repair_report.json \
             --output models/tuning_artifacts/four_model_tuning_report.json
 
+      - name: Diagnose direction labels and leakage-safe range baselines
+        run: |
+          python scripts/diagnose_direction_range.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --audit-report data/historical_audit/coverage.json \
+            --repair-report data/context_repair/context_repair_report.json \
+            --output models/tuning_artifacts/direction_range_diagnostics.json
+
       - name: Validate tuning report and print promotion gate
         run: |
           python - <<'PY'
@@ -117,6 +127,7 @@ jobs:
           from pathlib import Path
 
           report = json.loads(Path("models/tuning_artifacts/four_model_tuning_report.json").read_text())
+          diagnostic = json.loads(Path("models/tuning_artifacts/direction_range_diagnostics.json").read_text())
           assert report.get("status") == "tuning_evaluation_complete"
           assert report.get("model_group_count") == 4
           assert report.get("training_archive_sessions") == 494
@@ -124,13 +135,19 @@ jobs:
           assert report.get("b2_writes") == 0
           assert report.get("deployment_ready") is False
           assert set(report.get("baseline_checks", {})) == {"direction", "range", "CE_seller", "PE_seller"}
+          assert diagnostic.get("status") == "diagnostics_complete"
+          assert diagnostic.get("archive_sessions") == 494
+          assert diagnostic.get("b2_reads") == 0
+          assert diagnostic.get("b2_writes") == 0
+          assert diagnostic.get("deployment_ready") is False
 
           print("Tuning completed: PASS")
           print("Baseline checks:", json.dumps(report["baseline_checks"], sort_keys=True))
           print("Research validation PASS:", report["research_validation_pass"])
+          print("Direction diagnostic threshold:", diagnostic["direction"]["selected_threshold_from_training_cv"])
+          print("Range baselines:", json.dumps(diagnostic["range_baselines"], sort_keys=True))
           print("Deployment ready:", report["deployment_ready"])
           print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
-          print("Report: models/tuning_artifacts/four_model_tuning_report.json")
           PY
 
       - name: Publish tuning report
