@@ -614,7 +614,7 @@ def run_shadow(
         raise RuntimeError("Range candidate SHA256 does not match its manifest")
 
     bundle = joblib.load(bundle_path)
-    if bundle.get("schema_version") != 1:
+    if bundle.get("schema_version") not in (1, 2):
         raise RuntimeError("Unsupported Range candidate bundle")
     if abs(float(bundle.get("calibration_alpha", -1.0)) - float(manifest.get("calibration_alpha", -2.0))) > 1e-12:
         raise RuntimeError("Range candidate calibration metadata does not match its manifest")
