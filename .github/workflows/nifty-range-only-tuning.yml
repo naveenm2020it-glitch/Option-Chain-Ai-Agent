@@ -7,8 +7,10 @@ on:
     paths:
       - "scripts/tune_nifty_range_only.py"
       - "scripts/range_research_benchmark.py"
-      - "scripts/tune_nifty_four_models.py"
+      - "scripts/range_model_bundle.py"
+      - "scripts/build_nifty_range_bundle.py"
       - "scripts/train_nifty_four_models.py"
+      - "tests/test_range_model_bundle.py"
       - "requirements-four-models.txt"
       - ".github/workflows/nifty-range-only-tuning.yml"
   push:
@@ -17,8 +19,10 @@ on:
     paths:
       - "scripts/tune_nifty_range_only.py"
       - "scripts/range_research_benchmark.py"
-      - "scripts/tune_nifty_four_models.py"
+      - "scripts/range_model_bundle.py"
+      - "scripts/build_nifty_range_bundle.py"
       - "scripts/train_nifty_four_models.py"
+      - "tests/test_range_model_bundle.py"
       - "requirements-four-models.txt"
       - ".github/workflows/nifty-range-only-tuning.yml"
 
@@ -49,8 +53,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-historical-audit-43691154808
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          repository: \${{ github.repository }}
           run-id: 43691154808
           path: data
 
@@ -58,8 +62,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: nifty-context-repair-43805612526
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          repository: \${{ github.repository }}
           run-id: 43805612526
           path: data
 
@@ -106,6 +110,7 @@ jobs:
           assert report["other_models_tuned"] is False
           assert report["b2_reads"] == 0 and report["b2_writes"] == 0
           assert report["deployment_ready"] is False
+          assert report["range"]["cv_beats_baseline"] is True
           print("Range-only workflow: PASS")
           print("CV beats baseline:", report["range"]["cv_beats_baseline"])
           print("Selected config:", report["range"]["selected_config"])
@@ -117,11 +122,49 @@ jobs:
           print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
           PY
 
-      - name: Publish Range-only report
+      - name: Build calibrated research-only Range candidate bundle
+        run: |
+          python scripts/build_nifty_range_bundle.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --audit-report data/historical_audit/coverage.json \
+            --repair-report data/context_repair/context_repair_report.json \
+            --tuning-report models/tuning_artifacts/range_only_report.json \
+            --output-dir models/artifacts
+
+      - name: Verify Range candidate bundle promotion lock
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("models/artifacts")
+          manifest = json.loads((root / "range_candidate_manifest.json").read_text())
+          assert (root / manifest["model_file"]).is_file()
+          assert manifest["cv_beats_baseline"] is True
+          assert manifest["forward_shadow_validation_required"] is True
+          assert manifest["deployment_ready"] is False
+          assert manifest["production_promotion_allowed"] is False
+          assert manifest["b2_reads"] == 0 and manifest["b2_writes"] == 0
+          print("Range candidate bundle: PASS")
+          print("Estimator:", manifest["candidate"]["name"])
+          print("Fit/calibration samples:", manifest["estimator_fit_samples"], manifest["conformal_calibration_samples"])
+          print("Forward shadow validation required: True")
+          print("Production promotion: BLOCKED")
+          PY
+
+      - name: Publish Range-only research report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-range-only-${{ github.run_id }}
+          name: nifty-range-only-\${{ github.run_id }}
           path: models/tuning_artifacts/range_only_report.json
           if-no-files-found: warn
+          retention-days: 30
+
+      - name: Publish calibrated Range candidate bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-range-candidate-\${{ github.run_id }}
+          path: models/artifacts/
+          if-no-files-found: error
           retention-days: 30
