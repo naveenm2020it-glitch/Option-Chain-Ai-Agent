@@ -144,8 +144,8 @@ jobs:
           print("Tuning completed: PASS")
           print("Baseline checks:", json.dumps(report["baseline_checks"], sort_keys=True))
           print("Research validation PASS:", report["research_validation_pass"])
-          print("Direction diagnostic threshold:", diagnostic["direction"]["selected_threshold_from_training_cv"])
-          print("Range baselines:", json.dumps(diagnostic["range_baselines"], sort_keys=True))
+          print("Direction diagnostic threshold:", diagnostic["direction"]["selected_volatility_multiplier_from_training_cv"])
+          print("Range baselines:", json.dumps(diagnostic["range"], sort_keys=True))
           print("Deployment ready:", report["deployment_ready"])
           print("B2 reads/writes:", report["b2_reads"], report["b2_writes"])
           PY
