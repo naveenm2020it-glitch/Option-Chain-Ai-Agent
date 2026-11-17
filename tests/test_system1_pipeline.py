@@ -27,3 +27,22 @@ def test_missing_core_source_blocks_no_zero_fill(tmp_path):
     cal=tmp_path/"calendar.json"; cal.write_text(json.dumps({"window_start":day,"window_end":day,"holidays":[],"special_trading_sessions":[]}))
     result=build_package(tmp_path,date.fromisoformat(day),cal,1)
     assert result["status"]=="blocked" and "fo_udiff_bhavcopy: missing" in result["sessions"][day]["issues"]
+
+
+def test_deep_validator_accepts_real_tab_delimiter():
+    from scripts.system1_deep_data_validation import inspect_csv
+
+    payload = "Report\tTrade Date\tValue\nNIFTY\t17-12-2025\t25000\n".encode()
+    result = inspect_csv(payload, "tab_fixture")
+    assert result["rows"] == 1
+    assert result["detected_delimiter"] == "tab"
+    assert result["observed_dates"] == ["2025-12-17"]
+
+
+def test_deep_validator_accepts_comma_delimiter():
+    from scripts.system1_deep_data_validation import inspect_csv
+
+    payload = b"Report,Trade Date,Value\nNIFTY,17-12-2025,25000\n"
+    result = inspect_csv(payload, "comma_fixture")
+    assert result["rows"] == 1
+    assert result["detected_delimiter"] == ","
