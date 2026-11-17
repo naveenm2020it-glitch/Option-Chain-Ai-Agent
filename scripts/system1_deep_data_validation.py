@@ -17,6 +17,7 @@ import requests
 
 from scripts.nse_download_check import HEADERS, fetch_report, report_specs
 from system1.pipeline import build_package, load_calendar, previous_sessions
+from system1.b2_archive import archive_directory_to_b2
 
 
 def norm(value: str) -> str:
@@ -278,6 +279,7 @@ def main() -> int:
     parser.add_argument("--sessions", type=int, default=23, help="Number of sessions including selected date")
     parser.add_argument("--calendar", default="data/nse_trading_calendar.json")
     parser.add_argument("--output", default="system1_deep_validation_report.json")
+    parser.add_argument("--archive-to-b2", action="store_true", help="Upload the validated 23-session raw-source archive and frozen package to B2")
     args = parser.parse_args()
 
     selected = date.fromisoformat(args.date)
@@ -376,6 +378,37 @@ def main() -> int:
             "reproducible": fingerprint == repeat_fingerprint,
             "generated_at_utc_excluded_from_fingerprint": True,
         }
+
+        # Archive only after every report, normalized contract, and frozen-package
+        # integrity gate has passed. Keep raw reports and the exact package together.
+        if args.archive_to_b2:
+            archive_ready = (
+                total_invalid == 0
+                and total_content_valid == len(sessions) * len(report_names)
+                and package["window_ready_sessions"] == len(sessions)
+                and normalized_audit["status"] == "PASS"
+                and fingerprint == repeat_fingerprint
+            )
+            if not archive_ready:
+                raise RuntimeError("B2 archive blocked: the complete 23-session integrity gate did not PASS")
+            (root / "system1_frozen_package.json").write_text(
+                json.dumps(package, indent=2, allow_nan=False), encoding="utf-8"
+            )
+            archive_manifest = {
+                "analysis_date": selected.isoformat(),
+                "sessions": sessions,
+                "report_names": report_names,
+                "expected_reports": len(sessions) * len(report_names),
+                "content_validated_reports": total_content_valid,
+                "package_fingerprint": fingerprint,
+                "normalized_audit": normalized_audit,
+                "archive_format": "tar.gz",
+            }
+            (root / "archive_manifest.json").write_text(
+                json.dumps(archive_manifest, indent=2), encoding="utf-8"
+            )
+            archive_key = f"system1/archives/windows/{selected.isoformat()}/{fingerprint}.tar.gz"
+            result["b2_archive"] = archive_directory_to_b2(root, archive_key)
 
     for name in report_names:
         result["report_validation"][name] = dict(source_counts[name])
