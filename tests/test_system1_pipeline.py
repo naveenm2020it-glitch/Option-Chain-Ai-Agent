@@ -150,3 +150,24 @@ def test_option_normalizer_canonicalizes_expiry_and_counts_both_sides():
     result=_normalise_options([base,pe],"2026-01-07")
     assert result["ce_contracts"]==1 and result["pe_contracts"]==1
     assert result["expiries"]==["2026-01-29"]
+
+
+def test_normalized_package_audit_requires_both_ce_and_pe_and_valid_expiry():
+    from scripts.system1_deep_data_validation import audit_normalized_package
+    package={"window_sessions":1,"sessions":{"2026-01-07":{"status":"ready","reports":{"fo_udiff_bhavcopy":{"contracts":[
+        {"underlying":"NIFTY","option_type":"CE","expiry":"2026-01-29","strike":25000.0,"close":100.0,"oi":10.0,"change_oi":1.0,"volume":5.0}
+    ],"duplicate_contract_keys":0}}}}}
+    assert audit_normalized_package(package)["status"]=="FAIL"
+    package["sessions"]["2026-01-07"]["reports"]["fo_udiff_bhavcopy"]["contracts"].append(
+        {"underlying":"NIFTY","option_type":"PE","expiry":"2026-01-29","strike":25000.0,"close":100.0,"oi":10.0,"change_oi":1.0,"volume":5.0}
+    )
+    assert audit_normalized_package(package)["status"]=="PASS"
+
+
+def test_frozen_package_fingerprint_ignores_generation_timestamp_only():
+    from scripts.system1_deep_data_validation import frozen_package_fingerprint
+    a={"analysis_date":"2026-01-07","generated_at_utc":"2026-01-07T10:00:00Z","sessions":{"x":{"status":"ready"}}}
+    b={**a,"generated_at_utc":"2026-01-07T10:01:00Z"}
+    assert frozen_package_fingerprint(a)==frozen_package_fingerprint(b)
+    b["sessions"]={"x":{"status":"blocked"}}
+    assert frozen_package_fingerprint(a)!=frozen_package_fingerprint(b)
