@@ -90,26 +90,48 @@ def _date_matches(value, session):
             pass
     return raw==session
 
+def _parse_date(value):
+    raw=str(value or "").strip()
+    for fmt in ("%Y-%m-%d","%d-%b-%Y","%d-%m-%Y","%d/%m/%Y","%d%m%Y","%Y%m%d","%d-%b-%y","%d/%m/%y"):
+        try: return datetime.strptime(raw,fmt).date()
+        except ValueError: pass
+    return None
+
 def _normalise_options(rows,session):
     headers=list(rows[0]); cols={k:_find(headers,k) for k in ALIASES}
-    required=("symbol","option_type","expiry","strike","close","oi","change_oi","volume")
+    required=("symbol","option_type","trade_date","expiry","strike","close","oi","change_oi","volume")
     missing=[k for k in required if not cols.get(k)]
     if missing: raise ValueError("UDiFF required columns missing: "+", ".join(missing))
-    out=[]; rejected=0
+    session_date=date.fromisoformat(session)
+    out=[]; rejected=0; invalid_nifty_rows=0; wrong_date_rows=0
     for row in rows:
-        if str(row.get(cols["symbol"],"")).strip().upper()!="NIFTY" or str(row.get(cols["option_type"],"")).strip().upper() not in ("CE","PE"):
+        symbol=str(row.get(cols["symbol"],"")).strip().upper()
+        option_type=str(row.get(cols["option_type"],"")).strip().upper()
+        if symbol!="NIFTY" or option_type not in ("CE","PE"):
             rejected+=1; continue
-        trade_date_col=cols.get("trade_date")
-        if trade_date_col and not _date_matches(row.get(trade_date_col),session):
-            rejected+=1
+        trade_date=_parse_date(row.get(cols["trade_date"]))
+        if trade_date is None or trade_date.isoformat()!=session:
+            wrong_date_rows+=1
             continue
+        expiry_date=_parse_date(row.get(cols["expiry"]))
         vals={k:_number(row.get(cols[k])) for k in ("strike","close","oi","change_oi","volume")}
-        if any(v is None for v in vals.values()): rejected+=1; continue
-        out.append({"underlying":"NIFTY","option_type":str(row[cols["option_type"]]).strip().upper(),"expiry":str(row.get(cols["expiry"],"")).strip(),**vals})
+        if expiry_date is None or expiry_date < session_date or any(v is None for v in vals.values()):
+            invalid_nifty_rows+=1
+            continue
+        if vals["strike"]<=0 or vals["close"]<0 or vals["oi"]<0 or vals["volume"]<0:
+            invalid_nifty_rows+=1
+            continue
+        out.append({"underlying":"NIFTY","option_type":option_type,"expiry":expiry_date.isoformat(),**vals})
+    if wrong_date_rows:
+        raise ValueError(f"UDiFF contains {wrong_date_rows} NIFTY option rows with missing/mismatched trade date")
+    if invalid_nifty_rows:
+        raise ValueError(f"UDiFF contains {invalid_nifty_rows} invalid NIFTY option rows (expiry/numeric/range checks)")
     keys=[(r["expiry"],r["strike"],r["option_type"]) for r in out]
     duplicates=len(keys)-len(set(keys))
     if not out: raise ValueError("No valid NIFTY CE/PE contracts in UDiFF")
-    return {"contracts":out,"valid_contracts":len(out),"rejected_rows":rejected,"duplicate_contract_keys":duplicates,"columns":cols}
+    counts={"CE":sum(r["option_type"]=="CE" for r in out),"PE":sum(r["option_type"]=="PE" for r in out)}
+    expiries=sorted({r["expiry"] for r in out})
+    return {"contracts":out,"valid_contracts":len(out),"ce_contracts":counts["CE"],"pe_contracts":counts["PE"],"expiries":expiries,"rejected_rows":rejected,"duplicate_contract_keys":duplicates,"columns":cols}
 def _normalise_index(rows, expected_date):
     headers=list(rows[0])
     sym=next((h for h in headers if _norm(h) in ("indexname","index")),None)
