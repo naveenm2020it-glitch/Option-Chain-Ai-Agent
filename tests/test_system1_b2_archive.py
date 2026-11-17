@@ -52,18 +52,15 @@ def test_archive_uploads_once_and_records_hash(tmp_path, monkeypatch):
 def test_archive_is_idempotent_when_same_hash_exists(tmp_path, monkeypatch):
     set_b2_env(monkeypatch)
     (tmp_path / "manifest.json").write_text("same content")
-    import io
-    import tarfile
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as archive:
-        archive.add(tmp_path / "manifest.json", arcname="manifest.json")
-    digest = hashlib.sha256(buf.getvalue()).hexdigest()
-    fake = FakeS3(existing=digest)
-    monkeypatch.setattr(b2_archive.boto3, "client", lambda *a, **k: fake)
+    first_fake = FakeS3()
+    monkeypatch.setattr(b2_archive.boto3, "client", lambda *a, **k: first_fake)
+    first = b2_archive.archive_directory_to_b2(tmp_path, "system1/test.tar.gz")
+    second_fake = FakeS3(existing=first["sha256"])
+    monkeypatch.setattr(b2_archive.boto3, "client", lambda *a, **k: second_fake)
     result = b2_archive.archive_directory_to_b2(tmp_path, "system1/test.tar.gz")
     assert result["status"] == "already_present"
-    assert fake.puts == []
-
+    assert result["sha256"] == first["sha256"]
+    assert second_fake.puts == []
 
 def test_archive_refuses_to_overwrite_different_existing_content(tmp_path, monkeypatch):
     set_b2_env(monkeypatch)
