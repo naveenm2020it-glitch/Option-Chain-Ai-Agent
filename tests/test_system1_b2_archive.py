@@ -22,6 +22,9 @@ class FakeS3:
     def put_object(self, **kwargs):
         self.puts.append(kwargs)
 
+    def get_object(self, Bucket, Key):
+        raise ClientError({"Error": {"Code": "404"}, "ResponseMetadata": {"HTTPStatusCode": 404}}, "GetObject")
+
 
 def set_b2_env(monkeypatch):
     monkeypatch.setenv("B2_APPLICATION_KEY_ID", "test-id")
