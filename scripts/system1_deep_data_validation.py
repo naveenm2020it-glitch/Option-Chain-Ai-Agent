@@ -210,8 +210,9 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Deep content validation for all catalogued NSE reports over 23 sessions.")
+    parser = argparse.ArgumentParser(description="Deep content validation for catalogued NSE reports across the selected trading-session window.")
     parser.add_argument("--date", default="2025-12-17")
+    parser.add_argument("--sessions", type=int, default=23, help="Number of sessions including selected date")
     parser.add_argument("--calendar", default="data/nse_trading_calendar.json")
     parser.add_argument("--output", default="system1_deep_validation_report.json")
     args = parser.parse_args()
@@ -219,13 +220,15 @@ def main() -> int:
     selected = date.fromisoformat(args.date)
     calendar_path = Path(args.calendar)
     calendar = load_calendar(calendar_path)
-    sessions = previous_sessions(selected, 23, calendar)
+    if args.sessions < 1:
+        parser.error("--sessions must be at least 1")
+    sessions = previous_sessions(selected, args.sessions, calendar)
     client = requests.Session()
     client.headers.update(HEADERS)
     report_names = [name for name, _, _ in report_specs(selected)]
     result = {
         "analysis_date": selected.isoformat(),
-        "window_policy": "selected date plus 22 prior trading sessions",
+        "window_policy": f"selected date plus {args.sessions - 1} prior trading sessions",
         "session_dates_newest_first": sessions,
         "session_count": len(sessions),
         "report_names": report_names,
@@ -290,7 +293,7 @@ def main() -> int:
             )
             result["sessions"][day_text] = day_result
 
-        package = build_package(root, selected, calendar_path, 23)
+        package = build_package(root, selected, calendar_path, args.sessions)
         result["core_normalization"] = {
             "status": package["status"],
             "selected_session_ready": package["selected_session_ready"],
