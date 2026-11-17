@@ -11,7 +11,7 @@ def test_previous_sessions_obeys_holiday_and_special_session():
     assert previous_sessions(date(2026,1,12),4,c)==["2026-01-12","2026-01-11","2026-01-09","2026-01-08"]
 def test_single_date_package_parses_nifty_ce_pe_and_index(tmp_path):
     day="2026-01-07"; d=tmp_path/day; d.mkdir()
-    fo=make_zip(["TckrSymb","FinInstrmTp","OptnTp","XpryDt","StrkPric","ClsPric","OpnIntrst","ChngInOpnIntrst","TtlTradgVol"],[["NIFTY","OPTIDX","CE","2026-01-29","25000","120","1000","100","500"],["NIFTY","OPTIDX","PE","2026-01-29","25000","110","1200","-50","600"],["BANKNIFTY","OPTIDX","CE","2026-01-29","50000","200","10","1","20"]])
+    fo=make_zip(["TckrSymb","FinInstrmTp","OptnTp","TradDt","XpryDt","StrkPric","ClsPric","OpnIntrst","ChngInOpnIntrst","TtlTradgVol"],[["NIFTY","OPTIDX","CE","2026-01-07","2026-01-29","25000","120","1000","100","500"],["NIFTY","OPTIDX","PE","2026-01-07","2026-01-29","25000","110","1200","-50","600"],["BANKNIFTY","OPTIDX","CE","2026-01-07","2026-01-29","50000","200","10","1","20"]])
     idx=b"Index Name,Index Date,Closing Index Value\nNIFTY 50,07-01-2026,25500.25\nINDIA VIX,07-01-2026,14.2\n"
     (d/"fo.zip").write_bytes(fo); (d/"index.csv").write_bytes(idx)
     m={"requested_end_date":day,"core_session_date":day,"results":{"fo_udiff_bhavcopy":{"file":"fo.zip","report_date":day,"sha256":hashlib.sha256(fo).hexdigest()},"nifty_index_close_all":{"file":"index.csv","report_date":day,"sha256":hashlib.sha256(idx).hexdigest()}}}
@@ -121,3 +121,32 @@ def test_market_activity_zip_fails_when_mandatory_futures_member_has_no_rows():
             "zip",
             "2025-12-17",
         )
+
+
+def test_option_normalizer_blocks_wrong_session_date(tmp_path):
+    import pytest
+    from system1.pipeline import _normalise_options
+    rows=[{"TckrSymb":"NIFTY","OptnTp":"CE","TradDt":"2026-01-06","XpryDt":"2026-01-29","StrkPric":"25000","ClsPric":"100","OpnIntrst":"10","ChngInOpnIntrst":"1","TtlTradgVol":"5"}]
+    with pytest.raises(ValueError, match="mismatched trade date"):
+        _normalise_options(rows,"2026-01-07")
+
+
+def test_option_normalizer_blocks_invalid_expiry_and_negative_oi():
+    import pytest
+    from system1.pipeline import _normalise_options
+    base={"TckrSymb":"NIFTY","OptnTp":"CE","TradDt":"2026-01-07","XpryDt":"bad-date","StrkPric":"25000","ClsPric":"100","OpnIntrst":"10","ChngInOpnIntrst":"1","TtlTradgVol":"5"}
+    with pytest.raises(ValueError, match="invalid NIFTY option rows"):
+        _normalise_options([base],"2026-01-07")
+    base["XpryDt"]="2026-01-29"
+    base["OpnIntrst"]="-10"
+    with pytest.raises(ValueError, match="invalid NIFTY option rows"):
+        _normalise_options([base],"2026-01-07")
+
+
+def test_option_normalizer_canonicalizes_expiry_and_counts_both_sides():
+    from system1.pipeline import _normalise_options
+    base={"TckrSymb":"NIFTY","OptnTp":"CE","TradDt":"07-Jan-2026","XpryDt":"29-Jan-2026","StrkPric":"25000","ClsPric":"100","OpnIntrst":"10","ChngInOpnIntrst":"1","TtlTradgVol":"5"}
+    pe={**base,"OptnTp":"PE"}
+    result=_normalise_options([base,pe],"2026-01-07")
+    assert result["ce_contracts"]==1 and result["pe_contracts"]==1
+    assert result["expiries"]==["2026-01-29"]
