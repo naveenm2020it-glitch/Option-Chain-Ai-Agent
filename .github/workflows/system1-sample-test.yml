@@ -28,11 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: \${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Download and validate one NSE session
-        run: python scripts/system1_sample_check.py --date "\${{ inputs.session_date || '2026-01-07' }}"
+        run: python scripts/system1_sample_check.py --date "${{ inputs.session_date || '2026-01-07' }}"
