@@ -11,7 +11,6 @@ import secrets
 
 import database
 from data_quality import assess_manifest
-from seller_engine import analyze_seller_market
 from storage import history_catalog, b2_configured, read_catalog, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
@@ -89,7 +88,7 @@ def status():
         "data_quality": quality,
         "historical_storage": "backblaze_b2_configured" if b2_configured() else "not_configured",
         "prediction": None,
-        "seller_engine": {"implemented": True, "models": 8, "live_data_connected": False},
+        "seller_engine": {"implemented": False, "models": 0, "state": "reset_pending_rebuild", "live_data_connected": False},
         "message": ("Core NSE reports are aligned in the latest stored collection. Seller analysis code is implemented; "
                     "raw NSE report adapters and live forecast are not enabled yet."
                     if ready else
@@ -99,24 +98,24 @@ def status():
 
 @app.post("/api/engine/analyze")
 def engine_analyze(payload: dict):
-    """Run seller ensemble on a validated, normalized snapshot; not raw NSE files."""
-    try:
-        return analyze_seller_market(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    """Compatibility endpoint: analysis remains disabled during the clean model rebuild."""
+    raise HTTPException(
+        status_code=409,
+        detail="Seller models have been reset. Analysis is disabled until the new models pass validation.",
+    )
 
 
 @app.get("/api/engine/models")
 def engine_models():
+    """Expose reset state without advertising or executing legacy model logic."""
     return {
         "orientation": "seller_first",
-        "parallel_subprocesses": [
-            "CE seller", "PE seller", "OI/PCR", "seller strength",
-            "futures confirmation", "participant positioning",
-            "volatility risk", "seller trap risk",
-        ],
-        "master_engine": "weighted consensus with data-quality, disagreement and risk gates",
+        "state": "reset_pending_rebuild",
+        "models": [],
+        "parallel_subprocesses": [],
+        "master_engine": None,
         "live_data_connected": False,
+        "message": "Legacy model logic was removed. New models will be added only after data and validation gates pass.",
     }
 
 

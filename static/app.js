@@ -102,43 +102,22 @@ async function loadStatus(){
 async function loadModels(){
  const grid=byId("engine-grid");if(!grid)return;
  grid.replaceChildren();
- const loading=document.createElement("article");loading.className="model-card model-card-loading";
- const loadingTitle=document.createElement("strong");loadingTitle.textContent="Loading engine catalogue…";
- const loadingNote=document.createElement("small");loadingNote.textContent="Checking the available analysis modules.";
- loading.append(loadingTitle,loadingNote);grid.append(loading);
- const descriptions={
-  "CE seller":"Call-side OI build-up, premium movement and squeeze-risk evidence.",
-  "PE seller":"Put-side OI build-up, premium movement and downside-risk evidence.",
-  "OI/PCR":"Aggregate and change-in-OI put/call positioning.",
-  "seller strength":"Relative CE and PE writing evidence across strikes.",
-  "futures confirmation":"Futures price and open-interest confirmation.",
-  "participant positioning":"FII / participant positioning, subject to adapter sign validation.",
-  "volatility risk":"ATM IV, IV expansion and expiry proximity.",
-  "seller trap risk":"OI addition with rising premiums as a squeeze-risk warning."
- };
  try{
   const response=await fetch("/api/engine/models",{cache:"no-store"});
-  if(!response.ok)throw new Error("Engine catalogue returned HTTP "+response.status);
+  if(!response.ok)throw new Error("Engine status returned HTTP "+response.status);
   const data=await response.json();
-  const names=Array.isArray(data.parallel_subprocesses)?data.parallel_subprocesses:[];
-  grid.replaceChildren();
-  if(!names.length)throw new Error("No analysis modules were returned");
-  names.forEach((name,index)=>{
-   const card=document.createElement("article");card.className="model-card";
-   const top=document.createElement("div");top.className="model-card-top";
-   const number=document.createElement("span");number.className="model-index";number.textContent=String(index+1).padStart(2,"0");
-   const status=document.createElement("span");status.className="model-state";
-   status.textContent=data.live_data_connected===true?"Awaiting validated output":"Feed not connected";
-   top.append(number,status);
-   const title=document.createElement("strong");title.textContent=name;
-   const note=document.createElement("small");note.textContent=descriptions[name]||"Independent seller-analysis input; awaiting validated data.";
-   const footer=document.createElement("p");footer.textContent=data.live_data_connected===true?"No signal until a validated snapshot is supplied.":"Logic catalogue available; live analysis is unavailable.";
-   card.append(top,title,note,footer);grid.append(card);
-  });
+  const card=document.createElement("article");card.className="model-card model-card-loading";
+  const top=document.createElement("div");top.className="model-card-top";
+  const number=document.createElement("span");number.className="model-index";number.textContent="—";
+  const status=document.createElement("span");status.className="model-state";status.textContent="Reset complete";
+  top.append(number,status);
+  const title=document.createElement("strong");title.textContent="Model rebuild not started";
+  const note=document.createElement("small");note.textContent=data.message||"Legacy models have been removed. Historical NSE data and collection services are preserved.";
+  const footer=document.createElement("p");footer.textContent="No prediction is generated. New models must pass chronological holdout and shadow validation before activation.";
+  card.append(top,title,note,footer);grid.append(card);
  }catch(e){
-  grid.replaceChildren();
   const error=document.createElement("article");error.className="model-card model-card-error";
-  const title=document.createElement("strong");title.textContent="Engine catalogue unavailable";
+  const title=document.createElement("strong");title.textContent="Model reset status unavailable";
   const note=document.createElement("small");note.textContent=e.message+". No analysis output is being generated.";
   error.append(title,note);grid.append(error);
  }

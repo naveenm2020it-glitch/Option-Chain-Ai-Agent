@@ -90,12 +90,20 @@ def test_manifest_without_results_is_blocked():
 
 
 
-def test_engine_models_catalog_lists_eight_modules_without_live_feed():
+def test_engine_models_reports_clean_reset_without_legacy_modules():
     response = client.get("/api/engine/models")
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["parallel_subprocesses"]) == 8
+    assert payload["state"] == "reset_pending_rebuild"
+    assert payload["parallel_subprocesses"] == []
+    assert payload["models"] == []
     assert payload["live_data_connected"] is False
+
+
+def test_engine_analysis_is_disabled_during_model_rebuild():
+    response = client.post("/api/engine/analyze", json={})
+    assert response.status_code == 409
+    assert "reset" in response.json()["detail"].lower()
 
 
 def test_dashboard_marks_option_chain_as_unavailable_until_validated_feed():
