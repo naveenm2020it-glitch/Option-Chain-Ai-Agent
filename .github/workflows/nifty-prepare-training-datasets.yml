@@ -1,0 +1,100 @@
+name: NIFTY four-model dataset preparation (no training)
+
+on:
+  workflow_dispatch:
+    inputs:
+      context_run_id:
+        description: "Successful B2-free context-repair run ID"
+        required: true
+        default: "44008350973"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "scripts/prepare_nifty_training_dataset.py"
+      - ".github/workflows/nifty-prepare-training-datasets.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nifty-four-model-dataset-preparation
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download verified enriched 494-session checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-context-repair-${{ inputs.context_run_id || '44008350973' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.context_run_id || '44008350973' }}
+          path: data
+
+      - name: Verify context-repair gate before dataset preparation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("data/context_repair/context_repair_report.json").read_text())
+          checkpoint = json.loads(Path("data/historical_audit/checkpoint.json").read_text())
+          assert report.get("repair_complete") is True
+          assert report.get("b2_requests") == 0
+          assert report.get("date_alignment_pass") is True
+          assert report.get("feature_validation", {}).get("pass") is True
+          assert report.get("training_allowed") is True
+          assert len(checkpoint.get("features", {})) == 494
+          print("Input checkpoint gate PASS; no B2 or NSE access required.")
+          PY
+
+      - name: Prepare four chronological datasets (no model training)
+        run: |
+          python scripts/prepare_nifty_training_dataset.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --output-dir data/prepared_models \
+            --expected-sessions 494
+
+      - name: Validate prepared splits and target leakage boundaries
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("data/prepared_models")
+          manifest = json.loads((root / "manifest.json").read_text())
+          assert manifest["prepared_sample_count"] == 472
+          assert manifest["feature_count"] > 0
+          assert manifest["seller_target_coverage"]["CE"] >= 0.95 * 472
+          assert manifest["seller_target_coverage"]["PE"] >= 0.95 * 472
+          assert manifest["training_started"] is False
+          for model in ("direction", "range", "ce_seller", "pe_seller"):
+              for split in ("train", "validation", "holdout"):
+                  path = root / model / f"{split}.jsonl"
+                  assert path.is_file() and path.stat().st_size > 0, str(path)
+          print(json.dumps({
+              "prepared_samples": manifest["prepared_sample_count"],
+              "feature_count": manifest["feature_count"],
+              "splits": manifest["split_counts"],
+              "seller_coverage": manifest["seller_target_coverage"],
+              "class_counts": manifest["class_counts"],
+              "training_started": False
+          }, indent=2))
+          PY
+
+      - name: Publish prepared datasets
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-four-model-prepared-datasets-${{ github.run_id }}
+          path: data/prepared_models/
+          if-no-files-found: error
+          retention-days: 30
