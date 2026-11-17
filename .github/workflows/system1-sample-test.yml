@@ -1,32 +1,38 @@
-name: System 1 one-date NSE sample test
+name: System 1 23-session NSE source audit
 
 on:
+  push:
+    branches:
+      - feature/system-1-data-intelligence
+    paths:
+      - "scripts/system1_23_session_source_audit.py"
+      - ".github/workflows/system1-sample-test.yml"
   workflow_dispatch:
     inputs:
       session_date:
-        description: "One NSE trading date (YYYY-MM-DD)"
+        description: "Selected NSE trading date; audit includes this date plus 22 prior sessions"
         required: true
-        default: "2026-01-07"
+        default: "2025-12-17"
         type: string
 
 permissions:
   contents: read
 
 jobs:
-  sample-test:
+  source-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 120
     env:
       PYTHONPATH: .
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
-      - name: Download and validate one NSE session
-        run: python scripts/system1_sample_check.py --date "${{ inputs.session_date || '2026-01-07' }}"
+      - name: Download and audit all catalogued reports across 23 sessions
+        run: python scripts/system1_23_session_source_audit.py --date "${{ inputs.session_date || '2025-12-17' }}"
