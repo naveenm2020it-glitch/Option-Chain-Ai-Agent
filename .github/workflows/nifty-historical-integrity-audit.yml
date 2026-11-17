@@ -6,22 +6,12 @@ on:
       max_archives:
         description: "Maximum existing ZIP archives to download and verify in this run"
         required: true
-        default: "25"
+        default: "1"
         type: string
-  push:
-    branches: [main]
-    paths:
-      - "scripts/nse_historical_audit.py"
-      - "scripts/nse_historical_backfill.py"
-      - "scripts/train_adaptive_intelligence.py"
-      - "scripts/nse_archive_metadata_repair.py"
-      - ".github/workflows/nifty-historical-integrity-audit.yml"
-  schedule:
-    # One small read-only batch each day, after B2's daily quota reset window.
-    - cron: "30 0 * * *"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: nse-b2-archive
@@ -30,7 +20,7 @@ concurrency:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     env:
       B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
       B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
@@ -49,23 +39,19 @@ jobs:
         id: audit_cache
         uses: actions/cache@v4
         with:
-          path: |
-            data/historical_audit/
-            models/artifacts/
+          path: data/historical_audit/
           key: nifty-historical-audit-v1-${{ github.run_id }}
           restore-keys: |
             nifty-historical-audit-v1-
 
-      # The first audit run failed before actions/cache could save its checkpoint.
-      # Restore its published artifact so we only recheck the one failed date.
       - name: Recover checkpoint from previous audit artifact
-        if: github.event_name == 'push' && steps.audit_cache.outputs.cache-hit != 'true'
+        if: steps.audit_cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
-          name: nifty-historical-audit-43691010790
+          name: nifty-historical-audit-43691154808
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: 43691010790
+          run-id: 43691154808
           path: data
 
       - name: Install lightweight audit dependencies
@@ -82,173 +68,20 @@ jobs:
           print("B2 configuration is present.")
           PY
 
-      - name: Audit existing archives in resumable batches
-        id: audit
+      - name: Verify one bounded batch of existing archives (read-only)
         run: |
           set -euo pipefail
-          batch_size="${{ github.event.inputs.max_archives || '25' }}"
-          # The audit script clamps every batch to 25 archives. Continue in this
-          # same runner so a full audit does not require manual re-dispatches.
-          # A B2 cap pauses immediately; the checkpoint is retained for the next run.
-          for batch in $(seq 1 30); do
-            echo "Starting integrity batch ${batch} (max ${batch_size} archives)"
-            python scripts/nse_historical_audit.py \
-              --start 2024-11-12 \
-              --end 2026-11-12 \
-              --checkpoint data/historical_audit/checkpoint.json \
-              --max-archives "${batch_size}"
-            state="$(python -c 'import json; print(json.load(open("data/historical_audit/coverage.json"))["status"])')"
-            processed="$(python -c 'import json; print(json.load(open("data/historical_audit/coverage.json"))["processed_this_run"])')"
-            pending="$(python -c 'import json; print(len(json.load(open("data/historical_audit/coverage.json"))["pending_archive_dates"]))')"
-            echo "Batch ${batch}: status=${state}, processed=${processed}, pending=${pending}"
-            if [ "${state}" = "archive_integrity_complete_calendar_reconciled" ] || [ "${state}" = "paused_b2_class_b_cap" ]; then
-              break
-            fi
-            if [ "${processed}" -lt "${batch_size}" ] || [ "${pending}" -eq 0 ]; then
-              break
-            fi
-          done
-
-      - name: Diagnose and repair stale archive catalog metadata
-        id: catalog_repair
-        if: always() && steps.audit.outcome == 'failure'
-        run: |
-          python scripts/nse_archive_metadata_repair.py \
-            --date 2026-10-05 \
-            --output data/historical_audit/archive-diagnostic-2026-10-05.json
-
-      - name: Re-audit catalog-repaired archive
-        id: catalog_recheck
-        if: always() && steps.catalog_repair.outputs.catalog_repaired == 'true'
-        run: |
           python scripts/nse_historical_audit.py \
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --max-archives 1
-
-      - name: Repair one calendar-confirmed missing session
-        id: repair
-        if: steps.audit.outcome == 'success'
-        run: |
-          python - <<'PY'
-          import json, os, pathlib, subprocess
-          root = pathlib.Path("data/historical_audit")
-          report = json.loads((root / "coverage.json").read_text())
-          output = pathlib.Path(os.environ["GITHUB_OUTPUT"])
-          def set_output(value):
-              with output.open("a", encoding="utf-8") as handle:
-                  handle.write("repaired=" + value + "\n")
-          missing = report.get("missing_archive_dates", [])
-          if report.get("status") != "blocked_missing_or_failed_archives" or report.get("failed_dates") or len(missing) != 1:
-              print("No safe single-date repair candidate; leaving archive unchanged.")
-              set_output("false")
-              raise SystemExit(0)
-          day = missing[0]
-          attempts_path = root / "repair-attempts.json"
-          attempts = json.loads(attempts_path.read_text()) if attempts_path.exists() else {}
-          prior = attempts.get(day)
-          if prior and prior.get("status") != "b2_cap_paused":
-              print("Repair already attempted for", day, prior)
-              set_output("false")
-              raise SystemExit(0)
-          print("Repairing only calendar-confirmed missing F&O session:", day)
-          result = subprocess.run([
-              "python", "scripts/nse_historical_backfill.py",
-              "--start", day, "--end", day,
-              "--output", "data/historical_backfill_repair",
-              "--max-sessions", "1",
-          ])
-          if result.returncode == 0:
-              backfill_report = pathlib.Path("data/historical_backfill_repair/coverage.json")
-              coverage = json.loads(backfill_report.read_text()) if backfill_report.exists() else {}
-              if day in coverage.get("archive_integrity_verified", []):
-                  attempts[day] = {"status": "uploaded_waiting_integrity_recheck"}
-                  attempts_path.write_text(json.dumps(attempts, indent=2))
-                  set_output("true")
-              else:
-                  attempts[day] = {"status": "repair_failed", "reason": "session_not_uploaded_and_verified"}
-                  attempts_path.write_text(json.dumps(attempts, indent=2))
-                  print("Backfill returned zero but did not verify the missing session.")
-                  set_output("false")
-          elif result.returncode == 3:
-              # B2 quota pause is safe to retry on a later scheduled run.
-              attempts[day] = {"status": "b2_cap_paused"}
-              attempts_path.write_text(json.dumps(attempts, indent=2))
-              print("B2 cap reached; no repeated retry in this run.")
-              set_output("false")
-          else:
-              attempts[day] = {"status": "repair_failed", "return_code": result.returncode}
-              attempts_path.write_text(json.dumps(attempts, indent=2))
-              print("Repair did not complete; inspect the backfill log before retrying.")
-              set_output("false")
-          PY
-
-      - name: Re-audit repaired archive
-        id: recheck
-        if: steps.repair.outputs.repaired == 'true'
-        run: |
-          python scripts/nse_historical_audit.py \
-            --start 2024-11-12 \
-            --end 2026-11-12 \
-            --checkpoint data/historical_audit/checkpoint.json \
-            --max-archives 1
-
-      - name: Install ML dependencies only when a new model is required
-        if: always() && ((steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')) || steps.catalog_recheck.outcome == 'success')
-        run: |
-          python - <<'PY'
-          import hashlib
-          import json
-          import pathlib
-          import subprocess
-          import sys
-          report = json.loads(pathlib.Path("data/historical_audit/coverage.json").read_text())
-          checkpoint = json.loads(pathlib.Path("data/historical_audit/checkpoint.json").read_text())
-          manifest_path = pathlib.Path("models/artifacts/model_manifest.json")
-          model_path = pathlib.Path("models/artifacts/nifty_adaptive_v2.joblib")
-          needed = bool(report.get("model_training_allowed"))
-          if needed and manifest_path.is_file() and model_path.is_file():
-              manifest = json.loads(manifest_path.read_text())
-              data_hash = hashlib.sha256(json.dumps(checkpoint["features"], sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-              script_hash = hashlib.sha256(pathlib.Path("scripts/train_adaptive_intelligence.py").read_bytes()).hexdigest()
-              model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
-              needed = not (
-                  manifest.get("dataset_sha256") == data_hash
-                  and manifest.get("training_script_sha256") == script_hash
-                  and manifest.get("model_sha256") == model_hash
-              )
-          if needed:
-              subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements-ml.txt"], check=True)
-              print("ML dependencies installed; a new V2 model is required.")
-          else:
-              print("ML installation skipped; training gate is closed or the current dataset already has a verified model.")
-          PY
-
-      - name: Train Adaptive Intelligence V2 after audit and feature gates pass
-        id: train
-        if: always() && ((steps.audit.outcome == 'success' && steps.repair.outcome == 'success' && (steps.recheck.outcome == 'success' || steps.recheck.outcome == 'skipped')) || steps.catalog_recheck.outcome == 'success')
-        run: |
-          python scripts/train_adaptive_intelligence.py \
-            --checkpoint data/historical_audit/checkpoint.json \
-            --output-dir models/artifacts
+            --max-archives "${{ inputs.max_archives }}"
 
       - name: Publish audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nifty-historical-audit-${{ github.run_id }}
-          path: |
-            data/historical_audit/
-            data/historical_backfill_repair/coverage.json
-          if-no-files-found: ignore
-          retention-days: 30
-
-      - name: Publish newly trained V2 model
-        if: steps.train.outputs.trained == 'true' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: nifty-adaptive-v2-model-${{ github.run_id }}
-          path: models/artifacts/
+          path: data/historical_audit/
           if-no-files-found: ignore
           retention-days: 30
