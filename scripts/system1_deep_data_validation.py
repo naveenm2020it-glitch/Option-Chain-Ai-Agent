@@ -17,7 +17,7 @@ import requests
 
 from scripts.nse_download_check import HEADERS, fetch_report, report_specs
 from system1.pipeline import build_package, load_calendar, previous_sessions
-from system1.b2_archive import archive_directory_to_b2
+from system1.b2_archive import download_archive_from_b2, upload_rolling_archive_to_b2
 
 
 def norm(value: str) -> str:
@@ -279,7 +279,7 @@ def main() -> int:
     parser.add_argument("--sessions", type=int, default=23, help="Number of sessions including selected date")
     parser.add_argument("--calendar", default="data/nse_trading_calendar.json")
     parser.add_argument("--output", default="system1_deep_validation_report.json")
-    parser.add_argument("--archive-to-b2", action="store_true", help="Upload the validated 23-session raw-source archive and frozen package to B2")
+    parser.add_argument("--archive-to-b2", action="store_true", help="Reuse and update the validated rolling 23-session archive in B2")
     args = parser.parse_args()
 
     selected = date.fromisoformat(args.date)
@@ -310,19 +310,52 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="system1-deep-validation-") as temp:
         root = Path(temp)
+        rolling_key = "system1/rolling/nifty50-eod-23-session.tar.gz"
+        if args.archive_to_b2:
+            result["b2_cache"] = download_archive_from_b2(root, rolling_key)
+        # Keep only the requested 23-session window; the rolling cache must not
+        # accumulate expired sessions indefinitely.
+        keep = set(sessions)
+        for cached in list(root.iterdir()):
+            if cached.is_dir() and cached.name not in keep:
+                import shutil
+                shutil.rmtree(cached)
         for day_text in reversed(sessions):
             day = date.fromisoformat(day_text)
             folder = root / day_text
-            folder.mkdir(parents=True)
+            folder.mkdir(parents=True, exist_ok=True)
+            cached_manifest = folder / "manifest.json"
+            try:
+                cached = json.loads(cached_manifest.read_text(encoding="utf-8")) if cached_manifest.is_file() else {}
+            except (OSError, json.JSONDecodeError):
+                cached = {}
             entries = {}
-            day_result = {"reports": {}, "downloaded": 0, "content_validated": 0, "invalid": 0}
+            day_result = {"reports": {}, "downloaded": 0, "reused": 0, "content_validated": 0, "invalid": 0}
             for name, path, kind in report_specs(day):
                 try:
-                    payload, meta = fetch_report(client, name, path, kind)
-                    digest = hashlib.sha256(payload).hexdigest()
-                    extension = {"zip": "zip", "csv": "csv", "gzip": "csv.gz"}[kind]
-                    filename = f"{name}_{day_text}.{extension}"
-                    (folder / filename).write_bytes(payload)
+                    cached_entry = cached.get("results", {}).get(name, {})
+                    cached_file = folder / str(cached_entry.get("file", ""))
+                    if cached_entry.get("report_date") == day_text and cached_file.is_file():
+                        payload = cached_file.read_bytes()
+                        digest = hashlib.sha256(payload).hexdigest()
+                        if cached_entry.get("sha256") != digest:
+                            raise ValueError("cached report SHA-256 mismatch")
+                        meta = {"http_status": cached_entry.get("http_status", 200),
+                                "url": "b2://rolling-cache", "cached": True}
+                        day_result["reused"] += 1
+                    else:
+                        payload, fetched_meta = fetch_report(client, name, path, kind)
+                        digest = hashlib.sha256(payload).hexdigest()
+                        extension = {"zip": "zip", "csv": "csv", "gzip": "csv.gz"}[kind]
+                        filename = f"{name}_{day_text}.{extension}"
+                        (folder / filename).write_bytes(payload)
+                        cached_entry = {"file": filename, "report_date": day_text,
+                                        "sha256": digest, "bytes": len(payload),
+                                        "http_status": fetched_meta["http_status"]}
+                        meta = fetched_meta
+                        day_result["downloaded"] += 1
+                        total_downloaded += 1
+
                     checked = inspect_payload(name, payload, kind, day_text)
                     checked.update({"http_status": meta["http_status"], "download_url": meta["url"]})
                     if checked["date_mismatch"]:
@@ -331,13 +364,8 @@ def main() -> int:
                         checked["status"] = "content_validated"
                     else:
                         checked["status"] = "warning_date_not_explicit"
-                    entries[name] = {
-                        "file": filename, "report_date": day_text, "sha256": digest,
-                        "bytes": len(payload), "http_status": meta["http_status"],
-                    }
+                    entries[name] = cached_entry
                     day_result["reports"][name] = checked
-                    day_result["downloaded"] += 1
-                    total_downloaded += 1
                     if checked["status"] == "content_validated":
                         day_result["content_validated"] += 1
                         total_content_valid += 1
@@ -351,7 +379,7 @@ def main() -> int:
                     source_counts[name]["invalid"] += 1
 
             manifest = {"requested_end_date": day_text, "core_session_date": day_text, "results": entries}
-            (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            cached_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             day_result["core_reports_present"] = all(
                 day_result["reports"].get(n, {}).get("status") == "content_validated"
                 for n in ("fo_udiff_bhavcopy", "nifty_index_close_all")
@@ -408,8 +436,7 @@ def main() -> int:
             (root / "archive_manifest.json").write_text(
                 json.dumps(archive_manifest, indent=2), encoding="utf-8"
             )
-            archive_key = f"system1/archives/windows/{selected.isoformat()}/{fingerprint}.tar.gz"
-            result["b2_archive"] = archive_directory_to_b2(root, archive_key)
+            result["b2_archive"] = upload_rolling_archive_to_b2(root, rolling_key)
 
     for name in report_names:
         result["report_validation"][name] = dict(source_counts[name])
