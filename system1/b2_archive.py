@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+
+
+def _b2_region() -> str:
+    explicit = os.environ.get("B2_REGION")
+    if explicit:
+        return explicit
+    endpoint = os.environ.get("B2_ENDPOINT_URL", "")
+    match = re.search(r"s3[.]([a-z0-9-]+)[.]backblazeb2[.]com", endpoint, re.IGNORECASE)
+    return match.group(1) if match else "us-east-1"
 
 
 def archive_directory_to_b2(source_dir: Path, object_key: str) -> dict:
@@ -46,7 +56,7 @@ def archive_directory_to_b2(source_dir: Path, object_key: str) -> dict:
         endpoint_url=os.environ["B2_ENDPOINT_URL"].rstrip("/"),
         aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        region_name=os.environ.get("B2_REGION", "us-east-1"),
+        region_name=_b2_region(),
     )
     bucket = os.environ["B2_BUCKET_NAME"]
     try:
