@@ -74,6 +74,8 @@ def make_market_activity_zip(day="2025-12-17", include_options=True, empty_futur
             f"futivx{dmy}.csv",
             "NSE Futures VIX Report\\nInstrument,Trade Date,Value\\n",
         )
+        # NSE's help/legend file is documentation, not a tabular data source.
+        archive.writestr("fohelp.txt", "FO report help\\nField definitions\\nNotes without columns")
     return payload.getvalue()
 
 
@@ -88,6 +90,7 @@ def test_market_activity_zip_accepts_header_only_optional_futivx():
     )
     assert result["rows"] == 2
     assert result["empty_optional_members"] == ["futivx17122025.csv"]
+    assert result["metadata_members"] == ["fohelp.txt"]
     statuses = {m["member"].split("/")[-1]: m.get("status") for m in result["members"]}
     assert statuses["futivx17122025.csv"] == "empty_optional"
     assert statuses["futidx17122025.csv"] == "content_validated"
