@@ -34,3 +34,14 @@ The full window expects date folders containing manifest.json. A root manifest i
 - No historical backfill, model training, dashboard changes or deployment.
 - Test one sample date first; expand to 23 sessions only after it passes.
 - IV, Greeks, bid/ask and intraday values are not fabricated or presumed available.
+
+## Verified one-date sample
+On 2026-11-17, GitHub Actions downloaded and parsed the official NSE reports for 2026-01-07:
+- F&O UDiFF Bhavcopy: HTTP 200, 1,186,613 bytes, SHA-256 recorded.
+- NIFTY index close report: HTTP 200, 15,234 bytes, SHA-256 recorded.
+- F&O source rows: 39,202; NIFTY CE/PE contracts extracted: 1,484.
+- Duplicate contract keys: 0.
+- NIFTY 50 close: 26,140.75; India VIX close: 9.95.
+- Package status: READY; unit tests passed.
+
+The sample reports were held only in the ephemeral GitHub Actions runner and were not committed to the repository. The manually triggerable workflow is `.github/workflows/system1-sample-test.yml`.
