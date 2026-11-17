@@ -52,7 +52,7 @@ def previous_sessions(analysis_date:date,count:int,calendar:dict[str,Any]):
     start=date.fromisoformat(calendar["window_start"]) if calendar.get("window_start") else None
     end=date.fromisoformat(calendar["window_end"]) if calendar.get("window_end") else None
     if (start and analysis_date<start) or (end and analysis_date>end): raise ValueError("analysis date outside configured exchange calendar")
-    holidays,special=calendar["holidays"],calendar["special"]
+    holidays,special=calendar.get("holidays",set()),calendar.get("special",calendar.get("special_trading_sessions",set()))
     out=[]; cur=analysis_date
     while len(out)<count:
         key=cur.isoformat()
