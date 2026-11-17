@@ -46,3 +46,75 @@ def test_deep_validator_accepts_comma_delimiter():
     result = inspect_csv(payload, "comma_fixture")
     assert result["rows"] == 1
     assert result["detected_delimiter"] == ","
+
+
+def make_market_activity_zip(day="2025-12-17", include_options=True, empty_futures=False):
+    import io
+    import zipfile
+
+    dmy = date.fromisoformat(day).strftime("%d%m%Y")
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as archive:
+        futures_rows = [] if empty_futures else [["NIFTY", "2025-12-17", "25000", "12"]]
+        futures = io.StringIO()
+        writer = csv.writer(futures)
+        writer.writerow(["Instrument", "Trade Date", "Value", "Volume"])
+        writer.writerows(futures_rows)
+        archive.writestr(f"futidx{dmy}.csv", futures.getvalue())
+
+        if include_options:
+            options = io.StringIO()
+            writer = csv.writer(options)
+            writer.writerow(["Instrument", "Trade Date", "Value", "Volume"])
+            writer.writerow(["NIFTY", "2025-12-17", "25000", "100"])
+            archive.writestr(f"optidx{dmy}.csv", options.getvalue())
+
+        # NSE's optional VIX-futures member may contain a title and header only.
+        archive.writestr(
+            f"futivx{dmy}.csv",
+            "NSE Futures VIX Report\\nInstrument,Trade Date,Value\\n",
+        )
+    return payload.getvalue()
+
+
+def test_market_activity_zip_accepts_header_only_optional_futivx():
+    from scripts.system1_deep_data_validation import inspect_payload
+
+    result = inspect_payload(
+        "fo_market_activity",
+        make_market_activity_zip(),
+        "zip",
+        "2025-12-17",
+    )
+    assert result["rows"] == 2
+    assert result["empty_optional_members"] == ["futivx17122025.csv"]
+    statuses = {m["member"].split("/")[-1]: m.get("status") for m in result["members"]}
+    assert statuses["futivx17122025.csv"] == "empty_optional"
+    assert statuses["futidx17122025.csv"] == "content_validated"
+    assert statuses["optidx17122025.csv"] == "content_validated"
+
+
+def test_market_activity_zip_fails_when_mandatory_options_member_missing():
+    import pytest
+    from scripts.system1_deep_data_validation import inspect_payload
+
+    with pytest.raises(ValueError, match="missing mandatory.*optidx"):
+        inspect_payload(
+            "fo_market_activity",
+            make_market_activity_zip(include_options=False),
+            "zip",
+            "2025-12-17",
+        )
+
+
+def test_market_activity_zip_fails_when_mandatory_futures_member_has_no_rows():
+    import pytest
+    from scripts.system1_deep_data_validation import inspect_payload
+
+    with pytest.raises(ValueError, match="mandatory member futidx.*no data rows"):
+        inspect_payload(
+            "fo_market_activity",
+            make_market_activity_zip(empty_futures=True),
+            "zip",
+            "2025-12-17",
+        )
