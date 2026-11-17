@@ -150,12 +150,22 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
                         + ", ".join(missing)
                     )
                 members = []
+                metadata_members = []
+                mandatory_names = set(required)
                 for member_name in names:
                     basename = Path(member_name).name.lower()
+                    # NSE includes a help/legend text file in this ZIP. It is
+                    # documentation, not a market-data table, so record and skip it.
+                    if basename == "fohelp.txt":
+                        metadata_members.append(member_name)
+                        continue
                     is_optional_vix = basename == f"futivx{dmy}.csv"
+                    is_mandatory = basename in mandatory_names
                     checked = inspect_csv(
                         archive.read(member_name), member_name,
-                        allow_header_only=is_optional_vix,
+                        # Mandatory members are checked for non-empty rows below
+                        # so their failure is reported at the ZIP/source level.
+                        allow_header_only=(is_optional_vix or is_mandatory),
                     )
                     checked["status"] = (
                         "empty_optional" if is_optional_vix and checked["header_only"]
@@ -199,6 +209,7 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
         "sha256": hashlib.sha256(payload).hexdigest(),
         "member_count": len(members),
         "empty_optional_members": [m["member"] for m in members if m.get("status") == "empty_optional"],
+        "metadata_members": metadata_members if kind == "zip" and name == "fo_market_activity" else [],
         "rows": total_rows,
         "numeric_cells": total_numeric,
         "members": members,
