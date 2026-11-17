@@ -18,4 +18,4 @@ jobs:
       - run: pytest -q
       - name: One-date NSE live report download and parser test (PR #26 only)
         if: github.event.pull_request.number == 26
-        run: python scripts/system1_sample_test.py --date 2026-01-07
+        run: python scripts/system1_sample_check.py --date 2026-01-07
