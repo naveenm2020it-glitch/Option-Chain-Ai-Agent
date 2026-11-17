@@ -76,10 +76,14 @@ def inspect_csv(payload: bytes, label: str) -> dict:
                     if norm(name) in {"date", "tradedate", "tradDt".lower(),
                                       "businessdate", "reportdate", "tradingdate",
                                       "timestamp", "indexdate"}]
-    observed_dates = sorted({parse_date(row[i]) for row in data
-                             if i < len(row) and parse_date(row[i])}
-                            for i in date_columns)
-    flat_dates = sorted({d for group in observed_dates for d in group})
+    flat_dates = sorted({
+        parsed
+        for i in date_columns
+        for row in data
+        if i < len(row)
+        for parsed in [parse_date(row[i])]
+        if parsed
+    })
     return {
         "member": label,
         "rows": len(data),
