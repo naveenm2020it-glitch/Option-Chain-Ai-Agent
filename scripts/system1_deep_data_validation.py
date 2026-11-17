@@ -78,7 +78,7 @@ def inspect_csv(payload: bytes, label: str, allow_header_only: bool = False) -> 
     if ragged / max(1, len(data) + ragged) > 0.05:
         raise ValueError(f"{label}: {ragged}/{len(data) + ragged} table rows have inconsistent column counts")
     nonempty_cells = sum(bool(str(v).strip()) for row in data for v in row)
-    if nonempty_cells == 0:
+    if nonempty_cells == 0 and not allow_header_only:
         raise ValueError(f"{label}: data rows contain no values")
     numeric_cells = 0
     for row in data:
