@@ -101,7 +101,7 @@ def download_archive_from_b2(destination_dir: Path, object_key: str) -> dict:
         endpoint_url=os.environ["B2_ENDPOINT_URL"].rstrip("/"),
         aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        region_name=os.environ.get("B2_REGION", "us-east-1"),
+        region_name=_b2_region(),
     )
     bucket = os.environ["B2_BUCKET_NAME"]
     try:
@@ -159,7 +159,7 @@ def upload_rolling_archive_to_b2(source_dir: Path, object_key: str) -> dict:
         endpoint_url=os.environ["B2_ENDPOINT_URL"].rstrip("/"),
         aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        region_name=os.environ.get("B2_REGION", "us-east-1"),
+        region_name=_b2_region(),
     )
     bucket = os.environ["B2_BUCKET_NAME"]
     client.put_object(Bucket=bucket, Key=object_key, Body=payload,
