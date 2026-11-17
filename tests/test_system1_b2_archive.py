@@ -116,3 +116,29 @@ def test_rolling_snapshot_upload_uses_single_put(tmp_path, monkeypatch):
     assert result["status"] == "rolling_snapshot_updated"
     assert result["b2_operations"] == 1
     assert len(fake.puts) == 1
+
+
+def test_rolling_archive_operations_derive_region_from_b2_endpoint(tmp_path, monkeypatch):
+    set_b2_env(monkeypatch)
+    monkeypatch.setenv("B2_ENDPOINT_URL", "https://s3.us-west-004.backblazeb2.com")
+    monkeypatch.delenv("B2_REGION", raising=False)
+    clients = []
+
+    def make_client(*args, **kwargs):
+        clients.append(kwargs)
+        return FakeS3()
+
+    monkeypatch.setattr(b2_archive.boto3, "client", make_client)
+    download = b2_archive.download_archive_from_b2(tmp_path / "download", "rolling.tar.gz")
+    upload = b2_archive.upload_rolling_archive_to_b2(tmp_path, "rolling.tar.gz")
+
+    assert download["status"] == "cache_miss"
+    assert upload["status"] == "rolling_snapshot_updated"
+    assert len(clients) == 2
+    assert all(client["region_name"] == "us-west-004" for client in clients)
+
+
+def test_explicit_b2_region_overrides_endpoint_detection(monkeypatch):
+    monkeypatch.setenv("B2_REGION", "eu-central-003")
+    monkeypatch.setenv("B2_ENDPOINT_URL", "https://s3.us-west-004.backblazeb2.com")
+    assert b2_archive._b2_region() == "eu-central-003"
