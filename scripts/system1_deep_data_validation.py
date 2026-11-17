@@ -385,6 +385,15 @@ def main() -> int:
         "invalid": total_invalid,
         "warning": sum(v["warning"] for v in source_counts.values()),
     }
+    result["source_reconciliation"] = {
+        "status": "PASS" if total_invalid == 0 and total_content_valid == len(sessions) * len(report_names)
+        and sum(v["warning"] for v in source_counts.values()) == 0 else "FAIL",
+        "expected_report_files": len(sessions) * len(report_names),
+        "content_validated": total_content_valid,
+        "invalid": total_invalid,
+        "warnings": sum(v["warning"] for v in source_counts.values()),
+        "all_report_dates_and_structures_validated": total_invalid == 0 and total_content_valid == len(sessions) * len(report_names),
+    }
     all_sessions_ready = package["window_ready_sessions"] == len(sessions)
     normalized_pass = result["normalized_ce_pe_expiry_audit"]["status"] == "PASS"
     frozen_pass = result["frozen_package_audit"]["status"] == "PASS"
@@ -398,7 +407,7 @@ def main() -> int:
     output.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))
     print(f"DEEP_VALIDATION_REPORT={output}")
-    return 0 if result["overall_status"] != "FAIL" else 2
+    return 0 if result["overall_status"] == "PASS" else 2
 
 
 if __name__ == "__main__":
