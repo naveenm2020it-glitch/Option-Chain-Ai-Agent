@@ -25,14 +25,19 @@ def archive_directory_to_b2(source_dir: Path, object_key: str) -> dict:
     if missing:
         raise RuntimeError("B2 archive is enabled but required environment variables are missing: " + ", ".join(missing))
 
+    import gzip
     import io
     import tarfile
 
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for path in sorted(source_dir.rglob("*")):
-            if path.is_file():
-                archive.add(path, arcname=path.relative_to(source_dir).as_posix())
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w") as archive:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_file():
+                    info = archive.gettarinfo(str(path), arcname=path.relative_to(source_dir).as_posix())
+                    info.mtime = 0
+                    with path.open("rb") as source:
+                        archive.addfile(info, source)
     payload = buffer.getvalue()
     digest = hashlib.sha256(payload).hexdigest()
 
