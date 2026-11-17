@@ -220,6 +220,58 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
     }
 
 
+def audit_normalized_package(package: dict) -> dict:
+    sessions = package.get("sessions", {})
+    results = {}
+    for session, item in sessions.items():
+        report = item.get("reports", {}).get("fo_udiff_bhavcopy", {})
+        contracts = report.get("contracts", [])
+        ce = sum(1 for row in contracts if row.get("option_type") == "CE")
+        pe = sum(1 for row in contracts if row.get("option_type") == "PE")
+        invalid = []
+        for row in contracts:
+            expiry = row.get("expiry")
+            try:
+                parsed_expiry = date.fromisoformat(str(expiry))
+                if parsed_expiry < date.fromisoformat(session):
+                    invalid.append("expired_contract")
+            except (TypeError, ValueError):
+                invalid.append("invalid_expiry")
+            if row.get("underlying") != "NIFTY" or row.get("option_type") not in ("CE", "PE"):
+                invalid.append("invalid_contract_identity")
+            for field in ("strike", "close", "oi", "change_oi", "volume"):
+                value = row.get(field)
+                if not isinstance(value, (int, float)) or not __import__("math").isfinite(value):
+                    invalid.append("nonfinite_" + field)
+            if row.get("strike", 0) <= 0 or row.get("close", -1) < 0 or row.get("oi", -1) < 0 or row.get("volume", -1) < 0:
+                invalid.append("out_of_range_value")
+        duplicates = report.get("duplicate_contract_keys", -1)
+        passed = (
+            item.get("status") == "ready" and ce > 0 and pe > 0
+            and duplicates == 0 and bool(contracts) and not invalid
+        )
+        results[session] = {
+            "status": "PASS" if passed else "FAIL",
+            "contract_count": len(contracts),
+            "ce_contracts": ce,
+            "pe_contracts": pe,
+            "expiry_count": len({r.get("expiry") for r in contracts}),
+            "duplicate_contract_keys": duplicates,
+            "validation_errors": sorted(set(invalid)),
+        }
+    return {
+        "status": "PASS" if len(results) == package.get("window_sessions") and all(v["status"] == "PASS" for v in results.values()) else "FAIL",
+        "sessions_checked": len(results),
+        "sessions": results,
+    }
+
+
+def frozen_package_fingerprint(package: dict) -> str:
+    stable = {k: v for k, v in package.items() if k != "generated_at_utc"}
+    payload = json.dumps(stable, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deep content validation for catalogued NSE reports across the selected trading-session window.")
     parser.add_argument("--date", default="2025-12-17")
@@ -305,12 +357,24 @@ def main() -> int:
             result["sessions"][day_text] = day_result
 
         package = build_package(root, selected, calendar_path, args.sessions)
+        package_repeat = build_package(root, selected, calendar_path, args.sessions)
+        fingerprint = frozen_package_fingerprint(package)
+        repeat_fingerprint = frozen_package_fingerprint(package_repeat)
+        normalized_audit = audit_normalized_package(package)
         result["core_normalization"] = {
             "status": package["status"],
             "selected_session_ready": package["selected_session_ready"],
             "ready_sessions": package["window_ready_sessions"],
             "blocked_sessions": package["window_missing_or_blocked_sessions"],
             "input_manifest_hash": package["input_manifest_hash"],
+        }
+        result["normalized_ce_pe_expiry_audit"] = normalized_audit
+        result["frozen_package_audit"] = {
+            "status": "PASS" if fingerprint == repeat_fingerprint else "FAIL",
+            "fingerprint": fingerprint,
+            "repeat_fingerprint": repeat_fingerprint,
+            "reproducible": fingerprint == repeat_fingerprint,
+            "generated_at_utc_excluded_from_fingerprint": True,
         }
 
     for name in report_names:
@@ -321,9 +385,12 @@ def main() -> int:
         "invalid": total_invalid,
         "warning": sum(v["warning"] for v in source_counts.values()),
     }
+    all_sessions_ready = package["window_ready_sessions"] == len(sessions)
+    normalized_pass = result["normalized_ce_pe_expiry_audit"]["status"] == "PASS"
+    frozen_pass = result["frozen_package_audit"]["status"] == "PASS"
     result["overall_status"] = (
         "PASS" if total_invalid == 0 and total_content_valid == len(sessions) * len(report_names)
-        and package["status"] == "ready"
+        and all_sessions_ready and normalized_pass and frozen_pass
         else "WARNING" if total_invalid == 0 and package["status"] == "ready"
         else "FAIL"
     )
