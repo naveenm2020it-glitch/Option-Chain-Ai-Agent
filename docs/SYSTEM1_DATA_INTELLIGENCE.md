@@ -61,3 +61,14 @@ The final workflow runs the System 1 regression suite before re-downloading and 
 
 ## Evidence boundaries
 The configured NSE report audit checks file integrity, table structure, date evidence where exposed, and selected report-specific ZIP member requirements. Generic content validation is not proof that every optional report field has been economically reconciled. Until report-specific field mappings and reconciliation tests are added for an optional report, downstream engines must treat it as contextual/availability-marked input rather than a fully reconciled feature source. IV/Greeks/bid-ask/intraday remain unavailable unless separately verified.
+
+
+## Backblaze B2 archive (implementation in progress)
+- The full 23-session audit can optionally upload one deterministic `.tar.gz` object containing the raw report files, per-session manifests, frozen normalized package and archive manifest.
+- Upload is gated on all 23 sessions, all configured reports, normalized CE/PE/expiry checks and frozen-package reproducibility passing.
+- Object key: `system1/archives/windows/{analysis_date}/{package_fingerprint}.tar.gz`.
+- The uploader uses the B2 S3-compatible endpoint with `boto3`. It checks the immutable object key first; matching content is treated as already present, while different content at the same key is rejected rather than overwritten.
+- Required GitHub Actions secrets: `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET_NAME`, `B2_ENDPOINT_URL`. Optional: `B2_REGION`.
+- B2 upload is enabled by the manual workflow's `archive_to_b2` input (default true) and only runs for a 23-session audit. One new archive upload costs one B2 HEAD plus one PUT; a repeat identical archive costs one HEAD.
+- The current workflow archives a validated window snapshot. **It does not yet implement the daily incremental read/append/retention path** that downloads only the new session and reuses the prior 22 stored sessions. That is a separate required implementation and must be tested before claiming daily B2 reuse is complete.
+- The workflow is manual-only to avoid accidental repeated 23-session downloads on every code push. It does not deploy to Render or start model training.
