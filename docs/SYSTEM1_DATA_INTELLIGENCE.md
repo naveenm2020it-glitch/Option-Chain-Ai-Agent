@@ -45,3 +45,19 @@ On 2026-11-17, GitHub Actions downloaded and parsed the official NSE reports for
 - Package status: READY; unit tests passed.
 
 The sample reports were held only in the ephemeral GitHub Actions runner and were not committed to the repository. The manually triggerable workflow is `.github/workflows/system1-sample-test.yml`.
+
+
+## Final integrity gate (added 2026-11-17)
+Before System 1 can be accepted by Systems 2–8, the selected-session package must pass all of these checks:
+- NIFTY option rows must carry a parseable trade date equal to the requested session.
+- Expiry values are parsed and canonicalized to ISO dates; expired, malformed or future-invalid contract dates are rejected.
+- Strike must be positive; close, OI and volume must be non-negative finite numbers; change-in-OI may be negative.
+- Both CE and PE must be present in every session package; duplicate (expiry, strike, option type) keys are a hard failure.
+- The 23-session window must have 23 ready sessions, not merely a ready selected date.
+- A second package build from identical manifests must produce the same stable SHA-256 fingerprint (generation timestamp excluded).
+- Regression tests cover mismatched dates, invalid expiry, negative OI, CE/PE completeness and frozen fingerprint stability.
+
+The final workflow runs the System 1 regression suite before re-downloading and validating the 23-session NSE source window. This remains a pre-merge validation branch; it does not merge the PR, train models, call B2, or use Render.
+
+## Evidence boundaries
+The configured NSE report audit checks file integrity, table structure, date evidence where exposed, and selected report-specific ZIP member requirements. Generic content validation is not proof that every optional report field has been economically reconciled. Until report-specific field mappings and reconciliation tests are added for an optional report, downstream engines must treat it as contextual/availability-marked input rather than a fully reconciled feature source. IV/Greeks/bid-ask/intraday remain unavailable unless separately verified.
