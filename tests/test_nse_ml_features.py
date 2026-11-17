@@ -8,7 +8,7 @@ import pytest
 from scripts.nse_ml_features import extract_nifty_features
 
 
-def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=False, fii_fpi_label=False, context_title_rows=False):
+def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=False, fii_fpi_label=False, context_title_rows=False, include_index_report=True):
     rows = [
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "CE", 100, 110, 1000, 100, 2000, 25000],
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
@@ -45,16 +45,18 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=Fals
             "fo_udiff_bhavcopy": {"report_date": day, "file": "fo_bhavcopy.zip"},
             "fo_participant_oi": {"report_date": day, "file": "participant_oi.csv"},
             "fo_participant_volume": {"report_date": day, "file": "participant_volume.csv"},
-            "nifty_index_close_all": {"report_date": day, "file": "index_close.csv"},
             "fo_contract_delta": {"report_date": day, "file": "contract_delta.csv"}
         }
     }
+    if include_index_report:
+        manifest["results"]["nifty_index_close_all"] = {"report_date": day, "file": "index_close.csv"}
     with zipfile.ZipFile(outer, "w") as zf:
         zf.writestr("manifest.json", json.dumps(manifest))
         zf.writestr("fo_bhavcopy.zip", inner.getvalue())
         zf.writestr("participant_oi.csv", participant_oi)
         zf.writestr("participant_volume.csv", participant_volume)
-        zf.writestr("index_close.csv", index_csv)
+        if include_index_report:
+            zf.writestr("index_close.csv", index_csv)
         zf.writestr("contract_delta.csv", delta_csv)
     return outer.getvalue()
 
@@ -104,3 +106,17 @@ def test_extract_supports_nse_compact_headers_and_fii_fpi_label():
     assert result["features"]["participant_oi_data_available"] == 1
     assert result["features"]["participant_volume_data_available"] == 1
     assert result["features"]["participant_oi_fii_future_index_net"] == -100
+
+
+def test_missing_index_report_does_not_fabricate_cash_ohlc():
+    result = extract_nifty_features(
+        _nested_archive(include_index_report=False),
+        date(2026, 11, 12),
+    )
+    features = result["features"]
+    assert features["index_data_available"] == 0
+    assert features["spot_open"] == 0
+    assert features["spot_high"] == 0
+    assert features["spot_low"] == 0
+    assert features["index_range_pct"] == 0
+    assert features["index_close_location"] == 0

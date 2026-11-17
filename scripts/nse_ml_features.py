@@ -360,9 +360,9 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         future_return = future_basis = future_days_to_expiry = 0.0
     features = {
         "spot_close": spot,
-        "spot_open": float(index_info.get("spot_open", 0.0) or spot),
-        "spot_high": float(index_info.get("spot_high", 0.0) or spot),
-        "spot_low": float(index_info.get("spot_low", 0.0) or spot),
+        "spot_open": float(index_info.get("spot_open", 0.0) or 0.0),
+        "spot_high": float(index_info.get("spot_high", 0.0) or 0.0),
+        "spot_low": float(index_info.get("spot_low", 0.0) or 0.0),
         "index_data_available": float(index_info.get("index_data_available", 0.0)),
         "india_vix_close": float(index_info.get("india_vix_close", 0.0)),
         "index_range_pct": _safe_ratio(

@@ -64,6 +64,24 @@ def _parse_source(name: str, payload: bytes) -> dict[str, float]:
     return features
 
 
+def _refresh_index_derived_features(row_features: dict) -> bool:
+    """Recalculate range/location after OHLC context is merged into a checkpoint."""
+    if float(row_features.get("index_data_available", 0.0) or 0.0) < 1.0:
+        return False
+    # spot_close was selected from the index report when it was available;
+    # this fallback also repairs older checkpoints that omitted index_close.
+    close = float(row_features.get("index_close") or row_features.get("spot_close") or 0.0)
+    high = float(row_features.get("spot_high") or 0.0)
+    low = float(row_features.get("spot_low") or 0.0)
+    open_value = float(row_features.get("spot_open") or 0.0)
+    if close <= 0 or low <= 0 or high < max(open_value, low, close) or low > min(open_value, high, close):
+        return False
+    row_features["index_close"] = close
+    row_features["index_range_pct"] = (high - low) / close if high > low else 0.0
+    row_features["index_close_location"] = (close - low) / (high - low) if high > low else 0.5
+    return True
+
+
 def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) -> dict:
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Verified checkpoint missing: {checkpoint_path}")
@@ -147,6 +165,14 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
             if delay_seconds:
                 time.sleep(delay_seconds)
 
+    # Context repair may add OHLC after the original 65-feature extraction.
+    # Recompute derived range/location fields so stale zero placeholders cannot
+    # silently enter model training.
+    for day, row in sorted(features.items()):
+        row_features = row.get("features", {})
+        if float(row_features.get("index_data_available", 0.0) or 0.0) >= 1.0:
+            _refresh_index_derived_features(row_features)
+
     total = len(features)
     coverage = {}
     for source_key, result in report["source_results"].items():
@@ -171,6 +197,20 @@ def run(checkpoint_path: Path, output_dir: Path, delay_seconds: float = 0.35) ->
             feature_validation_errors.append({"date": day, "error": "invalid_or_missing_spot_close"})
         if float(row_values.get("ce_contract_count", 0.0)) <= 0 or float(row_values.get("pe_contract_count", 0.0)) <= 0:
             feature_validation_errors.append({"date": day, "error": "NIFTY_CE_PE_contract_coverage_missing"})
+        if float(row_values.get("index_data_available", 0.0) or 0.0) >= 1.0:
+            close = float(row_values.get("index_close") or row_values.get("spot_close") or 0.0)
+            high = float(row_values.get("spot_high") or 0.0)
+            low = float(row_values.get("spot_low") or 0.0)
+            open_value = float(row_values.get("spot_open") or 0.0)
+            if close <= 0 or low <= 0 or high < max(open_value, low, close) or low > min(open_value, high, close):
+                feature_validation_errors.append({"date": day, "error": "invalid_index_ohlc"})
+            else:
+                expected_range = (high - low) / close if high > low else 0.0
+                expected_location = (close - low) / (high - low) if high > low else 0.5
+                if abs(float(row_values.get("index_range_pct", 0.0)) - expected_range) > 1e-8:
+                    feature_validation_errors.append({"date": day, "error": "stale_index_range_pct"})
+                if abs(float(row_values.get("index_close_location", 0.0)) - expected_location) > 1e-8:
+                    feature_validation_errors.append({"date": day, "error": "stale_index_close_location"})
         source_meta_map = row.get("context_sources", {})
         specs_for_day = {item[0]: item for item in report_specs(date.fromisoformat(day))}
         for source_key, report_name in SOURCES.items():
