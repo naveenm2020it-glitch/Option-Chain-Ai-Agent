@@ -391,8 +391,9 @@ def main() -> int:
             )
             if not archive_ready:
                 raise RuntimeError("B2 archive blocked: the complete 23-session integrity gate did not PASS")
+            stable_package = {key: value for key, value in package.items() if key != "generated_at_utc"}
             (root / "system1_frozen_package.json").write_text(
-                json.dumps(package, indent=2, allow_nan=False), encoding="utf-8"
+                json.dumps(stable_package, indent=2, sort_keys=True, allow_nan=False), encoding="utf-8"
             )
             archive_manifest = {
                 "analysis_date": selected.isoformat(),
