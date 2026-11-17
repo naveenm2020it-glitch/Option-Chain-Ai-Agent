@@ -1,0 +1,38 @@
+name: System 1 one-date NSE sample test
+
+on:
+  pull_request:
+    paths:
+      - "system1/**"
+      - "scripts/system1_sample_test.py"
+      - ".github/workflows/system1-sample-test.yml"
+      - "scripts/nse_download_check.py"
+  workflow_dispatch:
+    inputs:
+      session_date:
+        description: "One NSE trading date (YYYY-MM-DD)"
+        required: true
+        default: "2026-01-07"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sample-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+      - name: Download and validate one NSE session
+        run: python scripts/system1_sample_test.py --date "\${{ inputs.session_date || '2026-01-07' }}"
