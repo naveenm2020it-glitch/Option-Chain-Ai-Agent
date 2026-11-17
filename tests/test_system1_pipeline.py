@@ -20,7 +20,7 @@ def test_single_date_package_parses_nifty_ce_pe_and_index(tmp_path):
     result=build_package(tmp_path,date.fromisoformat(day),cal,1); selected=result["sessions"][day]
     assert result["status"]=="ready"
     assert selected["reports"]["fo_udiff_bhavcopy"]["valid_contracts"]==2
-    assert {r["option_type"] for r in selected["reports"]["fo_udiff_bhavcopy"]["rows"]}=={"CE","PE"}
+    assert {r["option_type"] for r in selected["reports"]["fo_udiff_bhavcopy"]["contracts"]}=={"CE","PE"}
     assert selected["reports"]["nifty_index_close_all"]["india_vix_present"]
 def test_missing_core_source_blocks_no_zero_fill(tmp_path):
     day="2026-01-07"; d=tmp_path/day; d.mkdir(); (d/"manifest.json").write_text(json.dumps({"results":{}}))
