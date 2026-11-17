@@ -15,26 +15,30 @@ def test_weighted_median_uses_volume_weights():
 
 
 def test_seller_target_matches_exact_expiry_strike_and_option_type():
+    strikes = [24900, 24950, 25000, 25050, 25100]
     current = [
-        {"expiry": "2026-11-24", "strike": 25000, "option_type": "CE", "close": 100,
-         "oi": 1000, "volume": 100, "moneyness": 0.01},
+        {"expiry": "2026-11-24", "strike": strike, "option_type": "CE", "close": 100,
+         "oi": 1000, "volume": 100, "moneyness": (strike - 25000) / 25000}
+        for strike in strikes
+    ]
+    current.append(
         {"expiry": "2026-12-01", "strike": 25000, "option_type": "CE", "close": 200,
-         "oi": 1000, "volume": 100, "moneyness": 0.01},
-        {"expiry": "2026-11-24", "strike": 25000, "option_type": "PE", "close": 100,
-         "oi": 1000, "volume": 100, "moneyness": 0.01},
-    ]
+         "oi": 1000, "volume": 100, "moneyness": 0.01}
+    )
     following = [
-        {"expiry": "2026-11-24", "strike": 25000, "option_type": "CE", "close": 90},
-        {"expiry": "2026-12-01", "strike": 25000, "option_type": "CE", "close": 100},
-        {"expiry": "2026-11-24", "strike": 25000, "option_type": "PE", "close": 130},
+        {"expiry": "2026-11-24", "strike": strike, "option_type": "CE", "close": 90}
+        for strike in strikes
     ]
+    following.append(
+        {"expiry": "2026-12-01", "strike": 25000, "option_type": "CE", "close": 100}
+    )
     target = _seller_premium_target(current, following, "2026-11-17", "CE")
     assert target["expiry"] == "2026-11-24"
-    assert target["matched_contract_count"] == 1
+    assert target["matched_contract_count"] == 5
     assert target["premium_return"] == pytest.approx(-0.10)
 
 
-def _synthetic_checkpoint(count=24):
+def _synthetic_checkpoint(count=44):
     start = date(2026, 1, 1)
     features = {}
     for i in range(count):
@@ -67,11 +71,12 @@ def _synthetic_checkpoint(count=24):
         })
         contracts = []
         for side in ("CE", "PE"):
-            contracts.append({
-                "expiry": (start + timedelta(days=count + 10)).isoformat(),
-                "strike": 25000, "option_type": side, "close": 100 + i,
-                "oi": 1000, "volume": 100, "moneyness": 0.0,
-            })
+            for strike in (24900, 24950, 25000, 25050, 25100):
+                contracts.append({
+                    "expiry": (start + timedelta(days=count + 10)).isoformat(),
+                    "strike": strike, "option_type": side, "close": 100 + i,
+                    "oi": 1000, "volume": 100, "moneyness": (strike - 25000) / 25000,
+                })
         features[day] = {
             "session_date": day, "feature_schema_version": 3,
             "features": f, "contracts": contracts,
@@ -80,11 +85,11 @@ def _synthetic_checkpoint(count=24):
 
 
 def test_build_datasets_uses_22_session_warmup_and_chronological_splits(tmp_path):
-    manifest = build_datasets(_synthetic_checkpoint(), tmp_path, expected_sessions=24)
-    assert manifest["prepared_sample_count"] == 2
-    assert manifest["split_counts"] == {"train": 1, "validation": 0, "holdout": 1} or sum(manifest["split_counts"].values()) == 2
+    manifest = build_datasets(_synthetic_checkpoint(), tmp_path, expected_sessions=44)
+    assert manifest["prepared_sample_count"] == 22
+    assert manifest["split_counts"] == {"train": 15, "validation": 3, "holdout": 4}
     assert manifest["training_started"] is False
-    assert manifest["seller_target_coverage"] == {"CE": 2, "PE": 2, "available_samples": 2}
+    assert manifest["seller_target_coverage"] == {"CE": 22, "PE": 22, "available_samples": 22}
     assert (tmp_path / "direction" / "train.jsonl").exists()
     assert (tmp_path / "range" / "holdout.jsonl").exists()
     saved = json.loads((tmp_path / "manifest.json").read_text())
@@ -96,4 +101,4 @@ def test_build_datasets_rejects_bad_ohlc(tmp_path):
     first = sorted(checkpoint["features"])[0]
     checkpoint["features"][first]["features"]["spot_high"] = 1.0
     with pytest.raises(ValueError, match="invalid cash-index OHLC"):
-        build_datasets(checkpoint, tmp_path, expected_sessions=24)
+        build_datasets(checkpoint, tmp_path, expected_sessions=44)
