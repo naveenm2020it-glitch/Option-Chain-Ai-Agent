@@ -15,6 +15,7 @@ ALIASES = {
 "oi":("OpnIntrst","Opn_Intrst","OpenInterest","OPEN_INT"),
 "change_oi":("ChngInOpnIntrst","Chng_In_Opn_Intrst","ChangeInOI","CHG_IN_OI"),
 "volume":("TtlTradgVol","Ttl_Tradg_Vol","TotalTradedVolume","CONTRACTS"),
+"trade_date":("TradDt","Trad_Dt","TradeDate","TIMESTAMP","Date"),
 }
 def _norm(v): return "".join(c.lower() for c in str(v).strip() if c.isalnum())
 def _find(headers,key):
@@ -80,6 +81,15 @@ def _load_report(base:Path,entry:dict[str,Any],session:str):
     if entry.get("sha256") and digest!=entry["sha256"]: raise ValueError("SHA-256 mismatch")
     rows=_read_csv_bytes(payload,path.name)
     return rows,{"file":filename,"bytes":len(payload),"sha256":digest,"rows":len(rows),"report_date":entry.get("report_date",session)}
+def _date_matches(value, session):
+    raw=str(value or "").strip()
+    for fmt in ("%Y-%m-%d","%d-%b-%Y","%d-%m-%Y","%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw,fmt).date().isoformat()==session
+        except ValueError:
+            pass
+    return raw==session
+
 def _normalise_options(rows,session):
     headers=list(rows[0]); cols={k:_find(headers,k) for k in ALIASES}
     required=("symbol","option_type","expiry","strike","close","oi","change_oi","volume")
@@ -89,6 +99,10 @@ def _normalise_options(rows,session):
     for row in rows:
         if str(row.get(cols["symbol"],"")).strip().upper()!="NIFTY" or str(row.get(cols["option_type"],"")).strip().upper() not in ("CE","PE"):
             rejected+=1; continue
+        trade_date_col=cols.get("trade_date")
+        if trade_date_col and not _date_matches(row.get(trade_date_col),session):
+            rejected+=1
+            continue
         vals={k:_number(row.get(cols[k])) for k in ("strike","close","oi","change_oi","volume")}
         if any(v is None for v in vals.values()): rejected+=1; continue
         out.append({"underlying":"NIFTY","option_type":str(row[cols["option_type"]]).strip().upper(),"expiry":str(row.get(cols["expiry"],"")).strip(),**vals})
@@ -96,13 +110,16 @@ def _normalise_options(rows,session):
     duplicates=len(keys)-len(set(keys))
     if not out: raise ValueError("No valid NIFTY CE/PE contracts in UDiFF")
     return {"rows":out,"valid_contracts":len(out),"rejected_rows":rejected,"duplicate_contract_keys":duplicates,"columns":cols}
-def _normalise_index(rows):
+def _normalise_index(rows, expected_date):
     headers=list(rows[0])
     sym=next((h for h in headers if _norm(h) in ("indexname","index")),None)
     close=next((h for h in headers if _norm(h) in ("closingindexvalue","close","indexclose")),None)
-    if not sym or not close: raise ValueError("Index report requires index name and closing index value")
+    date_col=next((h for h in headers if _norm(h) in ("indexdate","date")),None)
+    if not sym or not close or not date_col: raise ValueError("Index report requires index name, date and closing index value")
     out=[]
     for row in rows:
+        if not _date_matches(row.get(date_col),expected_date):
+            raise ValueError(f"Index report contains a date other than {expected_date}")
         name=str(row.get(sym,"")).strip().upper()
         if name in ("NIFTY 50","INDIA VIX"):
             value=_number(row.get(close))
@@ -130,7 +147,7 @@ def build_package(report_root:Path,analysis_date:date,calendar_path:Path,window_
                 if name=="fo_udiff_bhavcopy":
                     parsed=_normalise_options(rows,session); meta.update(parsed)
                     if parsed["duplicate_contract_keys"]: issues.append(f"{name}: duplicate contract keys={parsed['duplicate_contract_keys']}")
-                elif name=="nifty_index_close_all": meta.update(_normalise_index(rows))
+                elif name=="nifty_index_close_all": meta.update(_normalise_index(rows,session))
                 report_data[name]={"status":"validated",**meta}
                 aggregate.update(name.encode()); aggregate.update(meta["sha256"].encode())
             except Exception as exc:
