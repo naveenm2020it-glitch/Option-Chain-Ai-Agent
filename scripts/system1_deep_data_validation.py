@@ -335,15 +335,18 @@ def main() -> int:
                 try:
                     cached_entry = cached.get("results", {}).get(name, {})
                     cached_file = folder / str(cached_entry.get("file", ""))
+                    cache_valid = False
                     if cached_entry.get("report_date") == day_text and cached_file.is_file():
-                        payload = cached_file.read_bytes()
-                        digest = hashlib.sha256(payload).hexdigest()
-                        if cached_entry.get("sha256") != digest:
-                            raise ValueError("cached report SHA-256 mismatch")
-                        meta = {"http_status": cached_entry.get("http_status", 200),
-                                "url": "b2://rolling-cache", "cached": True}
-                        day_result["reused"] += 1
-                    else:
+                        cached_payload = cached_file.read_bytes()
+                        cached_digest = hashlib.sha256(cached_payload).hexdigest()
+                        if cached_entry.get("sha256") == cached_digest:
+                            payload = cached_payload
+                            digest = cached_digest
+                            meta = {"http_status": cached_entry.get("http_status", 200),
+                                    "url": "b2://rolling-cache", "cached": True}
+                            cache_valid = True
+                            day_result["reused"] += 1
+                    if not cache_valid:
                         payload, fetched_meta = fetch_report(client, name, path, kind)
                         digest = hashlib.sha256(payload).hexdigest()
                         extension = {"zip": "zip", "csv": "csv", "gzip": "csv.gz"}[kind]
