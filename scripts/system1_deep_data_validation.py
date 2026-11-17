@@ -34,7 +34,7 @@ def parse_date(value: str):
     return None
 
 
-def inspect_csv(payload: bytes, label: str) -> dict:
+def inspect_csv(payload: bytes, label: str, allow_header_only: bool = False) -> dict:
     text = payload.decode("utf-8-sig", errors="strict")
     if not text.strip():
         raise ValueError(f"{label}: empty text")
@@ -46,7 +46,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
     for delimiter in (",", ";", "\t", "|"):
         rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
         rows = [row for row in rows if any(str(cell).strip() for cell in row)]
-        if len(rows) < 2:
+        if not rows:
             continue
         for header_index, candidate in enumerate(rows[:60]):
             nonempty = sum(bool(str(cell).strip()) for cell in candidate)
@@ -73,7 +73,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
             if len(row) == width and sum(bool(str(cell).strip()) for cell in row) >= 2]
     ragged = sum(1 for row in following
                  if sum(bool(str(cell).strip()) for cell in row) >= 2 and len(row) != width)
-    if not data:
+    if not data and not allow_header_only:
         raise ValueError(f"{label}: no table data rows after detected header")
     if ragged / max(1, len(data) + ragged) > 0.05:
         raise ValueError(f"{label}: {ragged}/{len(data) + ragged} table rows have inconsistent column counts")
@@ -116,6 +116,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
         "observed_dates": flat_dates[:30],
         "header_ok": True,
         "rows_ok": len(data) > 0,
+        "header_only": len(data) == 0,
     }
 
 
@@ -134,7 +135,41 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
                      if not n.endswith("/") and n.lower().endswith((".csv", ".txt"))]
             if not names:
                 raise ValueError("ZIP has no CSV/TXT members")
-            members = [inspect_csv(archive.read(n), n) for n in names]
+
+            if name == "fo_market_activity":
+                # NSE market-activity archives contain multiple report families.
+                # Index futures and index options are mandatory for this project;
+                # the VIX-futures member can legitimately be header-only.
+                dmy = datetime.strptime(expected_date, "%Y-%m-%d").strftime("%d%m%Y")
+                by_basename = {Path(n).name.lower(): n for n in names}
+                required = (f"futidx{dmy}.csv", f"optidx{dmy}.csv")
+                missing = [member for member in required if member not in by_basename]
+                if missing:
+                    raise ValueError(
+                        "fo_market_activity missing mandatory NIFTY activity member(s): "
+                        + ", ".join(missing)
+                    )
+                members = []
+                for member_name in names:
+                    basename = Path(member_name).name.lower()
+                    is_optional_vix = basename == f"futivx{dmy}.csv"
+                    checked = inspect_csv(
+                        archive.read(member_name), member_name,
+                        allow_header_only=is_optional_vix,
+                    )
+                    checked["status"] = (
+                        "empty_optional" if is_optional_vix and checked["header_only"]
+                        else "content_validated"
+                    )
+                    members.append(checked)
+                member_by_name = {Path(m["member"]).name.lower(): m for m in members}
+                for required_name in required:
+                    if member_by_name[required_name]["rows"] == 0:
+                        raise ValueError(
+                            f"fo_market_activity mandatory member {required_name} has no data rows"
+                        )
+            else:
+                members = [inspect_csv(archive.read(n), n) for n in names]
     else:
         members = [inspect_csv(payload, name)]
 
@@ -163,6 +198,7 @@ def inspect_payload(name: str, payload: bytes, kind: str, expected_date: str) ->
         "bytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
         "member_count": len(members),
+        "empty_optional_members": [m["member"] for m in members if m.get("status") == "empty_optional"],
         "rows": total_rows,
         "numeric_cells": total_numeric,
         "members": members,
