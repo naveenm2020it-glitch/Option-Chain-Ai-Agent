@@ -12,7 +12,7 @@ def test_previous_sessions_obeys_holiday_and_special_session():
 def test_single_date_package_parses_nifty_ce_pe_and_index(tmp_path):
     day="2026-01-07"; d=tmp_path/day; d.mkdir()
     fo=make_zip(["TckrSymb","FinInstrmTp","OptnTp","XpryDt","StrkPric","ClsPric","OpnIntrst","ChngInOpnIntrst","TtlTradgVol"],[["NIFTY","OPTIDX","CE","2026-01-29","25000","120","1000","100","500"],["NIFTY","OPTIDX","PE","2026-01-29","25000","110","1200","-50","600"],["BANKNIFTY","OPTIDX","CE","2026-01-29","50000","200","10","1","20"]])
-    idx=b"Index Name,Closing Index Value\nNIFTY 50,25500.25\nINDIA VIX,14.2\n"
+    idx=b"Index Name,Index Date,Closing Index Value\nNIFTY 50,07-01-2026,25500.25\nINDIA VIX,07-01-2026,14.2\n"
     (d/"fo.zip").write_bytes(fo); (d/"index.csv").write_bytes(idx)
     m={"requested_end_date":day,"core_session_date":day,"results":{"fo_udiff_bhavcopy":{"file":"fo.zip","report_date":day,"sha256":hashlib.sha256(fo).hexdigest()},"nifty_index_close_all":{"file":"index.csv","report_date":day,"sha256":hashlib.sha256(idx).hexdigest()}}}
     (d/"manifest.json").write_text(json.dumps(m))
