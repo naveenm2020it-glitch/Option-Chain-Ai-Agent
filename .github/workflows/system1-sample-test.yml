@@ -1,6 +1,14 @@
 name: System 1 targeted / 23-session NSE source audit
 
 on:
+  push:
+    branches:
+      - feature/system-1-data-intelligence
+    paths:
+      - "system1/b2_archive.py"
+      - "scripts/system1_deep_data_validation.py"
+      - "tests/test_system1_b2_archive.py"
+      - ".github/workflows/system1-sample-test.yml"
   workflow_dispatch:
     inputs:
       session_date:
@@ -44,6 +52,7 @@ jobs:
       - name: Run System 1 regression tests
         run: python -m pytest -q tests/test_system1_pipeline.py tests/test_system1_b2_archive.py
       - name: Download, parse and deeply validate catalogued NSE reports
+        if: github.event_name == 'workflow_dispatch'
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
           B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
