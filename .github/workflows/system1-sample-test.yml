@@ -42,7 +42,7 @@ jobs:
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
       - name: Run System 1 regression tests
-        run: python -m pytest -q tests/test_system1_pipeline.py
+        run: python -m pytest -q tests/test_system1_pipeline.py tests/test_system1_b2_archive.py
       - name: Download, parse and deeply validate catalogued NSE reports
         env:
           B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
