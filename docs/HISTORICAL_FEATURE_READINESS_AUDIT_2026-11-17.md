@@ -1,75 +1,85 @@
 # Historical Feature Readiness Audit — 2026-11-17
 
-## Scope and method
+## Scope and evidence
 
-This is an offline inspection of the GitHub Actions artifact `nifty-historical-audit-44007493279` produced on 2026-11-15. The artifact's checkpoint and coverage report were inspected locally. No B2 API calls, NSE downloads, historical backfill, model training, or workflow dispatch were performed for this inspection.
+This audit cross-checks two GitHub Actions artifacts:
 
-This report describes the checkpoint snapshot, not a fresh verification of the live B2 bucket.
+- Archive-integrity checkpoint and coverage from run `44007493279`.
+- Enriched context checkpoint and raw context CSV sidecars from run `44008350973`.
 
-## Summary
+The enriched context repair reused already-present GitHub artifact data. It reports **0 B2 requests**, 0 new NSE downloads, and 494/494 already-present records for each context family. This is not a fresh live B2 bucket listing.
 
-**Core archive/feature coverage: PASS in the supplied checkpoint.  
-Enriched seller-model readiness: BLOCKED pending context-data recovery and OHLC correction.**
+## Final readiness result
+
+**Historical feature data: PASS for research dataset preparation.  
+Model training: not started.**
 
 | Check | Result |
 |---|---:|
 | Window | 2024-11-12 to 2026-11-12 |
-| Expected sessions | 494 |
-| Verified sessions | 494 |
-| Failed sessions | 0 |
-| Feature rows | 494 |
-| Feature extraction errors | 0 |
-| Feature schema | v3 for all 494 rows |
-| Features per session | 65 |
-| NIFTY option contract snapshots | 159,036 rows |
+| Expected / verified sessions | 494 / 494 |
+| Failed sessions / feature errors | 0 / 0 |
+| Feature schema | v3 |
+| Feature fields per session | 246 / 246 |
+| NIFTY option contract snapshots | 159,036 |
 | CE / PE contract rows | 79,518 / 79,518 |
-| Duplicate (date, expiry, strike, option type) keys | 0 |
-| Null / non-finite feature values | 0 |
-| NIFTY option availability | 100% |
-| NIFTY futures availability | 100% |
+| Duplicate date-expiry-strike-option keys | 0 |
+| Expired contracts included | 0 |
+| Null / non-finite feature values | 0 / 0 |
+| NIFTY options / futures availability | 100% / 100% |
+| NIFTY cash OHLC availability | 100% |
+| India VIX availability | 100% |
+| Participant OI / volume availability | 100% / 100% |
+| Contract delta availability | 1 / 494 (optional gap) |
 
-The 494 feature dates match the verified-date keys and each row's `session_date`. Contract expiries precede no session dates. Each date has both CE and PE contracts. The archive catalog snapshot contains 495 dates, including 2026-11-13 outside the audited feature window; this is not counted as one of the 494 feature sessions.
+The 494 feature dates match the verified-date keys and each row's `session_date`. All sessions have CE and PE contracts. Contract expiry is not earlier than the session date. The catalog snapshot includes one additional date, 2026-11-13, outside the feature window; it is not counted as an audited feature session.
 
-## Blocking feature gaps
+## Context source provenance
 
-| Feature family | Coverage | Finding |
-|---|---:|---|
-| NIFTY cash index OHLC | 1 / 494 (0.20%) | Missing for 493 sessions |
-| India VIX close | 1 / 494 (0.20%) | Missing for 493 sessions |
-| Participant OI | 0 / 494 | Unavailable for all sessions |
-| Participant volume | 0 / 494 | Unavailable for all sessions |
-| Contract delta | 1 / 494 (0.20%) | Missing for 493 sessions |
-| NIFTY options | 494 / 494 | Available |
-| NIFTY futures | 494 / 494 | Available |
+The context-repair report records:
 
-### OHLC fallback defect
+- Index OHLC: 494/494 available; 493 report CSVs independently SHA-256 verified and one source already present in the integrity-verified archive.
+- Participant OI: 494/494 available; 494 CSV SHA-256 checks passed.
+- Participant volume: 494/494 available; 494 CSV SHA-256 checks passed.
+- No missing context dates, invalid reports, date-alignment errors, or SHA-256 mismatches.
+- VIX close is populated for all 494 sessions (values 9.15 to 27.89 in the checkpoint).
+- Contract delta is matched for only one session; keep its availability mask and do not fabricate it.
 
-In `scripts/nse_ml_features.py`, when the index-close report is unavailable, `spot` falls back to the median NIFTY option underlying price. The exported `spot_open`, `spot_high`, and `spot_low` then also fall back to that same `spot` value.
+Participant positioning reports are broad NSE index-derivatives participant totals, not proof of NIFTY-only participant positions. Use them as contextual confirmation, not as direct NIFTY seller identity. OI/premium combinations remain seller-flow proxies, not proof of who opened a position.
 
-As a result, 493 rows have synthetic flat OHLC values (open = high = low = close) and zero `index_range_pct` / `index_close_location`. These are not genuine cash-index OHLC observations. They must remain explicitly unavailable, not be treated as market range data.
+## Defect found and fixed
 
-### Participant and delta parsing
+The earlier enriched checkpoint contained real OHLC values, but its derived `index_range_pct` and `index_close_location` were stale zero placeholders for most sessions because the context-repair merge did not recompute them.
 
-The feature extractor sets participant availability only when it recognizes FII, DII, Client and Pro rows and all required index-derivative long/short columns. The checkpoint marks both participant feeds unavailable for every session. Delta matching is also unavailable for 493 sessions.
+The fix now:
+1. Recomputes both derived fields after the OHLC context is merged.
+2. Restores the `index_close` alias from the already-selected `spot_close` only for an older row whose index availability flag is true but whose checkpoint omitted that field.
+3. Validates OHLC ordering and exact derived-feature consistency before passing the context-repair gate.
+4. Stops the original extractor from substituting the close price for missing open/high/low. Unavailable OHLC stays explicitly unavailable.
 
-The checkpoint alone cannot distinguish whether these gaps are caused by absent report files, changed NSE report headers, or parser mismatch. Do not infer the cause without inspecting representative raw report manifests and CSVs. That inspection must be planned as a small, bounded sample and must avoid a full B2 re-read.
+The newly published artifact from run `44008350973` was re-inspected:
+- 494/494 rows have 246 feature fields.
+- 494/494 have valid OHLC ordering.
+- 494/494 have recomputed `index_range_pct` and `index_close_location`.
+- No nulls, non-finite values, stale derived fields, or feature-validation errors.
+- All 494 index, participant OI and participant volume source records were already present; 0 were downloaded during this run; B2 requests = 0.
 
-## Archive diagnostic note
+## Archive diagnostic / B2 note
 
-The audit artifact includes a diagnostic for 2026-10-05. Its embedded manifest and all six report-file hashes validated, but the catalog archive hash/byte metadata differed. The audit recorded `catalog_repaired: true` and `b2_writes: 1`, with the repair basis recorded as the embedded manifest and report SHA-256 checks. This was one catalog metadata write; it was not a rewrite of the raw report ZIP. Do not describe the earlier audit as having made zero B2 writes.
+The earlier archive audit artifact includes a diagnostic for 2026-10-05. Its embedded manifest and all six report-file hashes validated, but catalog archive hash/byte metadata differed. That run recorded `catalog_repaired: true` and `b2_writes: 1`; the repair basis was the embedded manifest and report SHA-256 checks. This was one catalog metadata write, not a rewrite of the raw report ZIP.
 
-## Training gate
+The subsequent context repair and feature recalculation made **0 B2 requests**. Do not describe the entire historical process as having made zero B2 writes.
 
-- Core option/futures historical feature baseline: **PASS** for exploratory research and pipeline tests.
-- Enriched seller-intelligence training: **BLOCKED** until the cash OHLC/VIX coverage issue is corrected or explicitly excluded with robust missingness handling, participant reports are parsed or formally marked optional, and delta is either recovered or excluded.
-- No model training, tuning, backfill, or prediction is authorized by this audit.
-- Any eventual evaluation must use chronological splits, frozen next-session targets, and leakage checks. Same-session `future_return` is an input only if the prediction timestamp is after that session's close; it must not be used as a next-session target.
+## Training gate and next steps
 
-## Low-call next steps
+The data is ready to enter model-dataset preparation, but this does not certify a model or its predictive performance.
 
-1. Inspect one representative raw archive manifest and participant/index CSV for a date with missing features, using the smallest possible read-only sample.
-2. Fix header/date parsing or report collection only after confirming the root cause.
-3. Rebuild feature rows from already archived source bytes where available; do not redownload the full 494-session range.
-4. Add tests ensuring missing OHLC stays missing (never copied from close) and that optional-source availability flags are truthful.
-5. Re-run the offline checkpoint audit. Only then prepare the four-model training dataset.
+Before training:
+1. Build explicit next-session targets from the next trading session only; freeze target definitions and align the special Muhurat session correctly.
+2. Exclude current-session `future_return` from any feature set if the forecast timestamp precedes that session's close. It is only a valid input for an after-close forecast.
+3. Use chronological train/validation/holdout splits; no random split.
+4. Add leakage tests, target-availability tests, missingness-mask tests and baseline comparisons.
+5. Keep delta availability as a mask; do not impute it.
+6. Treat participant index-derivatives positioning as broad context, not NIFTY-specific seller identity.
+7. Train the four new models only after dataset-preparation tests pass. No training or tuning was triggered by this audit.
 
