@@ -1,4 +1,4 @@
-name: System 1 23-session NSE source audit
+name: System 1 targeted / 23-session NSE source audit
 
 on:
   push:
@@ -11,10 +11,18 @@ on:
   workflow_dispatch:
     inputs:
       session_date:
-        description: "Selected NSE trading date; audit includes this date plus 22 prior sessions"
+        description: "Selected NSE trading date"
         required: true
         default: "2025-12-17"
         type: string
+      audit_sessions:
+        description: "Trading sessions to validate, including selected date (1 for targeted test, 23 for full audit)"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "23"
 
 permissions:
   contents: read
@@ -35,5 +43,5 @@ jobs:
           python-version: "3.12"
       - name: Install runtime dependencies
         run: pip install -r requirements.txt
-      - name: Download, parse and deeply validate all catalogued reports across 23 sessions
-        run: python scripts/system1_deep_data_validation.py --date "${{ inputs.session_date || '2025-12-17' }}"
+      - name: Download, parse and deeply validate catalogued NSE reports
+        run: python scripts/system1_deep_data_validation.py --date "${{ inputs.session_date || '2025-12-17' }}" --sessions "${{ inputs.audit_sessions || '1' }}"
