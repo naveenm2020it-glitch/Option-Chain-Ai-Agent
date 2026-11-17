@@ -73,3 +73,86 @@ def archive_directory_to_b2(source_dir: Path, object_key: str) -> dict:
     )
     return {"status": "uploaded", "bucket": bucket, "key": object_key,
             "bytes": len(payload), "sha256": digest, "b2_operations": 2}
+
+
+
+def download_archive_from_b2(destination_dir: Path, object_key: str) -> dict:
+    """Download and safely extract the rolling System 1 archive; missing object is a cache miss."""
+    required = ("B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME", "B2_ENDPOINT_URL")
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError("B2 cache is enabled but required environment variables are missing: " + ", ".join(missing))
+
+    import io
+    import tarfile
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=os.environ["B2_ENDPOINT_URL"].rstrip("/"),
+        aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
+        aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
+        region_name=os.environ.get("B2_REGION", "us-east-1"),
+    )
+    bucket = os.environ["B2_BUCKET_NAME"]
+    try:
+        response = client.get_object(Bucket=bucket, Key=object_key)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if code in ("404", "NoSuchKey", "NotFound") or status == 404:
+            return {"status": "cache_miss", "bucket": bucket, "key": object_key, "b2_operations": 1}
+        raise
+
+    payload = response["Body"].read()
+    digest = hashlib.sha256(payload).hexdigest()
+    expected = (response.get("Metadata") or {}).get("sha256")
+    if expected and expected != digest:
+        raise RuntimeError("B2 rolling archive SHA-256 metadata mismatch")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+        root = destination_dir.resolve()
+        for member in archive.getmembers():
+            target = (destination_dir / member.name).resolve()
+            if root != target and root not in target.parents:
+                raise RuntimeError("B2 archive contains an unsafe path")
+            if not member.isfile() and not member.isdir():
+                raise RuntimeError("B2 archive contains an unsupported link or special file")
+        archive.extractall(destination_dir, filter="data")
+    return {"status": "cache_loaded", "bucket": bucket, "key": object_key,
+            "bytes": len(payload), "sha256": digest, "b2_operations": 1}
+
+
+def upload_rolling_archive_to_b2(source_dir: Path, object_key: str) -> dict:
+    """Replace the single rolling snapshot after a successful integrity audit."""
+    required = ("B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME", "B2_ENDPOINT_URL")
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError("B2 rolling archive is enabled but required environment variables are missing: " + ", ".join(missing))
+
+    import gzip
+    import io
+    import tarfile
+
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w") as archive:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_file():
+                    info = archive.gettarinfo(str(path), arcname=path.relative_to(source_dir).as_posix())
+                    info.mtime = 0
+                    with path.open("rb") as source:
+                        archive.addfile(info, source)
+    payload = buffer.getvalue()
+    digest = hashlib.sha256(payload).hexdigest()
+    client = boto3.client(
+        "s3",
+        endpoint_url=os.environ["B2_ENDPOINT_URL"].rstrip("/"),
+        aws_access_key_id=os.environ["B2_APPLICATION_KEY_ID"],
+        aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
+        region_name=os.environ.get("B2_REGION", "us-east-1"),
+    )
+    bucket = os.environ["B2_BUCKET_NAME"]
+    client.put_object(Bucket=bucket, Key=object_key, Body=payload,
+                      ContentType="application/gzip", Metadata={"sha256": digest})
+    return {"status": "rolling_snapshot_updated", "bucket": bucket, "key": object_key,
+            "bytes": len(payload), "sha256": digest, "b2_operations": 1}
