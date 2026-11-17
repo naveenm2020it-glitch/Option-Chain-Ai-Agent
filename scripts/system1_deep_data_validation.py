@@ -43,7 +43,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
     # NSE CSV exports can contain report titles, blank separator columns,
     # and footer rows. Detect the actual table header instead of assuming row 1.
     parsed_candidates = []
-    for delimiter in (",", ";", "\\t", "|"):
+    for delimiter in (",", ";", "\t", "|"):
         rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
         rows = [row for row in rows if any(str(cell).strip() for cell in row)]
         if len(rows) < 2:
