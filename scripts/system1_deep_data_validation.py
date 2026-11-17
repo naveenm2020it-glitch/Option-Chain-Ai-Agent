@@ -109,7 +109,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
         "header": header[:80],
         "header_row_index": header_index,
         "skipped_preamble_rows": header_index,
-        "detected_delimiter": "tab" if delimiter == "\\t" else delimiter,
+        "detected_delimiter": "tab" if delimiter == "\t" else delimiter,
         "ragged_rows": ragged,
         "numeric_cells": numeric_cells,
         "date_columns": [header[i] for i in date_columns],
