@@ -289,8 +289,15 @@ def build_datasets(checkpoint: dict, output_dir: Path, expected_sessions: int = 
                     "features": row["features"],
                     "target": value,
                     "target_class": row["targets"].get(class_name) if class_name else None,
-                    "targets": row["targets"] if model_name == "range" else None,
-                    "metadata": row["metadata"],
+                    "targets": ({
+                        "next_high_move_pct": row["targets"]["next_high_move_pct"],
+                        "next_low_move_pct": row["targets"]["next_low_move_pct"],
+                        "next_range_pct": row["targets"]["next_range_pct"],
+                    } if model_name == "range" else None),
+                    "target_metadata": ({
+                        "expiry": row["metadata"].get(f"{model_name.split('_')[0]}_target_expiry"),
+                        "matched_contract_count": row["metadata"].get(f"{model_name.split('_')[0]}_matched_contract_count"),
+                    } if model_name in ("ce_seller", "pe_seller") else None),
                 })
             model_dir = output_dir / model_name
             model_dir.mkdir(parents=True, exist_ok=True)
