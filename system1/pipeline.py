@@ -109,7 +109,7 @@ def _normalise_options(rows,session):
     keys=[(r["expiry"],r["strike"],r["option_type"]) for r in out]
     duplicates=len(keys)-len(set(keys))
     if not out: raise ValueError("No valid NIFTY CE/PE contracts in UDiFF")
-    return {"rows":out,"valid_contracts":len(out),"rejected_rows":rejected,"duplicate_contract_keys":duplicates,"columns":cols}
+    return {"contracts":out,"valid_contracts":len(out),"rejected_rows":rejected,"duplicate_contract_keys":duplicates,"columns":cols}
 def _normalise_index(rows, expected_date):
     headers=list(rows[0])
     sym=next((h for h in headers if _norm(h) in ("indexname","index")),None)
@@ -125,7 +125,7 @@ def _normalise_index(rows, expected_date):
             value=_number(row.get(close))
             if value is not None: out.append({"index":name,"close":value})
     if not any(x["index"]=="NIFTY 50" for x in out): raise ValueError("NIFTY 50 close missing")
-    return {"rows":out,"nifty50_present":True,"india_vix_present":any(x["index"]=="INDIA VIX" for x in out)}
+    return {"index_values":out,"nifty50_present":True,"india_vix_present":any(x["index"]=="INDIA VIX" for x in out)}
 def build_package(report_root:Path,analysis_date:date,calendar_path:Path,window_sessions:int=23,output_path:Path|None=None):
     calendar=load_calendar(calendar_path); sessions=previous_sessions(analysis_date,window_sessions,calendar)
     results={}; aggregate=hashlib.sha256()
