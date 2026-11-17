@@ -1,12 +1,6 @@
 name: System 1 one-date NSE sample test
 
 on:
-  pull_request:
-    paths:
-      - "system1/**"
-      - "scripts/system1_sample_check.py"
-      - ".github/workflows/system1-sample-test.yml"
-      - "scripts/nse_download_check.py"
   workflow_dispatch:
     inputs:
       session_date:
