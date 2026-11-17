@@ -40,25 +40,43 @@ def inspect_csv(payload: bytes, label: str) -> dict:
         raise ValueError(f"{label}: empty text")
     if "<html" in text[:5000].lower() or "<!doctype" in text[:5000].lower():
         raise ValueError(f"{label}: HTML response, not CSV")
-    sample = text[:16384]
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.reader(io.StringIO(text), dialect)
-    records = [row for row in reader if any(str(cell).strip() for cell in row)]
-    if len(records) < 2:
-        raise ValueError(f"{label}: header or data rows missing")
-    header = [str(x).strip() for x in records[0]]
-    if len(header) < 2 or sum(bool(x) for x in header) < 2:
-        raise ValueError(f"{label}: invalid header ({len(header)} columns)")
+    # NSE CSV exports can contain report titles, blank separator columns,
+    # and footer rows. Detect the actual table header instead of assuming row 1.
+    parsed_candidates = []
+    for delimiter in (",", ";", "\\t", "|"):
+        rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+        rows = [row for row in rows if any(str(cell).strip() for cell in row)]
+        if len(rows) < 2:
+            continue
+        for header_index, candidate in enumerate(rows[:60]):
+            nonempty = sum(bool(str(cell).strip()) for cell in candidate)
+            width_candidate = len(candidate)
+            if width_candidate < 2 or nonempty < 2:
+                continue
+            following = rows[header_index + 1:]
+            matching = sum(1 for row in following if len(row) == width_candidate
+                           and sum(bool(str(cell).strip()) for cell in row) >= 2)
+            data_like = sum(1 for row in following
+                            if sum(bool(str(cell).strip()) for cell in row) >= 2)
+            ratio = matching / max(1, data_like)
+            parsed_candidates.append((matching, ratio, nonempty, -header_index,
+                                      delimiter, rows, header_index))
+    if not parsed_candidates:
+        raise ValueError(f"{label}: no plausible table header found")
+    matching, ratio, _, neg_index, delimiter, records, header_index = max(parsed_candidates)
+    header = [str(x).strip() for x in records[header_index]]
     if len({norm(x) for x in header if x}) != len([x for x in header if x]):
         raise ValueError(f"{label}: duplicate/ambiguous column names")
     width = len(header)
-    data = records[1:]
-    ragged = sum(1 for row in data if len(row) != width)
-    if ragged / max(1, len(data)) > 0.05:
-        raise ValueError(f"{label}: {ragged}/{len(data)} rows have inconsistent column counts")
+    following = records[header_index + 1:]
+    data = [row for row in following
+            if len(row) == width and sum(bool(str(cell).strip()) for cell in row) >= 2]
+    ragged = sum(1 for row in following
+                 if sum(bool(str(cell).strip()) for cell in row) >= 2 and len(row) != width)
+    if not data:
+        raise ValueError(f"{label}: no table data rows after detected header")
+    if ragged / max(1, len(data) + ragged) > 0.05:
+        raise ValueError(f"{label}: {ragged}/{len(data) + ragged} table rows have inconsistent column counts")
     nonempty_cells = sum(bool(str(v).strip()) for row in data for v in row)
     if nonempty_cells == 0:
         raise ValueError(f"{label}: data rows contain no values")
@@ -88,7 +106,7 @@ def inspect_csv(payload: bytes, label: str) -> dict:
         "member": label,
         "rows": len(data),
         "columns": len(header),
-        "header": header[:80],
+        "header": header[:80],\n        "header_row_index": header_index,\n        "skipped_preamble_rows": header_index,\n        "detected_delimiter": "tab" if delimiter == "\\t" else delimiter,
         "ragged_rows": ragged,
         "numeric_cells": numeric_cells,
         "date_columns": [header[i] for i in date_columns],
