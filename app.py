@@ -243,6 +243,37 @@ def paper_quote(payload: dict, credentials: HTTPAuthorizationCredentials | None 
     except Exception:
         raise HTTPException(status_code=503, detail="Could not persist paper quote.")
 
+@app.get("/api/paper/health")
+def paper_health(credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
+    """Verify the configured PostgreSQL connection without exposing credentials."""
+    _require_paper_token(credentials)
+    try:
+        return paper_ledger.paper_health()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Paper-trading database health check failed.")
+
+
+@app.get("/api/paper/quotes/{quote_id}")
+def paper_quote_read(quote_id: str, credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
+    """Read back a saved quote to verify the returned quote_id is durable."""
+    _require_paper_token(credentials)
+    try:
+        result = paper_ledger.get_quote(quote_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Quote ID was not found in this database.")
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not read saved paper quote.")
+
+
 @app.post("/api/paper/trades")
 def paper_trade(payload: dict, credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
     _require_paper_token(credentials)
