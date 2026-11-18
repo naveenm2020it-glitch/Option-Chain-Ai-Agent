@@ -17,3 +17,20 @@ def test_paper_quotes_requires_database(monkeypatch):
       "bid":100,"ask":101,"timestamp":datetime.now(timezone.utc).isoformat(),
       "lot_size":65,"source":"test"})
     assert r.status_code==503
+
+
+def test_paper_performance_accepts_bearer_token(monkeypatch):
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "test-secret")
+    monkeypatch.setattr(app.paper_ledger, "paper_summary", lambda limit: {"limit": limit})
+    client = TestClient(app.app)
+    r = client.get("/api/paper/performance", headers={"Authorization": "Bearer test-secret"})
+    assert r.status_code == 200
+    assert r.json() == {"limit": 100}
+
+
+def test_paper_bearer_auth_is_documented_in_openapi():
+    schema = app.app.openapi()
+    scheme = schema["components"]["securitySchemes"]["PaperIngestToken"]
+    assert scheme["type"] == "http"
+    assert scheme["scheme"] == "bearer"
+    assert schema["paths"]["/api/paper/performance"]["get"]["security"] == [{"PaperIngestToken": []}]
