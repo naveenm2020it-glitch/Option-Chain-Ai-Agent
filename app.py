@@ -3,7 +3,8 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -29,7 +30,8 @@ def home():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "app": "nifty50-next-day-intelligence", "version": app.version,
-            "utc_time": datetime.now(timezone.utc).isoformat()}
+            "utc_time": datetime.now(timezone.utc).isoformat(),
+            "paper_auth_configured": bool(os.getenv("PAPER_INGEST_TOKEN"))}
 
 
 @app.get("/api/status")
@@ -220,15 +222,18 @@ def performance(from_date: str | None = None, to_date: str | None = None):
 from paper_trading import QuoteRejected
 import paper_ledger
 
-def _require_paper_token(authorization: str | None) -> None:
+paper_bearer = HTTPBearer(auto_error=False, scheme_name="PaperIngestToken")
+
+
+def _require_paper_token(credentials: HTTPAuthorizationCredentials | None) -> None:
     token = os.getenv("PAPER_INGEST_TOKEN")
-    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    supplied = credentials.credentials if credentials and credentials.scheme.lower() == "bearer" else ""
     if not token or not secrets.compare_digest(supplied, token):
         raise HTTPException(status_code=401, detail="Unauthorized.")
 
 @app.post("/api/paper/quotes")
-def paper_quote(payload: dict, authorization: str | None = Header(default=None)):
-    _require_paper_token(authorization)
+def paper_quote(payload: dict, credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
+    _require_paper_token(credentials)
     try:
         return paper_ledger.save_quote(payload, now=datetime.now(timezone.utc))
     except (QuoteRejected, ValueError, KeyError, TypeError, ArithmeticError) as exc:
@@ -239,8 +244,8 @@ def paper_quote(payload: dict, authorization: str | None = Header(default=None))
         raise HTTPException(status_code=503, detail="Could not persist paper quote.")
 
 @app.post("/api/paper/trades")
-def paper_trade(payload: dict, authorization: str | None = Header(default=None)):
-    _require_paper_token(authorization)
+def paper_trade(payload: dict, credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
+    _require_paper_token(credentials)
     try:
         return paper_ledger.save_trade(payload, now=datetime.now(timezone.utc))
     except (QuoteRejected, ValueError, KeyError, TypeError) as exc:
@@ -251,8 +256,8 @@ def paper_trade(payload: dict, authorization: str | None = Header(default=None))
         raise HTTPException(status_code=503, detail="Could not persist simulated paper trade.")
 
 @app.get("/api/paper/performance")
-def paper_performance(limit: int = 100, authorization: str | None = Header(default=None)):
-    _require_paper_token(authorization)
+def paper_performance(limit: int = 100, credentials: HTTPAuthorizationCredentials | None = Depends(paper_bearer)):
+    _require_paper_token(credentials)
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 500.")
     try:
