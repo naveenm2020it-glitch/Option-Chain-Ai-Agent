@@ -4,9 +4,10 @@ Requires DATABASE_URL. Append-only tables; no broker order endpoints exist.
 """
 from __future__ import annotations
 import json
+import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import uuid4
+from uuid import uuid4, UUID
 from paper_trading import OptionQuote, FeeConfig, simulate_round_trip
 
 def _max_quote_age():
@@ -43,6 +44,15 @@ def _schema(conn):
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )""")
 
+def _database_fingerprint(conn):
+    """Opaque identity for the database serving this request; never expose credentials or host."""
+    row = conn.execute(
+        "SELECT current_database(), current_schema(), COALESCE(inet_server_addr()::text, 'local')"
+    ).fetchone()
+    identity = "|".join(str(value) for value in row)
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+
+
 def _quote(row):
     return OptionQuote(row["symbol"],row["expiry"].isoformat(),Decimal(str(row["strike"])),
       row["option_type"],Decimal(str(row["bid"])),Decimal(str(row["ask"])),
@@ -61,11 +71,55 @@ def save_quote(payload: dict, *, now: datetime):
         (quote_id,symbol,expiry,strike,option_type,bid,ask,quote_time,lot_size,source)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT(symbol,expiry,strike,option_type,quote_time,source)
-        DO UPDATE SET source=EXCLUDED.source RETURNING quote_id""",
+        DO UPDATE SET bid=EXCLUDED.bid, ask=EXCLUDED.ask,
+          lot_size=EXCLUDED.lot_size RETURNING quote_id""",
         (quote_id,q.symbol,q.expiry,q.strike,q.option_type,q.bid,q.ask,q.timestamp,
          q.lot_size,q.source)).fetchone()
-    return {"quote_id":str(row[0]),"accepted":True,"source":q.source,
-            "timestamp":q.timestamp.isoformat(),"contract":q.symbol+" "+q.expiry+" "+str(q.strike)+q.option_type}
+      if not row:
+        raise RuntimeError("Database did not return a persisted quote ID")
+      persisted=conn.execute(
+        "SELECT quote_id FROM paper_quotes WHERE quote_id=%s", (row[0],)
+      ).fetchone()
+      if not persisted:
+        raise RuntimeError("Quote insert returned an ID but the row is not readable in the same database")
+      database_fingerprint=_database_fingerprint(conn)
+    return {"quote_id":str(persisted[0]),"accepted":True,"source":q.source,
+            "timestamp":q.timestamp.isoformat(),"contract":q.symbol+" "+q.expiry+" "+str(q.strike)+q.option_type,
+            "database_fingerprint":database_fingerprint}
+
+
+def get_quote(quote_id: str):
+    """Read back a quote by the exact ID returned from save_quote."""
+    try:
+      parsed_id=UUID(str(quote_id))
+    except (ValueError, TypeError, AttributeError):
+      raise ValueError("quote_id must be a valid UUID")
+    with _connect() as conn:
+      _schema(conn)
+      row=conn.execute("""SELECT quote_id,symbol,expiry,strike,option_type,bid,ask,
+        quote_time,lot_size,source FROM paper_quotes WHERE quote_id=%s""",
+        (parsed_id,)).fetchone()
+      fingerprint=_database_fingerprint(conn)
+    if not row:
+      return None
+    names=("quote_id","symbol","expiry","strike","option_type","bid","ask",
+           "quote_time","lot_size","source")
+    item=dict(zip(names,row))
+    return {"quote_id":str(item["quote_id"]),"symbol":item["symbol"],
+            "expiry":item["expiry"].isoformat(),"strike":str(item["strike"]),
+            "option_type":item["option_type"],"bid":str(item["bid"]),
+            "ask":str(item["ask"]),"timestamp":item["quote_time"].isoformat(),
+            "lot_size":item["lot_size"],"source":item["source"],
+            "database_fingerprint":fingerprint}
+
+
+def paper_health():
+    with _connect() as conn:
+      _schema(conn)
+      fingerprint=_database_fingerprint(conn)
+      conn.execute("SELECT 1").fetchone()
+    return {"database_connected":True,"storage":"postgresql",
+            "database_fingerprint":fingerprint}
 
 def save_trade(payload: dict, *, now: datetime):
     with _connect() as conn:
@@ -73,7 +127,11 @@ def save_trade(payload: dict, *, now: datetime):
       entry=conn.execute("SELECT symbol,expiry,strike,option_type,bid,ask,quote_time,lot_size,source FROM paper_quotes WHERE quote_id=%s",(payload["entry_quote_id"],)).fetchone()
       exit=conn.execute("SELECT symbol,expiry,strike,option_type,bid,ask,quote_time,lot_size,source FROM paper_quotes WHERE quote_id=%s",(payload["exit_quote_id"],)).fetchone()
       if not entry or not exit:
-        raise ValueError("entry_quote_id and exit_quote_id must exist")
+        missing=[]
+        if not entry: missing.append("entry_quote_id")
+        if not exit: missing.append("exit_quote_id")
+        raise ValueError("quote not found in this database: "+", ".join(missing)+
+                         ". Save both quotes through this same API deployment and use the returned IDs.")
       names=("symbol","expiry","strike","option_type","bid","ask","quote_time","lot_size","source")
       e=_quote(dict(zip(names,entry))); x=_quote(dict(zip(names,exit)))
       required=("brokerage_per_order","stt_sell_rate","exchange_turnover_rate",
@@ -89,7 +147,7 @@ def save_trade(payload: dict, *, now: datetime):
       conn.execute("INSERT INTO paper_trades(trade_id,entry_quote_id,exit_quote_id,lots,result) VALUES (%s,%s,%s,%s,%s::jsonb)",
         (trade_id,payload["entry_quote_id"],payload["exit_quote_id"],int(payload["lots"]),
          json.dumps(result,separators=(",",":"))))
-    return {"trade_id":str(trade_id),**result}
+    return {"trade_id":str(trade_id),"database_fingerprint":_database_fingerprint(conn),**result}
 
 def paper_summary(limit: int=100):
     with _connect() as conn:
