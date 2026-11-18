@@ -231,7 +231,7 @@ def paper_quote(payload: dict, authorization: str | None = Header(default=None))
     _require_paper_token(authorization)
     try:
         return paper_ledger.save_quote(payload, now=datetime.now(timezone.utc))
-    except (QuoteRejected, ValueError, KeyError, TypeError) as exc:
+    except (QuoteRejected, ValueError, KeyError, TypeError, ArithmeticError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
