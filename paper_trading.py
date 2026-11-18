@@ -29,6 +29,8 @@ class OptionQuote:
     source: str
 
     def validate(self, now: datetime, max_age_seconds: int = 15) -> None:
+        if self.symbol != "NIFTY":
+            raise QuoteRejected("only NIFTY index options are allowed")
         if self.option_type not in ("CE", "PE"):
             raise QuoteRejected("option_type must be CE or PE")
         if not self.symbol or not self.expiry or not self.source:
