@@ -89,7 +89,8 @@ def _fees(turnover: Decimal, is_buy: bool, fee: FeeConfig) -> dict[str, Decimal]
 def simulate_round_trip(entry: OptionQuote, exit: OptionQuote, lots: int,
                         fees: FeeConfig, *, now: datetime,
                         max_quote_age_seconds: int = 15,
-                        slippage_bps: Decimal = D("5")) -> dict:
+                        slippage_bps: Decimal = D("5"),
+                        entry_as_of: datetime | None = None) -> dict:
     """Buy at ask and sell at bid, applying adverse slippage on both legs."""
     fees.validate()
     if lots <= 0:
@@ -100,7 +101,7 @@ def simulate_round_trip(entry: OptionQuote, exit: OptionQuote, lots: int,
     other = (exit.symbol, exit.expiry, exit.strike, exit.option_type, exit.lot_size)
     if identity != other:
         raise ValueError("entry and exit quotes must describe the same contract")
-    entry.validate(now, max_quote_age_seconds)
+    entry.validate(entry_as_of or now, max_quote_age_seconds)
     exit.validate(now, max_quote_age_seconds)
     quantity = lots * entry.lot_size
     slip = slippage_bps / D("10000")
