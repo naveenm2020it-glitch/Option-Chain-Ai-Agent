@@ -147,7 +147,8 @@ def save_trade(payload: dict, *, now: datetime):
       conn.execute("INSERT INTO paper_trades(trade_id,entry_quote_id,exit_quote_id,lots,result) VALUES (%s,%s,%s,%s,%s::jsonb)",
         (trade_id,payload["entry_quote_id"],payload["exit_quote_id"],int(payload["lots"]),
          json.dumps(result,separators=(",",":"))))
-    return {"trade_id":str(trade_id),"database_fingerprint":_database_fingerprint(conn),**result}
+      database_fingerprint=_database_fingerprint(conn)
+    return {"trade_id":str(trade_id),"database_fingerprint":database_fingerprint,**result}
 
 def paper_summary(limit: int=100):
     with _connect() as conn:
