@@ -214,3 +214,50 @@ def performance(from_date: str | None = None, to_date: str | None = None):
         "records": [],
         "message": "Prediction outcomes are not being stored/evaluated yet. The heatmap is ready; green/red results will appear after daily predictions are recorded and compared with the next session's actual NIFTY outcome.",
     }
+
+
+# Paper trading is isolated from the historical collector and has no broker order path.
+from paper_trading import QuoteRejected
+import paper_ledger
+
+def _require_paper_token(authorization: str | None) -> None:
+    token = os.getenv("PAPER_INGEST_TOKEN")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not token or not secrets.compare_digest(supplied, token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+
+@app.post("/api/paper/quotes")
+def paper_quote(payload: dict, authorization: str | None = Header(default=None)):
+    _require_paper_token(authorization)
+    try:
+        return paper_ledger.save_quote(payload, now=datetime.now(timezone.utc))
+    except (QuoteRejected, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not persist paper quote.")
+
+@app.post("/api/paper/trades")
+def paper_trade(payload: dict, authorization: str | None = Header(default=None)):
+    _require_paper_token(authorization)
+    try:
+        return paper_ledger.save_trade(payload, now=datetime.now(timezone.utc))
+    except (QuoteRejected, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not persist simulated paper trade.")
+
+@app.get("/api/paper/performance")
+def paper_performance(limit: int = 100, authorization: str | None = Header(default=None)):
+    _require_paper_token(authorization)
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500.")
+    try:
+        return paper_ledger.paper_summary(limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not read paper-trade ledger.")
