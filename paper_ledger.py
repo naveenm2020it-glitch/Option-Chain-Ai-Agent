@@ -9,6 +9,13 @@ from decimal import Decimal
 from uuid import uuid4
 from paper_trading import OptionQuote, FeeConfig, simulate_round_trip
 
+def _max_quote_age():
+    import os
+    value=int(os.getenv("PAPER_MAX_QUOTE_AGE_SECONDS","15"))
+    if value < 1 or value > 60:
+        raise RuntimeError("PAPER_MAX_QUOTE_AGE_SECONDS must be between 1 and 60")
+    return value
+
 def _connect():
     import os
     url=os.getenv("DATABASE_URL")
@@ -46,7 +53,7 @@ def save_quote(payload: dict, *, now: datetime):
       payload["option_type"],Decimal(str(payload["bid"])),Decimal(str(payload["ask"])),
       datetime.fromisoformat(payload["timestamp"].replace("Z","+00:00")),
       int(payload["lot_size"]),payload["source"])
-    q.validate(now, int(payload.get("max_age_seconds",15)))
+    q.validate(now, _max_quote_age())
     quote_id=uuid4()
     with _connect() as conn:
       _schema(conn)
@@ -75,7 +82,7 @@ def save_trade(payload: dict, *, now: datetime):
         raise ValueError("all six fee fields are required; use a dated broker tariff")
       fee=FeeConfig(**{k:Decimal(str(payload["fees"][k])) for k in required})
       result=simulate_round_trip(e,x,int(payload["lots"]),fee,now=now,
-        max_quote_age_seconds=int(payload.get("max_quote_age_seconds",15)),
+        max_quote_age_seconds=_max_quote_age(),
         slippage_bps=Decimal(str(payload.get("slippage_bps",5))),
         entry_as_of=e.timestamp)
       trade_id=uuid4()
