@@ -8,6 +8,10 @@
 - One-shot provider adapter: `python quote_collector.py`. It expects a normalized JSON quote feed; it does not assume or scrape an undocumented exchange/broker endpoint.
 - Every fee field is mandatory at trade simulation time. Supply rates from the actual broker tariff and record the tariff's effective date in your operational config.
 
+## Swagger authentication
+- Open `/docs`, click **Authorize**, and paste the `PAPER_INGEST_TOKEN` value only (do not type the word `Bearer`).
+- Click **Authorize** and close the dialog. Swagger UI adds the `Authorization: Bearer ...` header automatically for the three paper endpoints.
+
 ## Required environment
 - `DATABASE_URL`: persistent PostgreSQL; SQLite/local filesystem is not used for production ledger.
 - `PAPER_INGEST_TOKEN`: long random secret shared only by collector and app.
