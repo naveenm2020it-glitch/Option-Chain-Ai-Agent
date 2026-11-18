@@ -44,3 +44,9 @@ def test_future_quote_rejected():
     with pytest.raises(QuoteRejected, match="future"):
         simulate_round_trip(q(99,101,NOW+timedelta(seconds=10)), q(109,111),
                             1, FeeConfig(), now=NOW)
+
+def test_entry_quote_can_be_historical_if_it_was_valid_at_entry():
+    old = NOW-timedelta(minutes=10)
+    r = simulate_round_trip(q(99,101,old), q(109,111), 1, FeeConfig(),
+                            now=NOW, entry_as_of=old, slippage_bps=D("0"))
+    assert r["net_pnl"] == "520.00"
