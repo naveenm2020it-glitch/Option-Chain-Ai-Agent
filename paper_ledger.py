@@ -76,7 +76,8 @@ def save_trade(payload: dict, *, now: datetime):
       fee=FeeConfig(**{k:Decimal(str(payload["fees"][k])) for k in required})
       result=simulate_round_trip(e,x,int(payload["lots"]),fee,now=now,
         max_quote_age_seconds=int(payload.get("max_quote_age_seconds",15)),
-        slippage_bps=Decimal(str(payload.get("slippage_bps",5))))
+        slippage_bps=Decimal(str(payload.get("slippage_bps",5))),
+        entry_as_of=e.timestamp)
       trade_id=uuid4()
       conn.execute("INSERT INTO paper_trades(trade_id,entry_quote_id,exit_quote_id,lots,result) VALUES (%s,%s,%s,%s,%s::jsonb)",
         (trade_id,payload["entry_quote_id"],payload["exit_quote_id"],int(payload["lots"]),
