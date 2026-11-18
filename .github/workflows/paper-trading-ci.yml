@@ -1,0 +1,28 @@
+name: Paper Trading CI
+
+on:
+  push:
+    branches:
+      - feature/paper-trading-engine-v1
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+      - name: Run paper trading and API tests
+        run: pytest -q tests/test_paper_trading.py tests/test_paper_api.py tests/test_quote_collector.py
