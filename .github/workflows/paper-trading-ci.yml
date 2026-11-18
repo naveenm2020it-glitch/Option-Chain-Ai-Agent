@@ -25,4 +25,4 @@ jobs:
       - name: Install test dependencies
         run: pip install -r requirements.txt
       - name: Run paper trading and API tests
-        run: pytest -q tests/test_paper_trading.py tests/test_paper_api.py tests/test_quote_collector.py
+        run: python -m pytest -q tests/test_paper_trading.py tests/test_paper_api.py tests/test_quote_collector.py
