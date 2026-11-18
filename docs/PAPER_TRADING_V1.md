@@ -19,7 +19,7 @@ Do not deploy until PostgreSQL persistence, provider API permission, quote times
 
 ## Quote payload
 `symbol, expiry, strike, option_type, bid, ask, timestamp, lot_size, source`.
-Timestamp must be ISO-8601 with timezone. Quotes older than 15 seconds are rejected by default.
+Timestamp must be ISO-8601 with timezone. Quotes older than 15 seconds are rejected by default. Server-side freshness is configurable with PAPER_MAX_QUOTE_AGE_SECONDS (1–60 seconds); clients cannot relax the limit. Only NIFTY index option contracts are accepted.
 
 ## Trade payload
 `entry_quote_id, exit_quote_id, lots, fees, slippage_bps`.
