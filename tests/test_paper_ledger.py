@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -28,7 +28,7 @@ class FakeConnection:
         if normalized.startswith("insert into paper_quotes"):
             quote_id = params[0]
             self.quotes[quote_id] = (
-                quote_id, params[1], params[2], params[3], params[4],
+                quote_id, params[1], date.fromisoformat(params[2]), params[3], params[4],
                 params[5], params[6], params[7], params[8], params[9],
             )
             return FakeResult((quote_id,))
