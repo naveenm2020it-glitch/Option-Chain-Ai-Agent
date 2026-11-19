@@ -24,7 +24,7 @@ jobs:
       - name: Install validation dependencies
         run: python -m pip install --upgrade pip pytest "pandas>=2.2,<3"
       - name: Run Phase 2 regression suite
-        run: python -m pytest -q tests/test_nse_ml_features.py tests/test_nifty_training_dataset.py
+        run: python -m pytest -q tests/test_nse_ml_features.py tests/test_nifty_training_dataset.py tests/test_audit_nifty_prepared_datasets.py
 
   prepare-historical-datasets:
     needs: test
@@ -70,7 +70,7 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --output-dir data/prepared_models \
             --expected-sessions 494
-      - name: Publish Phase 2 datasets and manifest
+      - name: Audit prepared dataset integrity and label quality\n        run: |\n          python scripts/audit_nifty_prepared_datasets.py \\\n            --input-dir data/prepared_models \\\n            --output data/prepared_models/quality_audit.json\n      - name: Publish Phase 2 datasets and manifest
         uses: actions/upload-artifact@v4
         with:
           name: phase2-prepared-datasets-${{ github.run_id }}
