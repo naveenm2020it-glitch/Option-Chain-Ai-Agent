@@ -65,3 +65,5 @@ Passing the synthetic regression suite validates code paths and invariants, not 
 The validation workflow installs dependencies explicitly and does not depend on a repository requirements file.
 
 The Phase 2 CI workflow also runs the builder against the previously verified 494-session checkpoint and publishes the resulting JSONL research datasets as a GitHub Actions artifact. No model training is invoked.
+
+The build pins the byte-for-byte SHA-256 of the selected historical checkpoint artifact before processing, so an altered or mismatched artifact fails closed.
