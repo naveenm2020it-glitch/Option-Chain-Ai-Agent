@@ -154,6 +154,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     result, archive = run(date.fromisoformat(args.analysis_date), args.sessions, args.expiry, Path(args.output))
     print(json.dumps({"complete": result["complete"], "aligned_sessions": result["aligned_sessions_downloaded"],
-                      "archive": str(archive), "archive_sha256": result["archive"]["sha256"]}, indent=2))
+                      "archive": str(archive), "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}, indent=2))
     if not result["complete"]:
         raise SystemExit(f"Only {result['aligned_sessions_downloaded']} of {args.sessions} aligned sessions found.")
