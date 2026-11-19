@@ -1,11 +1,19 @@
 name: Phase 2 NIFTY EOD normalization
 
 on:
+  push:
+    branches: [feature/phase2-eod-normalization]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - 'docs/phase2-data-contract.md'
+      - '.github/workflows/phase2-normalize.yml'
   workflow_dispatch:
     inputs:
       phase1_run_id:
         description: Successful Phase 1 GitHub Actions run ID
         required: true
+        default: '44499856010'
         type: string
       expected_sessions:
         description: Expected aligned trading sessions
@@ -20,6 +28,9 @@ permissions:
 jobs:
   normalize:
     runs-on: ubuntu-latest
+    env:
+      PHASE1_RUN_ID: ${{ inputs.phase1_run_id || '44499856010' }}
+      EXPECTED_SESSIONS: ${{ inputs.expected_sessions || '22' }}
     steps:
       - name: Checkout isolated Phase 2 branch
         uses: actions/checkout@v4
@@ -32,7 +43,7 @@ jobs:
       - name: Download Phase 1 artifact from the specified run
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ inputs.phase1_run_id }}
+          run-id: ${{ env.PHASE1_RUN_ID }}
           github-token: ${{ github.token }}
           path: phase1-input
       - name: Repackage downloaded artifact contents
@@ -45,11 +56,11 @@ jobs:
           python scripts/normalize_eod_dataset.py
           --archive phase1-input.zip
           --output normalized-eod
-          --expected-sessions "${{ inputs.expected_sessions }}"
+          --expected-sessions "${{ env.EXPECTED_SESSIONS }}"
       - name: Upload normalized dataset artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-phase2-normalized-${{ inputs.phase1_run_id }}
+          name: nifty-phase2-normalized-${{ env.PHASE1_RUN_ID }}
           path: normalized-eod/
           if-no-files-found: error
           retention-days: 30
