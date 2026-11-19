@@ -1,0 +1,55 @@
+name: Phase 2 NIFTY EOD normalization
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase1_run_id:
+        description: Successful Phase 1 GitHub Actions run ID
+        required: true
+        type: string
+      expected_sessions:
+        description: Expected aligned trading sessions
+        required: true
+        default: '22'
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated Phase 2 branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run Phase 2 unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Download Phase 1 artifact from the specified run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.phase1_run_id }}
+          github-token: ${{ github.token }}
+          path: phase1-input
+      - name: Repackage downloaded artifact contents
+        run: |
+          cd phase1-input
+          zip -qr ../phase1-input.zip .
+          cd ..
+      - name: Normalize all aligned EOD sessions
+        run: >-
+          python scripts/normalize_eod_dataset.py
+          --archive phase1-input.zip
+          --output normalized-eod
+          --expected-sessions "${{ inputs.expected_sessions }}"
+      - name: Upload normalized dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-phase2-normalized-${{ inputs.phase1_run_id }}
+          path: normalized-eod/
+          if-no-files-found: error
+          retention-days: 30
