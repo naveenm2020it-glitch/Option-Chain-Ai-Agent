@@ -67,3 +67,5 @@ The validation workflow installs dependencies explicitly and does not depend on 
 The Phase 2 CI workflow also runs the builder against the previously verified 494-session checkpoint and publishes the resulting JSONL research datasets as a GitHub Actions artifact. No model training is invoked.
 
 The build pins the byte-for-byte SHA-256 of the selected historical checkpoint artifact before processing, so an altered or mismatched artifact fails closed.
+
+Each exported JSONL sample carries `forecast_as_of: after_close` as an explicit row-level field as well as in the dataset manifest.
