@@ -34,6 +34,46 @@ def health():
             "paper_auth_configured": bool(os.getenv("PAPER_INGEST_TOKEN"))}
 
 
+@app.get("/api/phase3/health")
+def phase3_database_health():
+    """Read-only connectivity and Phase 3 schema check; exposes no database identifiers."""
+    if not database.database_configured():
+        return {
+            "database_configured": False,
+            "database_connected": False,
+            "phase3_sessions_table": False,
+            "phase3_contracts_table": False,
+        }
+
+    url = os.environ["DATABASE_URL"]
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    try:
+        import psycopg
+        with psycopg.connect(url, connect_timeout=3, autocommit=True) as conn:
+            rows = conn.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN (
+                    'nifty_historical_sessions',
+                    'nifty_option_contracts'
+                  )
+                """
+            ).fetchall()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database connectivity check failed.")
+
+    tables = {row[0] for row in rows}
+    return {
+        "database_configured": True,
+        "database_connected": True,
+        "phase3_sessions_table": "nifty_historical_sessions" in tables,
+        "phase3_contracts_table": "nifty_option_contracts" in tables,
+    }
+
+
 @app.get("/api/status")
 def status():
     report_root = DATA_DIR / "nse_reports"
