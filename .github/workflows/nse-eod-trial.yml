@@ -18,7 +18,7 @@ on:
       expiry:
         description: "Expiry reference for later analysis (YYYY-MM-DD)"
         required: true
-        default: "2026-11-26"
+        default: "2026-11-23"
         type: string
       sessions:
         description: "Number of aligned trading sessions (maximum 22)"
@@ -56,7 +56,7 @@ jobs:
         run: |
           python scripts/nse_eod_trial.py \
             --analysis-date "${{ github.event.inputs.analysis_date || '2026-11-18' }}" \
-            --expiry "${{ github.event.inputs.expiry || '2026-11-26' }}" \
+            --expiry "${{ github.event.inputs.expiry || '2026-11-23' }}" \
             --sessions "${{ github.event.inputs.sessions || '22' }}" \
             --output trial-output/reports
       - name: Upload isolated archive to a unique B2 trial prefix
