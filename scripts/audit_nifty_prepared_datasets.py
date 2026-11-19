@@ -184,17 +184,32 @@ def audit_datasets(root: Path) -> dict[str, Any]:
         if model in ("ce_seller", "pe_seller"):
             values = [_finite(r["target"], f"{model}.target") for r in model_rows]
             counts = Counter(r.get("target_class") for r in model_rows)
+            expiry_days = []
+            for row in model_rows:
+                meta = row.get("target_metadata") or {}
+                days = meta.get("days_to_expiry_on_target")
+                if isinstance(days, bool) or not isinstance(days, int) or days < 0:
+                    raise ValueError(f"{model}: invalid days_to_expiry_on_target metadata")
+                expiry_days.append(days)
             total = len(values)
             neutral_share = counts.get("NEUTRAL", 0) / total
             non_neutral = [counts.get("SELLER_FAVORABLE", 0), counts.get("BUYER_FAVORABLE", 0)]
             minority_share = min(non_neutral) / total
-            extreme_count = sum(value <= -0.90 or value >= 1.0 for value in values)
+            extreme_flags = [value <= -0.90 or value >= 1.0 for value in values]
+            extreme_count = sum(extreme_flags)
+            expiry_horizon_counts = Counter(str(days) for days in expiry_days)
+            expiry_day_extreme_count = sum(flag for flag, days in zip(extreme_flags, expiry_days) if days == 0)
+            expiry_day_count = sum(days == 0 for days in expiry_days)
             model_report["seller_label_sensitivity"] = _seller_band_sensitivity(values)
             model_report["quality_metrics"] = {
                 "neutral_share": neutral_share,
                 "minority_directional_class_share": minority_share,
                 "extreme_premium_return_count": extreme_count,
                 "extreme_premium_return_share": extreme_count / total,
+                "expiry_day_target_count": expiry_day_count,
+                "expiry_day_target_share": expiry_day_count / total,
+                "expiry_day_extreme_target_count": expiry_day_extreme_count,
+                "expiry_horizon_days_distribution": dict(sorted(expiry_horizon_counts.items(), key=lambda item: int(item[0]))),
             }
             if neutral_share < 0.05:
                 report["quality_warnings"].append(
@@ -204,9 +219,14 @@ def audit_datasets(root: Path) -> dict[str, Any]:
                 report["quality_warnings"].append(
                     f"{model}: smaller directional class is only {minority_share:.1%}; class imbalance needs review"
                 )
+            if expiry_day_count:
+                report["quality_warnings"].append(
+                    f"{model}: {expiry_day_count}/{total} targets are measured on the option expiry date; keep expiry-day and non-expiry regimes distinguishable"
+                )
             if extreme_count:
                 report["quality_warnings"].append(
-                    f"{model}: {extreme_count}/{total} premium-return targets are <= -90% or >= +100%; inspect expiry, stale quotes, and contract continuity before training"
+                    f"{model}: {extreme_count}/{total} premium-return targets are <= -90% or >= +100%; "
+                    f"{expiry_day_extreme_count} of these occur on expiry day; review expiry-regime behavior and quote continuity before training"
                 )
 
     # All four research datasets must describe the same forecast sessions.
