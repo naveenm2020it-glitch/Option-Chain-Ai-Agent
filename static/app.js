@@ -3,7 +3,7 @@ const fmt=value=>value===null||value===undefined||value===""?"—":Number(value)
 const compact=value=>value===null||value===undefined?"—":Intl.NumberFormat("en-IN",{notation:"compact",maximumFractionDigits:1}).format(Number(value));
 const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let analysisData=null,marketData=null,activePage="overview",selectedExpiry="",lastRefresh=null;
-const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export"};
+const titles={overview:"Market Overview",chain:"Live Option Chain",oi:"OI Intelligence",maxpain:"Max Pain Analysis",analyzer:"AI Strike Analyzer",alerts:"Entry Alerts",performance:"Accuracy & Records",export:"Data Export","source-test":"Data Source Test"};
 async function api(url){const response=await fetch(url,{cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.detail||"Request failed");return data}
 function setPage(name){activePage=name;document.querySelectorAll(".page").forEach(el=>el.classList.toggle("active",el.id===name));document.querySelectorAll("[data-page]").forEach(el=>el.classList.toggle("active",el.dataset.page===name));$("pageTitle").textContent=titles[name]||"NIFTY LAB";if(name==="export")updateExportState()}
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>setPage(button.dataset.page)));
@@ -11,12 +11,36 @@ document.querySelectorAll("[data-go]").forEach(button=>button.addEventListener("
 $("themeBtn").addEventListener("click",()=>{document.body.classList.toggle("dark");$("themeBtn").textContent=document.body.classList.contains("dark")?"☀":"◐";});
 $("menuBtn").addEventListener("click",()=> $("sidebar").classList.toggle("open"));
 $("refreshBtn").addEventListener("click",()=>refresh(true));
+$("runProviderTest").addEventListener("click",runProviderTest);
 $("analyzeBtn").addEventListener("click",()=>refresh(true));
 $("rangeSelect").addEventListener("change",renderFullChain);
 $("expirySelect").addEventListener("change",()=>{selectedExpiry=$("expirySelect").value;refresh(true)});
 function setStatus(status,stamp){const state=$("marketState");state.innerHTML="<i></i> "+safe(status||"UNAVAILABLE");state.dataset.state=status||"UNAVAILABLE";$("side-status").textContent=status||"UNAVAILABLE";$("sourceStamp").textContent=stamp||"No verified source timestamp";$("qualityStatus").textContent=status||"UNAVAILABLE";$("qualityTime").textContent=stamp||"—";}
 function expiryMenu(){const select=$("expirySelect");if(!marketData)return;const current=selectedExpiry||analysisData?.expiry||marketData.expiry_dates?.[0]||"";select.innerHTML=(marketData.expiry_dates||[]).map(x=>'<option value="'+safe(x)+'" '+(x===current?"selected":"")+'>'+safe(x)+'</option>').join("");selectedExpiry=current;}
-function updateOverview(){const m=marketData,met=analysisData?.metrics;if(!m)return;$("spot").textContent=fmt(m.spot);$("spotTime").textContent=m.source_timestamp?"Exchange: "+m.source_timestamp:"No source timestamp";$("atm").textContent=fmt(met?.atm);$("maxPain").textContent=fmt(met?.max_pain);$("maxPainGap").textContent=met?.max_pain!=null&&m.spot!=null?((Number(m.spot)-Number(met.max_pain))>0?"+":"")+fmt(Number(m.spot)-Number(met.max_pain))+" pts from spot":"Selected expiry";$("pcr").textContent=fmt(met?.pcr);$("mpValue").textContent=fmt(met?.max_pain);$("mpSpot").textContent=fmt(m.spot);$("mpDistance").textContent=met?.max_pain!=null&&m.spot!=null?fmt(Number(m.spot)-Number(met.max_pain))+" pts":"—";$("ceOi").textContent=compact(met?.total_ce_oi);$("peOi").textContent=compact(met?.total_pe_oi);$("oiPcr").textContent=fmt(met?.pcr);$("scanCount").textContent=fmt(analysisData?.scan_count);$("alertCandidates").textContent=fmt(analysisData?.signals?.length||0);$("qualitySource").textContent=m.source||"NSE website public endpoint";renderBias();renderLevels();renderOiRanks();renderMaxPain();renderOverviewChain();renderFullChain();renderWatchlist();}
+function renderDesk(){
+ const m=marketData||{},x=analysisData?.metrics||{},rows=analysisData?.near_rows||[];
+ $("deskSpot").textContent=fmt(m.spot);
+ $("deskSpotTime").textContent=m.source_timestamp?"Exchange: "+m.source_timestamp:"Exchange timestamp unavailable";
+ $("deskAtm").textContent=fmt(x.atm);$("deskMaxPain").textContent=fmt(x.max_pain);$("deskPcr").textContent=fmt(x.pcr);
+ $("deskSupport").textContent=x.support?.length?fmt(x.support[0].strike):"—";
+ $("deskResistance").textContent=x.resistance?.length?fmt(x.resistance[0].strike):"—";
+ const signal=$("deskSignal");
+ if(m.status!=="LIVE"||analysisData?.status!=="LIVE"){
+  signal.innerHTML='<span class="signal-dot"></span><div><b>WAIT FOR VERIFIED DATA</b><small>' + safe(m.error||analysisData?.message||"No exchange snapshot received.") + '</small></div>';
+ }else{
+  signal.innerHTML='<span class="signal-dot" style="background:#39a879"></span><div><b>SNAPSHOT RECEIVED · NO ENTRY SIGNAL</b><small>Option-chain data is available. Candle confirmation is not connected; no trade trigger is issued.</small></div>';
+ }
+ const contracts=[];
+ rows.forEach(r=>{
+  if(Number(r.ce?.openInterest)>0)contracts.push({side:"CE",strike:r.strike,ltp:r.ce.lastPrice,oi:r.ce.openInterest,change:r.ce.pChange});
+  if(Number(r.pe?.openInterest)>0)contracts.push({side:"PE",strike:r.strike,ltp:r.pe.lastPrice,oi:r.pe.openInterest,change:r.pe.pChange});
+ });
+ contracts.sort((a,b)=>Number(b.oi)-Number(a.oi));
+ $("deskWatchList").innerHTML=contracts.length?contracts.slice(0,8).map(c=>'<div class="desk-watch-row"><div><span class="desk-watch-name">'+safe(c.strike)+' '+c.side+'</span><small class="desk-watch-meta">OI '+compact(c.oi)+'</small></div><div><div class="desk-watch-price">'+fmt(c.ltp)+'</div><small class="desk-watch-change '+(Number(c.change)>=0?"positive-text":"negative-text")+'">'+(c.change==null?"—":fmt(c.change)+"%")+'</small></div></div>').join(""):'<div class="desk-empty">No verified contracts available. This panel will populate from the selected expiry when NSE data is received.</div>';
+ const near=rows.filter(r=>Math.abs(Number(r.strike)-Number(x.atm))<=100).sort((a,b)=>Number(a.strike)-Number(b.strike));
+ $("deskChainRows").innerHTML=near.length?near.map(r=>'<tr><td>'+compact(r.ce.openInterest)+'</td><td class="positive-text">'+fmt(r.ce.lastPrice)+'</td><td class="strike">'+fmt(r.strike)+'</td><td class="negative-text">'+fmt(r.pe.lastPrice)+'</td><td>'+compact(r.pe.openInterest)+'</td></tr>').join(""):'<tr><td colspan="5" class="empty">No verified contracts.</td></tr>';
+}
+function updateOverview(){const m=marketData,met=analysisData?.metrics;if(!m)return;$("spot").textContent=fmt(m.spot);$("spotTime").textContent=m.source_timestamp?"Exchange: "+m.source_timestamp:"No source timestamp";$("atm").textContent=fmt(met?.atm);$("maxPain").textContent=fmt(met?.max_pain);$("maxPainGap").textContent=met?.max_pain!=null&&m.spot!=null?((Number(m.spot)-Number(met.max_pain))>0?"+":"")+fmt(Number(m.spot)-Number(met.max_pain))+" pts from spot":"Selected expiry";$("pcr").textContent=fmt(met?.pcr);$("mpValue").textContent=fmt(met?.max_pain);$("mpSpot").textContent=fmt(m.spot);$("mpDistance").textContent=met?.max_pain!=null&&m.spot!=null?fmt(Number(m.spot)-Number(met.max_pain))+" pts":"—";$("ceOi").textContent=compact(met?.total_ce_oi);$("peOi").textContent=compact(met?.total_pe_oi);$("oiPcr").textContent=fmt(met?.pcr);$("scanCount").textContent=fmt(analysisData?.scan_count);$("alertCandidates").textContent=fmt(analysisData?.signals?.length||0);$("qualitySource").textContent=m.source||"NSE website public endpoint";renderBias();renderLevels();renderOiRanks();renderMaxPain();renderOverviewChain();renderFullChain();renderWatchlist();renderDesk();}
 function renderBias(){const rawPcr=analysisData?.metrics?.pcr;const pcr=rawPcr==null?NaN:Number(rawPcr);let score=Number.isFinite(pcr)?Math.max(0,Math.min(100,Math.round(50+(pcr-1)*55))):null;$("biasScore").textContent=score??"—";const tag=$("biasTag");if(!Number.isFinite(pcr)){tag.textContent="WAITING";$("biasTitle").textContent="Waiting for live market data";$("biasText").textContent="Market interpretation will appear when verified option-chain data is received.";return}if(pcr>=1.2){tag.textContent="PUT OI HEAVY";$("biasTitle").textContent="Put-side OI concentration";$("biasText").textContent="Put open interest exceeds call open interest. Treat this as a positioning observation, not a bullish forecast.";}else if(pcr<=.8){tag.textContent="CALL OI HEAVY";$("biasTitle").textContent="Call-side OI concentration";$("biasText").textContent="Call open interest exceeds put open interest. Treat this as a positioning observation, not a bearish forecast.";}else{tag.textContent="BALANCED";$("biasTitle").textContent="Balanced OI distribution";$("biasText").textContent="Call and put open interest are relatively balanced for the selected expiry.";}}
 function levelMarkup(items,side){if(!items?.length)return '<div class="empty">No OI levels returned</div>';return items.slice(0,3).map((x,i)=>'<div class="level-row"><span><b>'+fmt(x.strike)+'</b><small> #'+(i+1)+'</small></span><span><b>'+compact(x.oi)+'</b><small> ΔOI '+compact(x.change_oi)+'</small></span></div>').join("")}
 function renderLevels(){const x=analysisData?.metrics;$("supportLevels").innerHTML=levelMarkup(x?.support,"put");$("resistanceLevels").innerHTML=levelMarkup(x?.resistance,"call");}
@@ -33,4 +57,27 @@ function downloadCsv(filename,rows){if(!rows?.length){alert("No verified data is
 $("exportChain").addEventListener("click",()=>downloadCsv("nifty-option-chain.csv",(analysisData?.rows||[]).map(r=>({strike:r.strike,expiry:r.expiry,ce_oi:r.ce.openInterest,ce_change_oi:r.ce.changeinOpenInterest,ce_volume:r.ce.totalTradedVolume,ce_ltp:r.ce.lastPrice,ce_iv:r.ce.impliedVolatility,pe_ltp:r.pe.lastPrice,pe_volume:r.pe.totalTradedVolume,pe_change_oi:r.pe.changeinOpenInterest,pe_oi:r.pe.openInterest,pe_iv:r.pe.impliedVolatility}))));
 $("exportOI").addEventListener("click",()=>{const x=analysisData?.metrics;downloadCsv("nifty-oi-levels.csv",[...(x?.support||[]).map(r=>({type:"PUT OI SUPPORT",...r})),...(x?.resistance||[]).map(r=>({type:"CALL OI RESISTANCE",...r}))]);});
 $("exportSignals").addEventListener("click",()=>downloadCsv("nifty-ai-watchlist.csv",analysisData?.signals||[]));
+async function runProviderTest(){
+ const button=$("runProviderTest"), box=$("providerTestResult");
+ button.disabled=true;button.textContent="Testing…";
+ box.innerHTML="<b>Testing NSE connection…</b><span>One request is being made. No retry or anti-blocking workaround will be attempted.</span>";
+ try{
+  const r=await api("/api/market?force=true");
+  if(r.status==="LIVE"){
+   await refresh(true);
+   updateExportState();
+  }
+  const state=r.status==="LIVE"?"LIVE":(r.status||"UNAVAILABLE");
+  const fields=[
+   ["Result",state],["HTTP status",r.http_status??"—"],["Exchange timestamp",r.source_timestamp||"Not supplied"],
+   ["NIFTY spot",r.spot==null?"—":fmt(r.spot)],["Expiry dates",(r.expiry_dates||[]).length],["Strike rows",(r.rows||[]).length],
+   ["CE rows",(r.rows||[]).filter(x=>x.ce&&Object.keys(x.ce).length).length],["PE rows",(r.rows||[]).filter(x=>x.pe&&Object.keys(x.pe).length).length],
+   ["Response time",r.elapsed_ms==null?"—":r.elapsed_ms+" ms"],["Received at",r.received_at]
+  ];
+  box.innerHTML="<b>"+safe(state)+" · "+safe(r.error||r.message||"")+"</b><div class=\"data-quality\">"+
+   fields.map(([k,v])=>"<div><span>"+safe(k)+"</span><b>"+safe(v)+"</b></div>").join("")+
+   "</div><div class=\"table-note\">"+safe(r.endpoint)+"</div>";
+ }catch(e){box.innerHTML="<b>Test failed</b><span>"+safe(e.message)+"</span>";}
+ finally{button.disabled=false;button.textContent="Test connection";}
+}
 refresh();setInterval(()=>refresh(false),7000);

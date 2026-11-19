@@ -21,6 +21,7 @@
     <button class="nav-item" data-page="alerts"><i>◉</i>Entry Alerts</button>
     <button class="nav-item" data-page="performance"><i>▥</i>Accuracy & Records</button>
     <button class="nav-item" data-page="export"><i>⇩</i>Data Export</button>
+    <button class="nav-item" data-page="source-test"><i>⌁</i>Data Source Test</button>
   </nav>
   <div class="sidebar-bottom"><span class="live-dot"></span> MARKET FEED <b id="side-status">CONNECTING</b><small>Research terminal · NSE</small></div>
 </aside>
@@ -32,6 +33,32 @@
 <div class="integrity-banner"><span class="banner-icon">✓</span><div><b>DATA INTEGRITY ACTIVE</b><span>Only verified exchange responses are displayed. Stale or unavailable data is clearly marked.</span></div><small id="sourceStamp">Waiting for NSE response</small></div>
 
 <section class="page active" id="overview">
+<div class="terminal-layout">
+<aside class="terminal-watch panel">
+<div class="terminal-panel-head"><div><span class="section-kicker">MARKET WATCH</span><h2>NIFTY contracts</h2></div><span class="mini-live">● NSE</span></div>
+<div class="watch-tabs"><span class="selected">OPTIONS</span><span>OI LEADERS</span></div>
+<div class="desk-watch-list" id="deskWatchList"><div class="desk-empty">Waiting for verified option-chain data…</div></div>
+<div class="desk-footnote">Only exchange-returned contract values are displayed.</div>
+</aside>
+<div class="terminal-center">
+<article class="panel chart-panel">
+<div class="terminal-panel-head chart-heading"><div><span class="section-kicker">NIFTY 50 · SPOT</span><h2>Market chart</h2><p id="deskChartMeta">5-minute candles · waiting for a verified candle source</p></div><span class="tag warning" id="chartFeedTag">CANDLES UNAVAILABLE</span></div>
+<div class="chart-toolbar"><div class="chart-symbol"><b>NIFTY</b><span>INDEX · NSE</span></div><div class="chart-periods"><button class="active" disabled>5m</button><button disabled>15m</button><button disabled>1D</button></div></div>
+<div class="chart-empty-state" id="chartEmptyState"><div class="chart-grid-lines"></div><div class="chart-empty-content"><span class="chart-icon">⌁</span><b>Verified spot candles not connected</b><p>This chart will display genuine NIFTY candles when a permitted candle-data source is connected. No sample candles are shown.</p></div></div>
+<div class="chart-legend"><span><i class="legend-green"></i> Bullish candle</span><span><i class="legend-red"></i> Bearish candle</span><span class="chart-note">No synthetic price history</span></div>
+</article>
+<article class="panel desk-chain-panel"><div class="terminal-panel-head"><div><span class="section-kicker">CONTRACT ACTIVITY</span><h2>ATM option chain</h2></div><button class="text-btn" data-go="chain">Full option chain ↗</button></div><div class="table-wrap"><table><thead><tr><th>CE OI</th><th>CE LTP</th><th>STRIKE</th><th>PE LTP</th><th>PE OI</th></tr></thead><tbody id="deskChainRows"><tr><td colspan="5" class="empty">Waiting for verified contracts…</td></tr></tbody></table></div></article>
+</div>
+<aside class="terminal-ticket panel">
+<div class="terminal-panel-head"><div><span class="section-kicker">MARKET DESK</span><h2>Trade intelligence</h2></div><span class="desk-avatar">N</span></div>
+<div class="desk-index-card"><span>NIFTY SPOT</span><b id="deskSpot">—</b><small id="deskSpotTime">Exchange timestamp unavailable</small></div>
+<div class="desk-action-tabs"><span class="active">OVERVIEW</span><span>LEVELS</span></div>
+<div class="desk-field"><label>ATM STRIKE</label><b id="deskAtm">—</b></div><div class="desk-field"><label>MAX PAIN</label><b id="deskMaxPain">—</b></div><div class="desk-field"><label>PUT / CALL OI RATIO</label><b id="deskPcr">—</b></div>
+<div class="desk-levels"><div><span>PUT OI SUPPORT</span><b class="support-value" id="deskSupport">—</b></div><div><span>CALL OI RESISTANCE</span><b class="resistance-value" id="deskResistance">—</b></div></div>
+<div class="desk-signal" id="deskSignal"><span class="signal-dot"></span><div><b>WAIT FOR DATA</b><small>Trade signals are paused until verified market data is available.</small></div></div>
+<div class="desk-disclaimer">Research only. No order placement, broker connection or automatic execution.</div>
+</aside>
+</div>
   <div class="metric-grid">
     <article class="metric-card"><div class="metric-top"><span>NIFTY SPOT</span><i>⌁</i></div><strong id="spot">—</strong><small id="spotTime">Awaiting exchange feed</small></article>
     <article class="metric-card"><div class="metric-top"><span>ATM STRIKE</span><i>◎</i></div><strong id="atm">—</strong><small>Nearest 50-point strike</small></article>
@@ -95,6 +122,23 @@
 
 <section class="page" id="export">
  <article class="panel"><div class="panel-head"><div><span class="section-kicker">DOWNLOAD YOUR DATA</span><h2>Export Centre</h2><p>Download the current verified option-chain snapshot and analysis tables.</p></div></div><div class="export-grid"><div class="export-card"><div class="export-icon">▤</div><b>Full Option Chain</b><span>Current expiry · CE and PE fields</span><button class="outline-btn" id="exportChain">Download CSV ↧</button></div><div class="export-card"><div class="export-icon">◈</div><b>OI Support & Resistance</b><span>Top OI levels and change in OI</span><button class="outline-btn" id="exportOI">Download CSV ↧</button></div><div class="export-card"><div class="export-icon">✧</div><b>AI Watchlist</b><span>Ranked contracts and screening factors</span><button class="outline-btn" id="exportSignals">Download CSV ↧</button></div></div><div class="export-foot">Exports contain only data received from the selected live NSE response. No sample or fabricated rows are included.</div></article>
+</section>
+<section class="page" id="source-test">
+  <article class="panel">
+    <div class="panel-head">
+      <div><span class="section-kicker">EXPERIMENTAL CONNECTIVITY CHECK</span><h2>Indian Option MCP · NSE Provider</h2>
+      <p>Tests the same primary NSE option-chain endpoint used by the upstream project. This is a one-shot diagnostic, not a live feed.</p></div>
+      <button class="primary-btn" id="runProviderTest">Test connection</button>
+    </div>
+    <div class="data-quality">
+      <div><span>Provider project</span><b>devag7 / Indian-Option-MCP</b></div>
+      <div><span>Transport</span><b>Direct HTTPS diagnostic</b></div>
+      <div><span>Broker API</span><b>Not used</b></div>
+      <div><span>Retries / identity rotation</span><b>Disabled</b></div>
+    </div>
+    <div id="providerTestResult" class="notice-card"><b>Not tested yet</b><span>Tap “Test connection” to make one request and inspect the actual HTTP response, exchange timestamp and returned contract counts.</span></div>
+    <div class="table-note">A successful HTTP response proves connectivity only. It does not establish exchange permission, data licensing, or guaranteed uptime. HTTP 403 is reported as a block; the test does not try to bypass it.</div>
+  </article>
 </section>
 <footer class="app-footer"><span>NIFTY LAB · DERIVATIVES INTELLIGENCE</span><span>Market research only · Not investment advice</span></footer>
 </main>
