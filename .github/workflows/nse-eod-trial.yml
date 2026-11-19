@@ -1,6 +1,13 @@
 name: Isolated NIFTY EOD 22-session download trial
 
 on:
+  push:
+    branches:
+      - trial/eod-22-session-download-2026-11-18
+    paths:
+      - "scripts/nse_eod_trial.py"
+      - "tests/**"
+      - ".github/workflows/nse-eod-trial.yml"
   workflow_dispatch:
     inputs:
       analysis_date:
@@ -43,17 +50,19 @@ jobs:
           python-version: "3.12"
       - name: Install isolated trial dependencies
         run: python -m pip install requests boto3
+      - name: Run Phase 1 parser and expiry-validation tests
+        run: python -m unittest discover -s tests -v
       - name: Download and validate same-session NSE reports
         run: |
           python scripts/nse_eod_trial.py \
-            --analysis-date "${{ inputs.analysis_date }}" \
-            --expiry "${{ inputs.expiry }}" \
-            --sessions "${{ inputs.sessions }}" \
+            --analysis-date "${{ github.event.inputs.analysis_date || '2026-11-18' }}" \
+            --expiry "${{ github.event.inputs.expiry || '2026-11-26' }}" \
+            --sessions "${{ github.event.inputs.sessions || '22' }}" \
             --output trial-output/reports
       - name: Upload isolated archive to a unique B2 trial prefix
         if: ${{ env.B2_ENDPOINT_URL != '' && env.B2_APPLICATION_KEY_ID != '' && env.B2_APPLICATION_KEY != '' && env.B2_BUCKET_NAME != '' }}
         env:
-          ANALYSIS_DATE: ${{ inputs.analysis_date }}
+          ANALYSIS_DATE: ${{ github.event.inputs.analysis_date || '2026-11-18' }}
           RUN_ID: ${{ github.run_id }}
         run: |
           python - <<'PY'
@@ -89,7 +98,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-eod-trial-${{ inputs.analysis_date }}-${{ github.run_id }}
+          name: nifty-eod-trial-${{ github.event.inputs.analysis_date || '2026-11-18' }}-${{ github.run_id }}
           path: trial-output/
           if-no-files-found: warn
           retention-days: 14
