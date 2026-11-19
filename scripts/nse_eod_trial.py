@@ -50,7 +50,16 @@ def parse_expiry(value):
     raw = str(value).strip().strip('"').strip("'")
     if not raw or raw.lower() in {"nan", "none", "nat", "-"}:
         return None
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y%m%d"):
+    # Support ISO date/time strings before date-only formats. Some NSE files
+    # serialize expiry as a timestamp rather than a bare calendar date.
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        pass
+    for fmt in (
+        "%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d-%b-%Y", "%d-%B-%Y",
+        "%d-%m-%Y", "%d/%m/%Y", "%Y%m%d", "%d-%b-%y",
+    ):
         try:
             return datetime.strptime(raw, fmt).date()
         except ValueError:
@@ -132,13 +141,15 @@ def inspect_option_rows(rows, headers, report_day):
     }
 
 
-def inspect_contract_master(payload: bytes, report_day: date):
+def inspect_contract_master(payload: bytes, report_day: date, selected_expiry: str):
     try:
         raw = gzip.decompress(payload)
     except OSError as exc:
         return {"valid": False, "reason": f"gzip decompression failed: {exc}"}
     headers, rows = read_csv_bytes(raw)
-    return inspect_option_rows(rows, headers, report_day)
+    result = inspect_option_rows(rows, headers, report_day)
+    result["selected_expiry_present"] = selected_expiry in result.get("current_or_future_expiries", [])
+    return result
 
 
 def inspect_fo_bhavcopy(payload: bytes, report_day: date, selected_expiry: str):
@@ -198,7 +209,7 @@ def fetch_session(session: requests.Session, day: date, root: Path, selected_exp
                 "bytes": len(response.content), "sha256": hashlib.sha256(response.content).hexdigest(),
             }
             if name == "fo_contract_master":
-                details["semantic_validation"] = inspect_contract_master(response.content, day)
+                details["semantic_validation"] = inspect_contract_master(response.content, day, selected_expiry)
                 details["analysis_usable"] = details["semantic_validation"].get("valid", False)
             elif name == "fo_udiff_bhavcopy":
                 details["semantic_validation"] = inspect_fo_bhavcopy(response.content, day, selected_expiry)
