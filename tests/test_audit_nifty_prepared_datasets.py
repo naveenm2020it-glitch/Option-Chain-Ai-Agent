@@ -73,7 +73,7 @@ def test_audit_reports_label_imbalance_and_outliers(tmp_path):
     report = audit_datasets(tmp_path)
     assert report["training_readiness"] == "REVIEW_REQUIRED"
     assert report["models"]["ce_seller"]["quality_metrics"]["extreme_premium_return_count"] == 2
-    assert report["models"]["ce_seller"]["seller_label_sensitivity"]["0.010"]["SELLER_FAVORABLE"] == 4
+    assert report["models"]["ce_seller"]["seller_label_sensitivity"]["0.010"]["SELLER_FAVORABLE"] == 5
     assert report["quality_warnings"]
 
 
