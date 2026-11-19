@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from scripts.nse_eod_trial import evaluate_analysis_readiness, inspect_option_rows, parse_expiry
+from scripts.nse_eod_trial import evaluate_analysis_readiness, has_both_option_sides, inspect_option_rows, parse_expiry
 
 
 class ExpiryParsingTests(unittest.TestCase):
@@ -65,6 +65,11 @@ class ExpiryParsingTests(unittest.TestCase):
         }]
         ready, _ = evaluate_analysis_readiness(records, 1)
         self.assertFalse(ready)
+
+    def test_selected_expiry_requires_both_ce_and_pe(self):
+        self.assertTrue(has_both_option_sides({"CE": 10, "PE": 12}))
+        self.assertFalse(has_both_option_sides({"CE": 10, "PE": 0}))
+        self.assertFalse(has_both_option_sides({"CE": 0, "PE": 12}))
 
 
 if __name__ == "__main__":
