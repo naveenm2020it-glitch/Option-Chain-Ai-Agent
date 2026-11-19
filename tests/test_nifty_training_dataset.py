@@ -91,7 +91,7 @@ def test_build_datasets_uses_22_session_warmup_and_chronological_splits(tmp_path
     assert manifest["training_started"] is False
     assert manifest["seller_target_coverage"] == {"CE": 22, "PE": 22, "available_samples": 22}
     sample = json.loads((tmp_path / "ce_seller" / "train.jsonl").read_text().splitlines()[0])
-    assert sample["target_metadata"]["days_to_expiry_on_target"] == 10
+    assert sample["target_metadata"]["days_to_expiry_on_target"] == 32
     assert (tmp_path / "direction" / "train.jsonl").exists()
     assert (tmp_path / "range" / "holdout.jsonl").exists()
     saved = json.loads((tmp_path / "manifest.json").read_text())
