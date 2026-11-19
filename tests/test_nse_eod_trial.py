@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from scripts.nse_eod_trial import inspect_option_rows, parse_expiry
+from scripts.nse_eod_trial import evaluate_analysis_readiness, inspect_option_rows, parse_expiry
 
 
 class ExpiryParsingTests(unittest.TestCase):
@@ -44,6 +44,27 @@ class ExpiryParsingTests(unittest.TestCase):
         result = inspect_option_rows(rows, headers, date(2026, 11, 18))
         self.assertFalse(result["valid"])
         self.assertEqual(result["current_or_future_expiries"], [])
+
+    def test_fo_bhavcopy_can_be_authoritative_fallback(self):
+        records = [{
+            "session_date": "2026-11-18",
+            "fo_bhavcopy_usable": True,
+            "selected_expiry_present_in_fo": True,
+            "contract_master_usable": False,
+        }]
+        ready, latest = evaluate_analysis_readiness(records, 1)
+        self.assertTrue(ready)
+        self.assertEqual(latest["session_date"], "2026-11-18")
+
+    def test_missing_selected_expiry_blocks_analysis(self):
+        records = [{
+            "session_date": "2026-11-18",
+            "fo_bhavcopy_usable": True,
+            "selected_expiry_present_in_fo": False,
+            "contract_master_usable": True,
+        }]
+        ready, _ = evaluate_analysis_readiness(records, 1)
+        self.assertFalse(ready)
 
 
 if __name__ == "__main__":
