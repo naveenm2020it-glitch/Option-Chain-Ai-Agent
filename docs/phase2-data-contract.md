@@ -14,7 +14,7 @@ The pipeline uses only Python's standard library and expects the Phase 1 artifac
 - `nifty_index_eod.csv`: NIFTY 50 OHLC, close, points/percent change, volume, turnover and valuation fields.
 - `participant_positioning_eod.csv`: participant-wise market-wide derivatives aggregates. These are not NIFTY-only contract positions.
 - `session_feature_summary.csv`: daily CE/PE counts, aggregate OI/change/volume, index range/change, and participant-report availability.
-- `dataset_manifest.json`: source SHA-256, sessions, row counts, per-session CE/PE coverage, missing reports, lineage and limitations.
+- `window_feature_summary.csv`: current session plus prior completed 5- and 22-session aggregates. Current session is excluded from both lookback windows; incomplete windows are flagged and their aggregate values remain null.\n- `dataset_manifest.json`: source SHA-256, sessions, row counts, per-session CE/PE coverage, missing reports, lineage and limitations.
 
 ## Data rules
 1. FO Bhavcopy is the authoritative current-session contract universe. All 22 Phase 1 contract-master files were semantically stale and are excluded.
@@ -23,7 +23,7 @@ The pipeline uses only Python's standard library and expects the Phase 1 artifac
 4. NSE `Delta Factor` is retained as `contract_delta_factor`; it is not option Greek delta.
 5. Participant reports are market-wide, not NIFTY-specific seller positions.
 6. EOD snapshots cannot establish intraday order, trigger crossings, or actual seller entry premiums.
-7. All 22 aligned sessions and both CE/PE sides are required by default. Missing optional reports are recorded, not imputed.
+7. All 22 aligned sessions and both CE/PE sides are required by default. Missing optional reports are recorded, not imputed.\n8. A 22-session lookback requires 22 sessions before the current session (23 sessions total). With 22 total sessions, the latest record has only 21 prior sessions; the pipeline flags the 22-session context incomplete rather than filling it.
 
 ## Validation gate
 Exact session count; CE and PE in every session; unique session/instrument keys; separately normalized index and participant reports; row counts recorded in manifest; unit tests for parsing, schema and incomplete input. Model training and predictive claims remain out of scope pending a leakage-safe walk-forward design.
