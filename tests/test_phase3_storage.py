@@ -79,3 +79,65 @@ def test_requires_schema_v3_and_matching_session_key():
     row = sample()
     with pytest.raises(ValueError, match="does not match"):
         normalize_session("2026-11-17", row)
+
+
+def test_database_verification_matches_session_counts_and_fingerprints():
+    from datetime import date
+    from scripts.process_nifty_contracts import verify_persisted_sessions
+
+    source = {
+        "session_date": "2026-11-18",
+        "feature_schema_version": 3,
+        "contract_count": 2,
+        "dataset_sha256": "b" * 64,
+    }
+
+    class FakeConnection:
+        def execute(self, sql, params):
+            if "FROM nifty_historical_sessions" in sql:
+                return self
+            if "FROM nifty_option_contracts" in sql:
+                return self
+            raise AssertionError("unexpected SQL")
+
+        def fetchall(self):
+            # The verifier issues the session query before the contract-count query.
+            if not hasattr(self, "calls"):
+                self.calls = 1
+                return [(date(2026, 11, 18), 3, 2, "b" * 64)]
+            return [(date(2026, 11, 18), 2)]
+
+    result = verify_persisted_sessions(FakeConnection(), [source])
+    assert result["passed"] is True
+    assert result["expected_sessions"] == result["actual_sessions"] == 1
+    assert result["expected_contract_rows"] == result["actual_contract_rows"] == 2
+    assert result["fingerprints_checked"] == 1
+
+
+def test_database_verification_detects_fingerprint_mismatch():
+    from datetime import date
+    from scripts.process_nifty_contracts import verify_persisted_sessions
+
+    source = {
+        "session_date": "2026-11-18",
+        "feature_schema_version": 3,
+        "contract_count": 2,
+        "dataset_sha256": "b" * 64,
+    }
+
+    class FakeConnection:
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, sql, params):
+            return self
+
+        def fetchall(self):
+            self.calls += 1
+            if self.calls == 1:
+                return [(date(2026, 11, 18), 3, 2, "c" * 64)]
+            return [(date(2026, 11, 18), 2)]
+
+    result = verify_persisted_sessions(FakeConnection(), [source])
+    assert result["passed"] is False
+    assert {"session_date": "2026-11-18", "error": "dataset_sha256_mismatch"} in result["mismatches"]
