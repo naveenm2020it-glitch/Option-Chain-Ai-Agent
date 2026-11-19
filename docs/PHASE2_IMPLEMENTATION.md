@@ -54,7 +54,7 @@ Outputs:
 9. Forecast timestamp is explicitly after the current session close. This dataset must not be used to claim an intraday signal.
 10. Delta availability remains represented by a mask. Missing delta is not fabricated.
 11. Participant positioning is broad NSE index-derivatives context, not proof of NIFTY-only seller identity.
-12. OI/premium combinations are seller-flow proxies, not proof of who opened a position.\n13. Seller target metadata records the selected expiry, exact matched-contract count, and calendar days remaining to that expiry on the target date.\n14. Large expiry-day premium moves are retained as observed outcomes, but are reported separately; they are not silently clipped or discarded.
+12. OI/premium combinations are seller-flow proxies, not proof of who opened a position.\n13. Seller target metadata records the selected expiry, exact matched-contract count, and calendar days remaining to that expiry on the target date.\n14. Large expiry-day premium moves are retained as observed outcomes, but are reported separately; they are not silently clipped or discarded.\n15. The current +/-1% seller label band is provisional, not calibrated. The audit reports sensitivity at multiple bands, but no band is selected from validation/holdout results in Phase 2. Revisit economic labels and transaction-cost assumptions before supervised training.
 
 ## Completion boundary
 
