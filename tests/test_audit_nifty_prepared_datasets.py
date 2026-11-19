@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 from scripts.audit_nifty_prepared_datasets import audit_datasets
@@ -14,7 +15,7 @@ def _row(day, target_day, target, label, model):
         "target_class": label,
     }
     if model in ("ce_seller", "pe_seller"):
-        row["target_metadata"] = {"expiry": "2026-12-31", "matched_contract_count": 5, "days_to_expiry_on_target": 0}
+        row["target_metadata"] = {"expiry": "2026-12-31", "matched_contract_count": 5, "days_to_expiry_on_target": (date.fromisoformat("2026-12-31") - date.fromisoformat(target_day)).days}
     return row
 
 
