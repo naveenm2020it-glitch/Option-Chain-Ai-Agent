@@ -1,6 +1,6 @@
 import csv, io, json, tempfile, unittest, zipfile
 from pathlib import Path
-from scripts.normalize_eod_dataset import normalize, num, dte
+from scripts.normalize_eod_dataset import normalize, num, dte, window_rows
 
 class ParsingTests(unittest.TestCase):
     def test_date_formats(self):
