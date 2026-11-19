@@ -135,12 +135,9 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         for p in sorted(output.rglob("*")):
             if p.is_file():
                 z.write(p, p.relative_to(output))
-    manifest["archive"] = {
-        "file": archive.name, "bytes": archive.stat().st_size,
-        "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-    }
     (output / "trial-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    # Rebuild archive to include the final manifest containing its hash metadata.
+    # Rebuild once so the archive contains the final manifest. Its hash is
+    # emitted externally because embedding a ZIP's own hash is recursive.
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         for p in sorted(output.rglob("*")):
             if p.is_file():
