@@ -214,3 +214,56 @@ def test_status_reads_latest_collection_manifest_from_b2(monkeypatch, tmp_path):
     assert payload["data_mode"] == "validated_eod"
     assert payload["data_quality"]["session_date"] == "2026-11-13"
     assert payload["report_files"] == len(CORE_REPORTS)
+
+
+
+def test_phase3_database_health_reports_unconfigured_database(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    response = client.get("/api/phase3/health")
+    assert response.status_code == 200
+    assert response.json() == {
+        "database_configured": False,
+        "database_connected": False,
+        "phase3_sessions_table": False,
+        "phase3_contracts_table": False,
+    }
+
+
+def test_phase3_database_health_checks_tables_read_only(monkeypatch):
+    import psycopg
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://not-a-real-secret")
+    class FakeResult:
+        def fetchall(self):
+            return [("nifty_historical_sessions",)]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, query):
+            assert "information_schema.tables" in query
+            return FakeResult()
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: FakeConnection())
+    response = client.get("/api/phase3/health")
+    assert response.status_code == 200
+    assert response.json() == {
+        "database_configured": True,
+        "database_connected": True,
+        "phase3_sessions_table": True,
+        "phase3_contracts_table": False,
+    }
+
+
+def test_phase3_database_health_hides_connection_error(monkeypatch):
+    import psycopg
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://not-a-real-secret")
+    def fail_connect(*args, **kwargs):
+        raise RuntimeError("sensitive connection details")
+    monkeypatch.setattr(psycopg, "connect", fail_connect)
+    response = client.get("/api/phase3/health")
+    assert response.status_code == 503
+    assert "sensitive connection details" not in response.text
