@@ -190,6 +190,10 @@ def audit_datasets(root: Path) -> dict[str, Any]:
                 days = meta.get("days_to_expiry_on_target")
                 if isinstance(days, bool) or not isinstance(days, int) or days < 0:
                     raise ValueError(f"{model}: invalid days_to_expiry_on_target metadata")
+                from datetime import date
+                actual_days = (date.fromisoformat(meta["expiry"]) - date.fromisoformat(row["target_date"])).days
+                if days != actual_days:
+                    raise ValueError(f"{model}: expiry horizon does not match expiry and target_date")
                 expiry_days.append(days)
             total = len(values)
             neutral_share = counts.get("NEUTRAL", 0) / total
