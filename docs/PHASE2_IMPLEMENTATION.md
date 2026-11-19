@@ -59,3 +59,7 @@ Outputs:
 ## Completion boundary
 
 Passing the synthetic regression suite validates code paths and invariants, not the live historical checkpoint. Phase 2 dataset production is complete only after the full 494-session checkpoint is run through the builder and its output manifest is reviewed. Model training remains disabled.
+
+
+## CI note
+The validation workflow installs dependencies explicitly and does not depend on a repository requirements file.
