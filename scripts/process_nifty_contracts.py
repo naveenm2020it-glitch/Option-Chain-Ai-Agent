@@ -21,8 +21,8 @@ def main() -> int:
 
     checkpoint_path = Path(args.checkpoint)
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-    if checkpoint.get("schema_version") != 3:
-        raise SystemExit("Checkpoint schema_version must be 3")
+    if checkpoint.get("schema_version") != 2:
+        raise SystemExit("Checkpoint schema_version must be 2 (feature rows remain schema-v3)")
     features = checkpoint.get("features")
     verified = checkpoint.get("verified", {})
     if not isinstance(features, dict) or not features:
