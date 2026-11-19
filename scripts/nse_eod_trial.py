@@ -18,8 +18,10 @@ HEADERS = {
 }
 TIMEOUT = 30
 
-# The four core reports must all belong to the same exchange session.
-CORE = ("fo_udiff_bhavcopy", "fo_participant_oi", "fo_participant_volume", "fo_market_activity")
+# The FO bhavcopy is the minimum required market dataset. Other reports are optional
+# and their availability is measured independently; missing participant files must
+# not discard otherwise valid option-chain sessions.
+CORE = ("fo_udiff_bhavcopy",)
 
 
 def specs(day: date):
@@ -85,6 +87,7 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
     session.headers.update(HEADERS)
     output.mkdir(parents=True, exist_ok=True)
     records, scan_errors = [], []
+    report_coverage = {name: {"downloaded": 0, "missing": 0} for name, _, _ in specs(analysis_date)}
     cursor = analysis_date
     scanned = 0
 
@@ -94,6 +97,9 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         if cursor.weekday() < 5:
             day_dir, reports, errors, missing = fetch_session(session, cursor, output)
             scan_errors.extend([{"date": cursor.isoformat(), **e} for e in errors])
+            for report_name, report_info in reports.items():
+                key = "downloaded" if report_info.get("status") == "downloaded" else "missing"
+                report_coverage[report_name][key] += 1
             if not missing:
                 records.append({
                     "session_date": cursor.isoformat(),
@@ -119,6 +125,8 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         "aligned_sessions_downloaded": len(records),
         "scan_calendar_days": scanned,
         "core_reports": list(CORE),
+        "optional_reports": [name for name in report_coverage if name not in CORE],
+        "report_coverage_over_scanned_weekdays": report_coverage,
         "sessions": records,
         "errors": scan_errors,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -156,4 +164,4 @@ if __name__ == "__main__":
     print(json.dumps({"complete": result["complete"], "aligned_sessions": result["aligned_sessions_downloaded"],
                       "archive": str(archive), "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}, indent=2))
     if not result["complete"]:
-        raise SystemExit(f"Only {result['aligned_sessions_downloaded']} of {args.sessions} aligned sessions found.")
+        print(f"WARNING: only {result['aligned_sessions_downloaded']} of {args.sessions} aligned sessions found; diagnostic manifest retained.")
