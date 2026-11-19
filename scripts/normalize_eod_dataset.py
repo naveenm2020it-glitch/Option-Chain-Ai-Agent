@@ -69,7 +69,7 @@ def writecsv(path, fields, rows):
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore"); w.writeheader()
         w.writerows({k:r.get(k) for k in fields} for r in rows)
 
-WINDOW_FIELDS = "session_date current_nifty_change_pct prior_5_sessions_available prior_5_avg_nifty_change_pct prior_5_avg_ce_oi_change prior_5_avg_pe_oi_change prior_5_ce_volume prior_5_pe_volume prior_22_sessions_available prior_22_avg_nifty_change_pct prior_22_avg_ce_oi_change prior_22_avg_pe_oi_change prior_22_ce_volume prior_22_pe_volume".split()
+WINDOW_FIELDS = "session_date current_nifty_change_pct prior_5_sessions_available prior_5_sessions_complete prior_5_avg_nifty_change_pct prior_5_avg_ce_oi_change prior_5_avg_pe_oi_change prior_5_ce_volume prior_5_pe_volume prior_22_sessions_available prior_22_sessions_complete prior_22_avg_nifty_change_pct prior_22_avg_ce_oi_change prior_22_avg_pe_oi_change prior_22_ce_volume prior_22_pe_volume".split()
 
 def window_rows(features):
     """For each date, summarize only preceding completed sessions (no look-ahead)."""
