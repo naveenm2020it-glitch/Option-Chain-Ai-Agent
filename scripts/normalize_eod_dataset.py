@@ -69,6 +69,27 @@ def writecsv(path, fields, rows):
         w=csv.DictWriter(f,fieldnames=fields,extrasaction="ignore"); w.writeheader()
         w.writerows({k:r.get(k) for k in fields} for r in rows)
 
+WINDOW_FIELDS = "session_date current_nifty_change_pct prior_5_sessions_available prior_5_avg_nifty_change_pct prior_5_avg_ce_oi_change prior_5_avg_pe_oi_change prior_5_ce_volume prior_5_pe_volume prior_22_sessions_available prior_22_avg_nifty_change_pct prior_22_avg_ce_oi_change prior_22_avg_pe_oi_change prior_22_ce_volume prior_22_pe_volume".split()
+
+def window_rows(features):
+    """For each date, summarize only preceding completed sessions (no look-ahead)."""
+    out=[]
+    for i,current in enumerate(features):
+        row={"session_date":current["session_date"],"current_nifty_change_pct":current.get("nifty_change_pct")}
+        for n in (5,22):
+            prior=features[max(0,i-n):i]
+            complete=len(prior)==n
+            row[f"prior_{n}_sessions_available"]=len(prior)
+            row[f"prior_{n}_sessions_complete"]=complete
+            for source,target in (("nifty_change_pct","avg_nifty_change_pct"),("ce_oi_change","avg_ce_oi_change"),("pe_oi_change","avg_pe_oi_change")):
+                vals=[r.get(source) for r in prior if r.get(source) is not None]
+                row[f"prior_{n}_{target}"]=round(sum(vals)/len(vals),6) if complete and len(vals)==n else None
+            for source,target in (("ce_volume","ce_volume"),("pe_volume","pe_volume")):
+                vals=[r.get(source) for r in prior if r.get(source) is not None]
+                row[f"prior_{n}_{target}"]=sum(vals) if complete and len(vals)==n else None
+        out.append(row)
+    return out
+
 def normalize(archive: Path, output: Path, expected_sessions=22):
     output.mkdir(parents=True,exist_ok=True)
     z=zipfile.ZipFile(archive)
@@ -124,8 +145,8 @@ def normalize(archive: Path, output: Path, expected_sessions=22):
         total=lambda rs,k:sum((r.get(k) or 0) for r in rs)
         hi,lo=idx.get("high"),idx.get("low"); close=idx.get("close")
         features.append({"session_date":day,"nifty_open":idx.get("open"),"nifty_high":hi,"nifty_low":lo,"nifty_close":close,"nifty_change_pct":idx.get("change_pct"),"nifty_range_points":round(hi-lo,4) if hi is not None and lo is not None else None,"nifty_range_pct":round((hi-lo)/close*100,6) if hi is not None and lo is not None and close else None,"nifty_option_contracts":len(rows),"ce_contracts":len(ce),"pe_contracts":len(pe),"ce_open_interest":total(ce,"open_interest"),"pe_open_interest":total(pe,"open_interest"),"ce_oi_change":total(ce,"oi_change"),"pe_oi_change":total(pe,"oi_change"),"ce_volume":total(ce,"traded_volume"),"pe_volume":total(pe,"traded_volume"),"ce_positive_oi_change_contracts":sum((r.get("oi_change") or 0)>0 for r in ce),"pe_positive_oi_change_contracts":sum((r.get("oi_change") or 0)>0 for r in pe),"participant_oi_available":(day,"oi") in pdates,"participant_volume_available":(day,"volume") in pdates})
-    writecsv(output/"nifty_options_eod.csv",OPTION_FIELDS,options); writecsv(output/"nifty_index_eod.csv",INDEX_FIELDS,indexes); writecsv(output/"participant_positioning_eod.csv",PARTICIPANT_FIELDS,participants); writecsv(output/"session_feature_summary.csv",FEATURE_FIELDS,features)
-    manifest={"schema_version":1,"pipeline":"phase2_eod_normalization","source_archive":archive.name,"source_archive_sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),"source_analysis_date":source.get("analysis_date"),"session_count":len(sessions),"sessions":sessions,"selected_expiry_in_phase1_trial":source.get("selected_expiry"),"contract_universe_source":"fo_bhavcopy","contract_master_used":False,"option_contract_rows":len(options),"index_rows":len(indexes),"participant_rows":len(participants),"session_counts":counts,"missing_reports":dict(missing),"outputs":{"nifty_options_eod.csv":len(options),"nifty_index_eod.csv":len(indexes),"participant_positioning_eod.csv":len(participants),"session_feature_summary.csv":len(features)},"limitations":["Participant reports are market-wide aggregates, not NIFTY-only positions.","Delta Factor is retained as contract_delta_factor; it is not option Greek delta.","EOD snapshots cannot establish intraday sequence or trigger crossings.","Stale contract-master files are excluded.","No seller entry premium is inferred from aggregate OI."],"created_utc":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")}
+    windows=window_rows(features)\n    writecsv(output/"nifty_options_eod.csv",OPTION_FIELDS,options); writecsv(output/"nifty_index_eod.csv",INDEX_FIELDS,indexes); writecsv(output/"participant_positioning_eod.csv",PARTICIPANT_FIELDS,participants); writecsv(output/"session_feature_summary.csv",FEATURE_FIELDS,features); writecsv(output/"window_feature_summary.csv",WINDOW_FIELDS,windows)
+    manifest={"schema_version":1,"pipeline":"phase2_eod_normalization","source_archive":archive.name,"source_archive_sha256":hashlib.sha256(archive.read_bytes()).hexdigest(),"source_analysis_date":source.get("analysis_date"),"session_count":len(sessions),"sessions":sessions,"selected_expiry_in_phase1_trial":source.get("selected_expiry"),"contract_universe_source":"fo_bhavcopy","contract_master_used":False,"option_contract_rows":len(options),"index_rows":len(indexes),"participant_rows":len(participants),"session_counts":counts,"missing_reports":dict(missing),"outputs":{"nifty_options_eod.csv":len(options),"nifty_index_eod.csv":len(indexes),"participant_positioning_eod.csv":len(participants),"session_feature_summary.csv":len(features),"window_feature_summary.csv":len(windows)},"latest_prior_5_sessions":windows[-1]["prior_5_sessions_available"],"latest_prior_22_sessions":windows[-1]["prior_22_sessions_available"],"prior_22_context_complete":windows[-1]["prior_22_sessions_complete"],"phase2_normalization_complete":True,"phase2_feature_context_complete":windows[-1]["prior_22_sessions_complete"],"limitations":["Participant reports are market-wide aggregates, not NIFTY-only positions.","Delta Factor is retained as contract_delta_factor; it is not option Greek delta.","EOD snapshots cannot establish intraday sequence or trigger crossings.","Stale contract-master files are excluded.","No seller entry premium is inferred from aggregate OI."],"created_utc":datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z")}
     (output/"dataset_manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
     return manifest
 
