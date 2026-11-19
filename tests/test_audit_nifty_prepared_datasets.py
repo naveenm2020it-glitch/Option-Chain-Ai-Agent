@@ -14,7 +14,7 @@ def _row(day, target_day, target, label, model):
         "target_class": label,
     }
     if model in ("ce_seller", "pe_seller"):
-        row["target_metadata"] = {"expiry": "2026-12-31", "matched_contract_count": 5}
+        row["target_metadata"] = {"expiry": "2026-12-31", "matched_contract_count": 5, "days_to_expiry_on_target": 0}
     return row
 
 
