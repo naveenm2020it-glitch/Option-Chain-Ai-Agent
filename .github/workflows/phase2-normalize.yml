@@ -48,9 +48,11 @@ jobs:
           path: phase1-input
       - name: Repackage downloaded artifact contents
         run: |
-          cd phase1-input
-          zip -qr ../phase1-input.zip .
-          cd ..
+          MANIFEST="$(find phase1-input -name trial-manifest.json -print -quit)"
+          test -n "$MANIFEST"
+          ROOT="$(dirname "$(dirname "$MANIFEST")")"
+          cd "$ROOT"
+          zip -qr "$GITHUB_WORKSPACE/phase1-input.zip" .
       - name: Normalize all aligned EOD sessions
         run: >-
           python scripts/normalize_eod_dataset.py
