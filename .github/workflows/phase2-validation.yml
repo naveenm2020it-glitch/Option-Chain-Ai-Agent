@@ -70,7 +70,12 @@ jobs:
             --checkpoint data/historical_audit/checkpoint.json \
             --output-dir data/prepared_models \
             --expected-sessions 494
-      - name: Audit prepared dataset integrity and label quality\n        run: |\n          python scripts/audit_nifty_prepared_datasets.py \\\n            --input-dir data/prepared_models \\\n            --output data/prepared_models/quality_audit.json\n      - name: Publish Phase 2 datasets and manifest
+      - name: Audit prepared dataset integrity and label quality
+        run: |
+          python scripts/audit_nifty_prepared_datasets.py \
+            --input-dir data/prepared_models \
+            --output data/prepared_models/quality_audit.json
+      - name: Publish Phase 2 datasets and manifest
         uses: actions/upload-artifact@v4
         with:
           name: phase2-prepared-datasets-${{ github.run_id }}
