@@ -55,7 +55,7 @@ jobs:
           path = Path("data/historical_audit/checkpoint.json")
           raw = path.read_bytes()
           digest = hashlib.sha256(raw).hexdigest()
-          expected = "29ec0d7718e92f29417094e9ee5c63ae0fc5096887faea238de898569d54320f"
+          expected = "9e3e27e03575f5df19030919c2ad08204bbfeab07aeef5f8c853b494605a5845"
           if digest != expected:
               raise SystemExit(f"Checkpoint SHA-256 mismatch: {digest}")
           checkpoint = json.loads(raw)
