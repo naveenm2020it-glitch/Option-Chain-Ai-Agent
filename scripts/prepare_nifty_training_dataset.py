@@ -119,6 +119,7 @@ def _seller_premium_target(
         return {
             "premium_return": _weighted_median(values),
             "expiry": expiry,
+            "days_to_expiry_on_target": (date.fromisoformat(expiry) - date.fromisoformat(next_date)).days,
             "matched_contract_count": len(values),
             "volume_weight_total": sum(weight for _, weight in values),
         }
@@ -236,12 +237,14 @@ def build_datasets(checkpoint: dict, output_dir: Path, expected_sessions: int = 
                 targets[f"{side.lower()}_seller_class"] = _seller_label(target["premium_return"])
                 metadata[f"{side.lower()}_target_expiry"] = target["expiry"]
                 metadata[f"{side.lower()}_matched_contract_count"] = target["matched_contract_count"]
+                metadata[f"{side.lower()}_days_to_expiry_on_target"] = target["days_to_expiry_on_target"]
             else:
                 targets[f"{side.lower()}_premium_return"] = None
                 targets[f"{side.lower()}_seller_edge"] = None
                 targets[f"{side.lower()}_seller_class"] = None
                 metadata[f"{side.lower()}_target_expiry"] = None
                 metadata[f"{side.lower()}_matched_contract_count"] = 0
+                metadata[f"{side.lower()}_days_to_expiry_on_target"] = None
         prepared.append({
             "session_date": day,
             "forecast_as_of": "after_close",
@@ -299,6 +302,7 @@ def build_datasets(checkpoint: dict, output_dir: Path, expected_sessions: int = 
                     "target_metadata": ({
                         "expiry": row["metadata"].get(f"{model_name.split('_')[0]}_target_expiry"),
                         "matched_contract_count": row["metadata"].get(f"{model_name.split('_')[0]}_matched_contract_count"),
+                        "days_to_expiry_on_target": row["metadata"].get(f"{model_name.split('_')[0]}_days_to_expiry_on_target"),
                     } if model_name in ("ce_seller", "pe_seller") else None),
                 })
             model_dir = output_dir / model_name
