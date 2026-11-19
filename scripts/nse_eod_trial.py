@@ -152,6 +152,10 @@ def inspect_contract_master(payload: bytes, report_day: date, selected_expiry: s
     return result
 
 
+def has_both_option_sides(counts):
+    return counts.get("CE", 0) > 0 and counts.get("PE", 0) > 0
+
+
 def inspect_fo_bhavcopy(payload: bytes, report_day: date, selected_expiry: str):
     try:
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
@@ -169,7 +173,21 @@ def inspect_fo_bhavcopy(payload: bytes, report_day: date, selected_expiry: str):
     result["member"] = member
     result["row_count"] = len(rows)
     if result.get("valid"):
-        result["selected_expiry_present"] = selected_expiry in result["current_or_future_expiries"]
+        symbol_col = result["symbol_column"]
+        expiry_col = result["expiry_column"]
+        option_col = result.get("option_type_column")
+        selected_day = date.fromisoformat(selected_expiry)
+        selected_counts = Counter()
+        for row in rows:
+            if str(row.get(symbol_col, "")).strip().upper() != "NIFTY":
+                continue
+            if parse_expiry(row.get(expiry_col)) != selected_day:
+                continue
+            option_type = str(row.get(option_col, "")).strip().upper() if option_col else ""
+            if option_type in {"CE", "PE"}:
+                selected_counts[option_type] += 1
+        result["selected_expiry_contract_counts"] = dict(selected_counts)
+        result["selected_expiry_present"] = has_both_option_sides(selected_counts)
     return result
 
 
@@ -270,6 +288,7 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
                     "status": "aligned",
                     "fo_bhavcopy_usable": reports["fo_udiff_bhavcopy"].get("analysis_usable", False),
                     "selected_expiry_present_in_fo": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("selected_expiry_present"),
+                    "selected_expiry_contract_counts": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("selected_expiry_contract_counts", {}),
                     "expiry_options_from_fo": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("current_or_future_expiries", []),
                     "contract_master_usable": reports.get(CONTRACT_MASTER, {}).get("analysis_usable", False),
                     "selected_expiry_present_in_master": reports.get(CONTRACT_MASTER, {}).get("semantic_validation", {}).get("selected_expiry_present", False),
