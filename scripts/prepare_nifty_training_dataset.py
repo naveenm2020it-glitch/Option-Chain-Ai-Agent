@@ -286,6 +286,7 @@ def build_datasets(checkpoint: dict, output_dir: Path, expected_sessions: int = 
                     continue
                 selected.append({
                     "session_date": row["session_date"],
+                    "forecast_as_of": row["forecast_as_of"],
                     "target_date": row["target_date"],
                     "features": row["features"],
                     "target": value,
