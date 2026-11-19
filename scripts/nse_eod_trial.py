@@ -259,6 +259,7 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
                     "status": "aligned",
                     "selected_expiry_present_in_fo": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("selected_expiry_present"),
                     "contract_master_usable": reports.get(CONTRACT_MASTER, {}).get("analysis_usable", False),
+                    "selected_expiry_present_in_master": reports.get(CONTRACT_MASTER, {}).get("semantic_validation", {}).get("selected_expiry_present", False),
                     "reports": reports,
                 })
             else:
@@ -272,9 +273,13 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         cursor -= timedelta(days=1)
 
     records.sort(key=lambda x: x["session_date"])
-    analysis_ready = (
+    latest_record = max(records, key=lambda r: r["session_date"]) if records else None
+    analysis_ready = bool(
         len(records) == sessions
-        and all(r.get("contract_master_usable") for r in records)
+        and latest_record
+        and latest_record.get("contract_master_usable")
+        and latest_record.get("selected_expiry_present_in_master")
+        and latest_record.get("selected_expiry_present_in_fo")
     )
     manifest = {
         "schema_version": 2,
@@ -287,6 +292,11 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         "core_reports": list(CORE),
         "critical_mapping_report": CONTRACT_MASTER,
         "report_coverage_over_valid_sessions": report_coverage,
+        "contract_master_valid_sessions": sum(bool(r.get("contract_master_usable")) for r in records),
+        "latest_session_expiry_match": {
+            "contract_master": bool(latest_record and latest_record.get("selected_expiry_present_in_master")),
+            "fo_bhavcopy": bool(latest_record and latest_record.get("selected_expiry_present_in_fo")),
+        },
         "sessions": records,
         "skipped_dates": skipped_dates,
         "errors": scan_errors,
