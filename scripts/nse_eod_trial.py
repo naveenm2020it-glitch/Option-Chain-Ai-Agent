@@ -224,6 +224,17 @@ def fetch_session(session: requests.Session, day: date, root: Path, selected_exp
     return day_dir, found, errors, missing_core
 
 
+def evaluate_analysis_readiness(records, requested_sessions: int):
+    latest = max(records, key=lambda r: r["session_date"]) if records else None
+    ready = bool(
+        len(records) == requested_sessions
+        and latest
+        and latest.get("fo_bhavcopy_usable")
+        and latest.get("selected_expiry_present_in_fo")
+    )
+    return ready, latest
+
+
 def run(analysis_date: date, sessions: int, expiry: str, output: Path):
     if not 1 <= sessions <= 22:
         raise ValueError("sessions must be between 1 and 22")
@@ -257,9 +268,12 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
                 records.append({
                     "session_date": cursor.isoformat(),
                     "status": "aligned",
+                    "fo_bhavcopy_usable": reports["fo_udiff_bhavcopy"].get("analysis_usable", False),
                     "selected_expiry_present_in_fo": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("selected_expiry_present"),
+                    "expiry_options_from_fo": reports["fo_udiff_bhavcopy"]["semantic_validation"].get("current_or_future_expiries", []),
                     "contract_master_usable": reports.get(CONTRACT_MASTER, {}).get("analysis_usable", False),
                     "selected_expiry_present_in_master": reports.get(CONTRACT_MASTER, {}).get("semantic_validation", {}).get("selected_expiry_present", False),
+                    "contract_universe_source": "fo_bhavcopy",
                     "reports": reports,
                 })
             else:
@@ -273,14 +287,11 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         cursor -= timedelta(days=1)
 
     records.sort(key=lambda x: x["session_date"])
-    latest_record = max(records, key=lambda r: r["session_date"]) if records else None
-    analysis_ready = bool(
-        len(records) == sessions
-        and latest_record
-        and latest_record.get("contract_master_usable")
-        and latest_record.get("selected_expiry_present_in_master")
-        and latest_record.get("selected_expiry_present_in_fo")
-    )
+    # The dated contract-master endpoint returned stale 2016-2021 rows in this
+    # audit. FO Bhavcopy itself carries symbol, expiry, strike, CE/PE and lot-size
+    # fields for contracts actually present in that session, so it is the
+    # authoritative fallback for the EOD contract universe and expiry selector.
+    analysis_ready, latest_record = evaluate_analysis_readiness(records, sessions)
     manifest = {
         "schema_version": 2,
         "purpose": "isolated_eod_data_quality_trial",
@@ -293,6 +304,8 @@ def run(analysis_date: date, sessions: int, expiry: str, output: Path):
         "critical_mapping_report": CONTRACT_MASTER,
         "report_coverage_over_valid_sessions": report_coverage,
         "contract_master_valid_sessions": sum(bool(r.get("contract_master_usable")) for r in records),
+        "contract_universe_source": "fo_bhavcopy",
+        "expiry_options": latest_record.get("expiry_options_from_fo", []) if latest_record else [],
         "latest_session_expiry_match": {
             "contract_master": bool(latest_record and latest_record.get("selected_expiry_present_in_master")),
             "fo_bhavcopy": bool(latest_record and latest_record.get("selected_expiry_present_in_fo")),
@@ -330,6 +343,10 @@ if __name__ == "__main__":
         "complete": result["complete"],
         "analysis_ready": result["analysis_ready"],
         "aligned_sessions": result["aligned_sessions_downloaded"],
+        "contract_master_valid_sessions": result["contract_master_valid_sessions"],
+        "contract_universe_source": result["contract_universe_source"],
+        "expiry_options": result["expiry_options"],
+        "latest_session_expiry_match": result["latest_session_expiry_match"],
         "archive": str(archive),
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
     }, indent=2))
