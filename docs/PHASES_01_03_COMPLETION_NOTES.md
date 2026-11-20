@@ -43,6 +43,8 @@ The 2026-11-20 implementation introduced `contract_universe_version=1` and all-s
 
 `scripts/run_full_historical_audit.py` resumes the existing checkpoint in bounded batches of at most 25 archives, stops safely on a B2 request-cap response, and returns success only when all 494 sessions, feature extraction, contract-universe version and all-strike coverage gates pass. It does not write to B2 or fetch new NSE data.
 
+`.github/workflows/phase1-3-acceptance-audit.yml` runs this bounded audit on the dedicated acceptance branch or by manual dispatch and publishes the checkpoint and coverage artifact. The original `nifty-historical-integrity-audit.yml` remains manual-only and unchanged in its operational trigger policy.
+
 **Phase 01 status: implementation substantially complete; current all-strike audit rerun and evidence publication pending.**
 
 ## Phase 02 — User configuration and data orchestration
@@ -87,6 +89,7 @@ The agreed Phase 02 scope also requires a user-selectable analysis date, a truth
 - PR #36 and PR #37 added regressions for stored contract counts and the ten-session remote ingestion batch guard.
 - `scripts/ingest_phase3_remote.py` validates the all-strike coverage artifact before sending bounded batches to the protected Render API.
 - `scripts/process_nifty_contracts.py` remains read-only by default; database writes require explicit `--write-db`.
+- `.github/workflows/phase3-remote-historical-ingestion.yml` now provides a manual, authenticated ingestion path from a successful all-strike audit artifact. It requires the existing Render `PAPER_INGEST_TOKEN` to be stored as a GitHub Actions repository secret; it never stores the token in source code.
 
 ### Production boundary
 
@@ -99,10 +102,11 @@ The Render database resource reviewed is on the Free plan and reports an expiry 
 1. Ensure the deployed Render service uses the PostgreSQL Internal Database URL as `DATABASE_URL`.
 2. Confirm `/api/phase3/health` reports the database connected and both Phase 3 tables present.
 3. Run the current all-strike audit and obtain its current checkpoint and coverage artifact.
-4. Use the protected remote ingestion client with the existing secret managed securely; do not paste tokens into GitHub files, logs or chat.
-5. Ingest in batches of no more than ten sessions.
-6. Verify all 494 session records, the total contract rows, per-session contract counts and SHA-256 fingerprints.
-7. Confirm read-back from PostgreSQL and preserve the verification report.
+4. Store the existing Render `PAPER_INGEST_TOKEN` in GitHub Actions secrets under the same name; do not paste tokens into GitHub files, logs or chat.
+5. Run `.github/workflows/phase3-remote-historical-ingestion.yml` with the successful audit run ID.
+6. Ingest in batches of no more than ten sessions.
+7. Verify all 494 session records, the total contract rows, per-session contract counts and SHA-256 fingerprints.
+8. Confirm read-back from PostgreSQL and preserve the verification report.
 
 **Phase 03 status: normalization, schema and ingestion code are implemented; production schema/data persistence is not yet verified.**
 
