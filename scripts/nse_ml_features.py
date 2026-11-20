@@ -9,6 +9,7 @@ import pandas as pd
 
 
 FEATURE_SCHEMA_VERSION = 3
+CONTRACT_UNIVERSE_VERSION = 1
 REQUIRED_COLUMNS = {
     "TCKRSYMB", "FININSTRMTP", "XPRYDT", "STRKPRIC", "OPTNTP", "CLSPRIC",
     "PRVSCLSGPRIC", "OPNINTRST", "CHNGINOPNINTRST",
@@ -279,6 +280,10 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     if near.empty:
         raise ValueError("No usable near-ATM NIFTY options found")
 
+    # Keep the existing near-ATM/near-expiry subset for contextual aggregate
+    # features, but preserve every unexpired NIFTY CE/PE contract for storage.
+    # This prevents the historical contract table from silently dropping wings
+    # and farther expiries needed by all-strike analysis.
     all_near = option_frame.loc[
         (option_frame["moneyness"].abs() <= 0.03)
         & ((option_frame["XPRYDT"] - session_date).map(lambda value: value.days) <= 45)
@@ -306,6 +311,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
 
     near = prepare_option_data(near)
     all_near = prepare_option_data(all_near)
+    all_contracts = prepare_option_data(option_frame)
 
     def side_metrics(data: pd.DataFrame, side: str) -> dict[str, float]:
         part = data.loc[data["OPTNTP"] == side]
@@ -339,6 +345,10 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     all_near["delta_factor"] = [
         delta_map.get((row["XPRYDT"].isoformat(), round(float(row["STRKPRIC"]), 2), str(row["OPTNTP"]).upper()), 0.0)
         for _, row in all_near.iterrows()
+    ]
+    all_contracts["delta_factor"] = [
+        delta_map.get((row["XPRYDT"].isoformat(), round(float(row["STRKPRIC"]), 2), str(row["OPTNTP"]).upper()), 0.0)
+        for _, row in all_contracts.iterrows()
     ]
     ce_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "CE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "CE", "delta_factor"]).sum())
     pe_delta_equiv_oi = float((all_near.loc[all_near["OPTNTP"] == "PE", "OPNINTRST"] * all_near.loc[all_near["OPTNTP"] == "PE", "delta_factor"]).sum())
@@ -419,6 +429,9 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         "future_basis_pct": future_basis,
         "future_days_to_expiry": future_days_to_expiry,
         "all_expiry_contract_count": float(len(all_near)),
+        "stored_contract_count": float(len(all_contracts)),
+        "stored_ce_contract_count": float((all_contracts["OPTNTP"] == "CE").sum()),
+        "stored_pe_contract_count": float((all_contracts["OPTNTP"] == "PE").sum()),
         "delta_data_available": 1.0 if delta_map else 0.0,
         "delta_matched_contract_count": float(delta_matched_contract_count),
         "delta_match_coverage": _safe_ratio(delta_matched_contract_count, len(all_near)),
@@ -428,7 +441,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     }
 
     contracts = []
-    for row in all_near.itertuples(index=False):
+    for row in all_contracts.itertuples(index=False):
         values = row._asdict()
         contracts.append({
             "expiry": values["XPRYDT"].isoformat(),
@@ -450,6 +463,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
     return {
         "session_date": session_date.isoformat(),
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "contract_universe_version": CONTRACT_UNIVERSE_VERSION,
         "features": features,
         "contracts": contracts,
     }
