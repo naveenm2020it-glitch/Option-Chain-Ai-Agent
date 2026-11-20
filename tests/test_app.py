@@ -457,6 +457,7 @@ def test_phase2_config_returns_eod_date_expiries_and_signed_archive(monkeypatch)
     assert payload["analysis_date"] == "2026-11-19"
     assert payload["cutoff"] == "after_close"
     assert payload["intraday_cutoff_supported"] is False
+    assert payload["analysis_engine_connected"] is False
     assert payload["expiry_options"] == ["2026-11-26", "2026-12-03"]
     assert payload["selected_expiry"] == "2026-11-26"
     assert payload["contract_count"] == 3
