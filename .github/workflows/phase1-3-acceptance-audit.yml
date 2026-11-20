@@ -103,7 +103,7 @@ jobs:
           key: ${{ steps.audit_cache.outputs.cache-primary-key }}
 
       - name: Fail when audit stopped for a non-resumable reason
-        if: always() && steps.audit_runner.outputs.exit_code != '' && steps.audit_runner.outputs.exit_code != '0' && steps.audit_runner.outputs.exit_code != '6'
+        if: always() && steps.audit_runner.outcome == 'failure' && steps.audit_runner.outputs.exit_code != '6'
         run: |
           echo "Audit stopped with non-resumable exit code ${{ steps.audit_runner.outputs.exit_code }}; inspect the coverage artifact."
           exit 1
