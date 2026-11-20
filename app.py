@@ -74,6 +74,35 @@ def phase3_database_health():
     }
 
 
+@app.post("/api/phase3/initialize-schema")
+def initialize_phase3_schema(authorization: str | None = Header(default=None)):
+    """Create only the Phase 3 tables/indexes; requires the existing paper-ingest bearer token."""
+    token = os.getenv("PAPER_INGEST_TOKEN")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not token or not secrets.compare_digest(supplied, token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+    if not database.database_configured():
+        raise HTTPException(status_code=503, detail="Database persistence is not configured.")
+
+    url = os.environ["DATABASE_URL"]
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    try:
+        import psycopg
+        from phase3_storage import ensure_phase3_schema
+
+        with psycopg.connect(url, connect_timeout=5) as conn:
+            ensure_phase3_schema(conn)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Phase 3 schema initialization failed.")
+
+    return {
+        "schema_initialized": True,
+        "historical_rows_loaded": False,
+        "tables": ["nifty_historical_sessions", "nifty_option_contracts"],
+    }
+
+
 @app.get("/api/status")
 def status():
     report_root = DATA_DIR / "nse_reports"
