@@ -67,4 +67,4 @@ def test_phase3_remote_ingestion_is_manual_and_uses_protected_secret():
     assert "scripts/ingest_phase3_remote.py" in workflow
     assert "option-chain-ai-agent.onrender.com" in workflow
     assert "--batch-size 10" in workflow
-    assert "echo" not in workflow.lower() or "PAPER_INGEST_TOKEN" not in workflow.lower()
+    assert 'echo "$PAPER_INGEST_TOKEN"' not in workflow
