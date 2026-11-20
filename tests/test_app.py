@@ -512,3 +512,16 @@ def test_phase2_config_rejects_expiry_not_in_selected_archive(monkeypatch):
     response = client.get("/api/config/options?expiry=2026-12-03")
     assert response.status_code == 422
     assert "not present" in response.json()["detail"]
+
+
+def test_dashboard_exposes_phase2_historical_configuration():
+    page = client.get("/")
+    script = client.get("/static/app.js")
+    assert page.status_code == 200
+    assert 'id="analysis-date"' in page.text
+    assert 'id="analysis-cutoff"' in page.text
+    assert 'id="analysis-expiry"' in page.text
+    assert 'id="download-eod-archive"' in page.text
+    assert script.status_code == 200
+    assert "/api/config/options?" in script.text
+    assert "after_close" in script.text
