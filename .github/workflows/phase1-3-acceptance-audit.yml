@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 concurrency:
   group: phase1-3-all-strike-audit
@@ -21,6 +21,8 @@ jobs:
   phase1-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      audit_exit_code: ${{ steps.audit_runner.outputs.exit_code }}
     env:
       B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
       B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
@@ -70,14 +72,19 @@ jobs:
           PY
 
       - name: Rebuild current all-strike checkpoint and enforce Phase 1 gates
+        id: audit_runner
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set +e
           python scripts/run_full_historical_audit.py \
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
             --batch-size 25 \
             --max-batches 1
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
 
       - name: Publish current checkpoint and coverage evidence
         if: always()
@@ -94,3 +101,73 @@ jobs:
         with:
           path: data/historical_audit/
           key: ${{ steps.audit_cache.outputs.cache-primary-key }}
+
+      - name: Fail when audit stopped for a non-resumable reason
+        if: always() && steps.audit_runner.outputs.exit_code != '' && steps.audit_runner.outputs.exit_code != '0' && steps.audit_runner.outputs.exit_code != '6'
+        run: |
+          echo "Audit stopped with non-resumable exit code ${{ steps.audit_runner.outputs.exit_code }}; inspect the coverage artifact."
+          exit 1
+
+  continue-audit:
+    needs: phase1-audit
+    if: needs.phase1-audit.result == 'success' && needs.phase1-audit.outputs.audit_exit_code == '6'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Download this batch's checkpoint report
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-all-strike-historical-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: audit-artifact
+
+      - name: Continue only when the previous batch made safe progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          AUDIT_BRANCH: phase1-3/acceptance-audit-notes
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          reports = list(Path("audit-artifact").rglob("coverage.json"))
+          if len(reports) != 1:
+              raise SystemExit(f"Expected one coverage.json, found {len(reports)}")
+          report = json.loads(reports[0].read_text(encoding="utf-8"))
+
+          if report.get("b2_cap_blocked"):
+              print("B2 request cap reached. Stop and preserve the checkpoint.")
+              raise SystemExit(0)
+          if report.get("feature_error_count", 0) or report.get("failed_session_count", 0):
+              print("Feature/archive errors detected. Stop for investigation.")
+              raise SystemExit(0)
+          if report.get("missing_archive_dates") or report.get("pending_archive_dates"):
+              print("Archive calendar reconciliation is incomplete. Stop for investigation.")
+              raise SystemExit(0)
+          if int(report.get("processed_this_run", 0)) <= 0:
+              print("No archive progress in the previous batch. Stop to avoid a retry loop.")
+              raise SystemExit(0)
+          if int(report.get("feature_stale_session_count", 0)) <= 0:
+              print("No stale feature sessions remain. Do not dispatch another batch.")
+              raise SystemExit(0)
+
+          print(
+              "Safe continuation: "
+              f"{report.get('feature_current_session_count')}/"
+              f"{report.get('expected_session_count')} current; "
+              f"{report.get('feature_stale_session_count')} stale."
+          )
+          subprocess.run(
+              [
+                  "gh", "api", "--method", "POST",
+                  f"repos/{os.environ['GH_REPOSITORY']}/actions/workflows/phase1-3-acceptance-audit.yml/dispatches",
+                  "-f", f"ref={os.environ['AUDIT_BRANCH']}",
+              ],
+              check=True,
+          )
+          print("Dispatched the next resumable audit batch.")
+          PY
