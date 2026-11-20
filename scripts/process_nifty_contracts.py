@@ -18,7 +18,7 @@ def verify_persisted_sessions(conn, normalized_rows: list[dict]) -> dict:
     expected = {row["session_date"]: row for row in normalized_rows}
     session_rows = conn.execute(
         """
-        SELECT session_date, feature_schema_version, contract_count, dataset_sha256
+        SELECT session_date, feature_schema_version, contract_universe_version, contract_count, dataset_sha256
         FROM nifty_historical_sessions
         WHERE session_date = ANY(%s)
         ORDER BY session_date
@@ -39,8 +39,9 @@ def verify_persisted_sessions(conn, normalized_rows: list[dict]) -> dict:
     actual_sessions = {
         row[0].isoformat(): {
             "feature_schema_version": int(row[1]),
-            "contract_count": int(row[2]),
-            "dataset_sha256": str(row[3]).strip(),
+            "contract_universe_version": int(row[2]),
+            "contract_count": int(row[3]),
+            "dataset_sha256": str(row[4]).strip(),
         }
         for row in session_rows
     }
@@ -55,6 +56,8 @@ def verify_persisted_sessions(conn, normalized_rows: list[dict]) -> dict:
             continue
         if actual["feature_schema_version"] != source["feature_schema_version"]:
             mismatches.append({"session_date": session_date, "error": "feature_schema_version_mismatch"})
+        if actual["contract_universe_version"] != source.get("contract_universe_version", 1):
+            mismatches.append({"session_date": session_date, "error": "contract_universe_version_mismatch"})
         if actual["contract_count"] != source["contract_count"]:
             mismatches.append({
                 "session_date": session_date,
