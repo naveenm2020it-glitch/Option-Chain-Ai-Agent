@@ -367,3 +367,18 @@ footer{text-align:center;color:#8b858d;font-size:9px;padding:22px 12px 10px}
  .bottom-nav a.active span{padding:4px 10px}
  .chain-panel{padding:13px}
 }
+
+
+/* Phase 2 historical data configuration */
+.config-panel{padding:16px}
+.config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.config-field{display:flex;flex-direction:column;gap:7px;color:#5e5663;font-size:11px;font-weight:750}
+.config-field input,.config-field select{width:100%;min-width:0;min-height:42px;border:1px solid #e6dfe9;border-radius:10px;background:#fff;padding:9px 10px;color:#332e37;font:inherit;font-weight:600}
+.config-field input:focus,.config-field select:focus{outline:2px solid #b8a4d1;outline-offset:1px}
+.config-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:14px}
+.config-button{border:0;border-radius:10px;background:#453b52;color:#fff;padding:11px 15px;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+.config-button:hover{background:#5b4c6c}
+.config-download{color:#63517a;font-size:11px;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.config-download[hidden]{display:none}
+.config-status{margin:12px 0 0;color:#827987;font-size:10px;line-height:1.6}
+@media(max-width:620px){.config-grid{grid-template-columns:1fr}.config-panel{padding:13px}}
