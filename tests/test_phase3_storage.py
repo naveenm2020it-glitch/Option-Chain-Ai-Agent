@@ -9,7 +9,8 @@ def sample():
     return {
         "session_date": "2026-11-18",
         "feature_schema_version": 3,
-        "features": {"spot_close": 25000.0},
+        "contract_universe_version": 1,
+        "features": {"spot_close": 25000.0, "stored_contract_count": 2},
         "contracts": [
             {
                 "expiry": "2026-11-26", "strike": 25000, "option_type": "CE",
@@ -31,9 +32,17 @@ def test_normalizes_and_sorts_contracts_deterministically():
     row = sample()
     result = normalize_session(row["session_date"], row, {"archive_sha256": "a" * 64})
     assert result["contract_count"] == 2
+    assert result["contract_universe_version"] == 1
     assert [x["option_type"] for x in result["contracts"]] == ["CE", "PE"]
     assert len(result["dataset_sha256"]) == 64
     assert result["archive_sha256"] == "a" * 64
+
+
+def test_rejects_legacy_near_atm_only_contract_universe():
+    row = sample()
+    row.pop("contract_universe_version")
+    with pytest.raises(ValueError, match="contract_universe_version"):
+        normalize_session(row["session_date"], row)
 
 
 def test_rejects_duplicate_contract_keys():
@@ -88,6 +97,7 @@ def test_database_verification_matches_session_counts_and_fingerprints():
     source = {
         "session_date": "2026-11-18",
         "feature_schema_version": 3,
+        "contract_universe_version": 1,
         "contract_count": 2,
         "dataset_sha256": "b" * 64,
     }
@@ -104,7 +114,7 @@ def test_database_verification_matches_session_counts_and_fingerprints():
             # The verifier issues the session query before the contract-count query.
             if not hasattr(self, "calls"):
                 self.calls = 1
-                return [(date(2026, 11, 18), 3, 2, "b" * 64)]
+                return [(date(2026, 11, 18), 3, 1, 2, "b" * 64)]
             return [(date(2026, 11, 18), 2)]
 
     result = verify_persisted_sessions(FakeConnection(), [source])
@@ -121,6 +131,7 @@ def test_database_verification_detects_fingerprint_mismatch():
     source = {
         "session_date": "2026-11-18",
         "feature_schema_version": 3,
+        "contract_universe_version": 1,
         "contract_count": 2,
         "dataset_sha256": "b" * 64,
     }
@@ -135,7 +146,7 @@ def test_database_verification_detects_fingerprint_mismatch():
         def fetchall(self):
             self.calls += 1
             if self.calls == 1:
-                return [(date(2026, 11, 18), 3, 2, "c" * 64)]
+                return [(date(2026, 11, 18), 3, 1, 2, "c" * 64)]
             return [(date(2026, 11, 18), 2)]
 
     result = verify_persisted_sessions(FakeConnection(), [source])
