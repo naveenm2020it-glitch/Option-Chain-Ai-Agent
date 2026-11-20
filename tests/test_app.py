@@ -251,8 +251,9 @@ def test_phase3_schema_initialization_creates_only_schema(monkeypatch):
     }
     assert sum("CREATE TABLE IF NOT EXISTS" in sql for sql in statements) == 2
     assert sum("CREATE INDEX IF NOT EXISTS" in sql for sql in statements) == 2
+    assert sum("ALTER TABLE nifty_historical_sessions" in sql for sql in statements) == 1
     # Inspect the leading SQL command; DDL constraints may contain the text ON DELETE.
-    assert all(sql.lstrip().split(None, 1)[0].upper() == "CREATE" for sql in statements)
+    assert all(sql.lstrip().split(None, 1)[0].upper() in {"CREATE", "ALTER"} for sql in statements)
 
 
 def test_phase3_batch_ingestion_requires_paper_bearer_token(monkeypatch):
