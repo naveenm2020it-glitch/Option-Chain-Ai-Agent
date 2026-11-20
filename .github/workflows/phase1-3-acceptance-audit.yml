@@ -37,7 +37,7 @@ jobs:
 
       - name: Restore resumable audit checkpoint
         id: audit_cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: data/historical_audit/
           key: phase1-3-all-strike-audit-${{ github.run_id }}
@@ -46,7 +46,7 @@ jobs:
             nifty-historical-audit-v1-
 
       - name: Recover prior verified checkpoint when cache is cold
-        if: steps.audit_cache.outputs.cache-hit != 'true'
+        if: steps.audit_cache.outputs.cache-matched-key == ''
         uses: actions/download-artifact@v4
         with:
           name: nifty-historical-audit-43691154808
@@ -76,8 +76,8 @@ jobs:
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --batch-size 25 \
-            --max-batches 25
+            --batch-size 10 \
+            --max-batches 5
 
       - name: Publish current checkpoint and coverage evidence
         if: always()
@@ -87,3 +87,10 @@ jobs:
           path: data/historical_audit/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Save resumable checkpoint even when this batch pauses
+        if: always() && steps.audit_cache.outputs.cache-matched-key != steps.audit_cache.outputs.cache-primary-key
+        uses: actions/cache/save@v4
+        with:
+          path: data/historical_audit/
+          key: ${{ steps.audit_cache.outputs.cache-primary-key }}
