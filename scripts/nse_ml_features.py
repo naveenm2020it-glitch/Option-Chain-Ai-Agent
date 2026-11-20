@@ -253,6 +253,7 @@ def extract_nifty_features(outer_bytes: bytes, session_date: date) -> dict:
         option_type.reindex(nifty_rows.index).isin(["CE", "PE"])
         & (nifty_rows["FININSTRMTP"].astype(str).str.upper() == "IDO")
     ].copy()
+    option_frame["OPTNTP"] = option_frame["OPTNTP"].astype(str).str.strip().str.upper()
     option_frame = option_frame.dropna(subset=["XPRYDT", "STRKPRIC", "CLSPRIC", "UNDRLYGPRIC"])
     option_frame = option_frame.loc[
         (option_frame["CLSPRIC"] > 0)
