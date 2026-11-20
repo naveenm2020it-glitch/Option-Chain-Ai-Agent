@@ -45,6 +45,13 @@ def test_rejects_legacy_near_atm_only_contract_universe():
         normalize_session(row["session_date"], row)
 
 
+def test_rejects_stored_contract_count_mismatch():
+    row = sample()
+    row["features"]["stored_contract_count"] = 3
+    with pytest.raises(ValueError, match="stored_contract_count"):
+        normalize_session(row["session_date"], row)
+
+
 def test_rejects_duplicate_contract_keys():
     row = sample()
     row["contracts"].append(dict(row["contracts"][0]))
