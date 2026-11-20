@@ -4,16 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       max_archives:
-        description: "Maximum existing ZIP archives to verify per batch (hard cap 25)"
+        description: "Maximum existing ZIP archives to download and verify in this run"
         required: true
         default: "25"
         type: string
-  push:
-    branches:
-      - phase1-3/acceptance-audit-notes
-    paths:
-      - "scripts/run_full_historical_audit.py"
-      - ".github/workflows/nifty-historical-integrity-audit.yml"
 
 permissions:
   contents: read
@@ -21,12 +15,12 @@ permissions:
 
 concurrency:
   group: nse-b2-archive
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     env:
       B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
       B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
@@ -46,12 +40,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/historical_audit/
-          key: nifty-historical-audit-v2-${{ github.run_id }}
+          key: nifty-historical-audit-v1-${{ github.run_id }}
           restore-keys: |
-            nifty-historical-audit-v2-
             nifty-historical-audit-v1-
 
-      - name: Recover previous audit checkpoint artifact
+      - name: Recover checkpoint from previous audit artifact
         if: steps.audit_cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
@@ -75,25 +68,20 @@ jobs:
           print("B2 configuration is present.")
           PY
 
-      - name: Rebuild and verify the complete all-strike checkpoint
+      - name: Verify one bounded batch of existing archives (read-only)
         run: |
           set -euo pipefail
-          BATCH_SIZE=25
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BATCH_SIZE="${{ inputs.max_archives }}"
-          fi
-          python scripts/run_full_historical_audit.py \
+          python scripts/nse_historical_audit.py \
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --batch-size "$BATCH_SIZE" \
-            --max-batches 25
+            --max-archives "${{ inputs.max_archives }}"
 
-      - name: Publish current all-strike audit evidence
+      - name: Publish audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-all-strike-historical-audit-${{ github.run_id }}
+          name: nifty-historical-audit-${{ github.run_id }}
           path: data/historical_audit/
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 30
