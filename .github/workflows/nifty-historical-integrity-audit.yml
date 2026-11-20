@@ -6,7 +6,7 @@ on:
       max_archives:
         description: "Maximum existing ZIP archives to download and verify in this run"
         required: true
-        default: "1"
+        default: "25"
         type: string
 
 permissions:
