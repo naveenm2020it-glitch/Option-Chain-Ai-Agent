@@ -110,7 +110,8 @@ def phase2_config_options(
         "download_url": download_url,
         "download_expires_in_seconds": 900,
         "data_source": "verified_backblaze_b2_eod_archive",
-        "message": "This is an end-of-day snapshot. It must not be interpreted as an intraday cutoff snapshot.",
+        "analysis_engine_connected": False,
+        "message": "This is an end-of-day snapshot, not an intraday cutoff. The selection/download handoff is implemented; the disabled seller-analysis engine does not yet consume this configuration.",
     }
 
 
