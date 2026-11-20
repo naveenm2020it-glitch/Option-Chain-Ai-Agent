@@ -191,7 +191,9 @@ function initMotionAndNavigation(){
   targets.forEach(target=>navObserver.observe(target));
  }
 }
-const PHASE2_CONFIG_KEY="nifty-phase2-config-v1";\nlet preferredPhase2Expiry="";
+const PHASE2_CONFIG_KEY="nifty-phase2-config-v1";
+let preferredPhase2Expiry="";
+let preferredPhase2Expiry="";
 async function loadPhase2Config(){
  const status=byId("phase2-config-status");
  const dateInput=byId("analysis-date");
@@ -203,11 +205,12 @@ async function loadPhase2Config(){
  download.hidden=true;
  const params=new URLSearchParams({cutoff:cutoffInput.value||"after_close"});
  if(dateInput.value)params.set("analysis_date",dateInput.value);
- if(expiryInput.value)params.set("expiry",expiryInput.value);\n else if(preferredPhase2Expiry)params.set("expiry",preferredPhase2Expiry);
+ if(expiryInput.value)params.set("expiry",expiryInput.value);
+ else if(preferredPhase2Expiry)params.set("expiry",preferredPhase2Expiry);
+ else if(preferredPhase2Expiry)params.set("expiry",preferredPhase2Expiry);
  try{
-  const response=await fetch("/api/config/options?"+params.toString(),{cache:"no-store"});
-  const payload=await response.json();
-  if(!response.ok)throw new Error(payload.detail||"Could not load historical configuration.");
+  const result=await fetchJsonWithSessionCache("/api/config/options?"+params.toString(),STATUS_CACHE_TTL_MS);
+  const payload=result.data;
   dateInput.value=payload.analysis_date;
   if(payload.available_dates?.length){
    dateInput.min=payload.available_dates[0];
@@ -219,7 +222,8 @@ async function loadPhase2Config(){
   download.href=payload.download_url;
   download.hidden=false;
   try{
-   preferredPhase2Expiry=payload.selected_expiry||"";\n   localStorage.setItem(PHASE2_CONFIG_KEY,JSON.stringify({
+   preferredPhase2Expiry=payload.selected_expiry||"";
+   localStorage.setItem(PHASE2_CONFIG_KEY,JSON.stringify({
     analysis_date:payload.analysis_date,
     cutoff:payload.cutoff,
     expiry:payload.selected_expiry
@@ -239,7 +243,9 @@ async function loadPhase2Config(){
  try{
   const saved=JSON.parse(localStorage.getItem(PHASE2_CONFIG_KEY)||"null");
   if(saved?.analysis_date)dateInput.value=saved.analysis_date;
-  if(saved?.cutoff)cutoffInput.value=saved.cutoff;\n  if(saved?.expiry)preferredPhase2Expiry=saved.expiry;
+  if(saved?.cutoff)cutoffInput.value=saved.cutoff;
+  if(saved?.expiry)preferredPhase2Expiry=saved.expiry;
+  if(saved?.expiry)preferredPhase2Expiry=saved.expiry;
  }catch(_error){}
  dateInput.addEventListener("change",()=>{preferredPhase2Expiry="";expiryInput.replaceChildren(new Option("Automatically load expiries",""));});
  button.addEventListener("click",loadPhase2Config);
