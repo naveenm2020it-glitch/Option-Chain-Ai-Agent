@@ -121,6 +121,12 @@ def ensure_phase3_schema(conn) -> None:
             processed_at TIMESTAMPTZ NOT NULL
         )
     """)
+    # Upgrade a schema created by the earlier Phase 3 initializer without
+    # falsely marking its legacy near-ATM rows as all-strike.
+    conn.execute("""
+        ALTER TABLE nifty_historical_sessions
+        ADD COLUMN IF NOT EXISTS contract_universe_version SMALLINT
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS nifty_option_contracts (
             session_date DATE NOT NULL REFERENCES nifty_historical_sessions(session_date) ON DELETE CASCADE,
