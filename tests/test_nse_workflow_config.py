@@ -53,10 +53,12 @@ def test_phase1_all_strike_acceptance_audit_is_separate_and_bounded():
     assert "workflow_dispatch:" in workflow
     assert "phase1-3/acceptance-audit-notes" in workflow
     assert "scripts/run_full_historical_audit.py" in workflow
-    assert "--batch-size 5" in workflow
-    assert "--max-batches 5" in workflow
+    assert "--batch-size 25" in workflow
+    assert "--max-batches 1" in workflow
     assert "actions/cache/restore@v4" in workflow
     assert "actions/cache/save@v4" in workflow
+    assert "actions: write" in workflow
+    assert "continue-audit:" in workflow
     assert "secrets.B2_APPLICATION_KEY" in workflow
     assert "nifty-all-strike-historical-audit-" in workflow
 
