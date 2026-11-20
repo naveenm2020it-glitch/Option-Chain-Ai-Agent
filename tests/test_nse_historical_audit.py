@@ -115,3 +115,94 @@ def test_archive_batch_size_is_hard_capped_for_b2_quota():
     assert audit.clamp_archive_batch_size(1000) == 25
     assert audit.clamp_archive_batch_size(0) == 1
     assert audit.clamp_archive_batch_size(-10) == 1
+
+def test_legacy_feature_checkpoint_refreshes_all_strikes_after_archive_integrity_is_complete(monkeypatch, tmp_path):
+    start, end = date(2024, 11, 12), date(2024, 11, 14)
+    checkpoint_path = tmp_path / "checkpoint.json"
+    sessions = audit.expected_sessions(start, end)
+    catalog = {"collections": [
+        {"collection_date": day.isoformat(), "archive_sha256": str(index), "archive_bytes": 100}
+        for index, day in enumerate(sessions)
+    ]}
+    entries = {item["collection_date"]: item for item in catalog["collections"]}
+    checkpoint_path.write_text(json.dumps({
+        "schema_version": audit.CHECKPOINT_VERSION,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "verified": {
+            day.isoformat(): {
+                "catalog_fingerprint": audit._fingerprint(entries[day.isoformat()]),
+                "archive_sha256": entries[day.isoformat()]["archive_sha256"],
+            }
+            for day in sessions
+        },
+        "failed": {},
+        # Simulate the previous checkpoint: archive hashes are verified, but
+        # feature rows predate the all-strike contract-universe fields.
+        "features": {
+            day.isoformat(): {
+                "session_date": day.isoformat(),
+                "feature_schema_version": audit.FEATURE_SCHEMA_VERSION,
+                "features": {
+                    "future_data_available": 1.0,
+                    "ce_contract_count": 1.0,
+                    "pe_contract_count": 1.0,
+                },
+                "contracts": [],
+            }
+            for day in sessions
+        },
+        "feature_errors": {},
+    }))
+    calls = []
+
+    class FakeClient:
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(b"fake-zip")}
+
+    monkeypatch.setattr(audit, "b2_client", lambda: FakeClient())
+    monkeypatch.setattr(audit, "read_catalog", lambda client: catalog)
+    monkeypatch.setattr(
+        audit,
+        "validate_remote_archive",
+        lambda client, bucket, day, entry: (calls.append(day) or True, "verified_4_report_files"),
+    )
+    monkeypatch.setattr(
+        audit,
+        "extract_nifty_features",
+        lambda archive_bytes, day: {
+            "session_date": day.isoformat(),
+            "feature_schema_version": audit.FEATURE_SCHEMA_VERSION,
+            "contract_universe_version": audit.CONTRACT_UNIVERSE_VERSION,
+            "features": {
+                "future_data_available": 1.0,
+                "ce_contract_count": 1.0,
+                "pe_contract_count": 1.0,
+                "stored_ce_contract_count": 100.0,
+                "stored_pe_contract_count": 100.0,
+            },
+            "contracts": [],
+        },
+    )
+    monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
+
+    first = audit.run_audit(start, end, checkpoint_path, max_archives=1)
+    assert first["status"] == "feature_extraction_in_progress"
+    assert first["verified_session_count"] == 3
+    assert first["feature_current_session_count"] == 1
+    assert first["feature_stale_session_count"] == 2
+    assert len(calls) == 1
+
+    second = audit.run_audit(start, end, checkpoint_path, max_archives=1)
+    assert second["status"] == "feature_extraction_in_progress"
+    assert second["feature_current_session_count"] == 2
+    assert second["feature_stale_session_count"] == 1
+    assert len(calls) == 2
+
+    third = audit.run_audit(start, end, checkpoint_path, max_archives=1)
+    assert third["status"] == "archive_integrity_complete_calendar_reconciled"
+    assert third["feature_current_session_count"] == 3
+    assert third["feature_stale_session_count"] == 0
+    assert third["core_market_coverage"]["all_strike_contracts_available"] == 1.0
+    assert len(calls) == 3
+
