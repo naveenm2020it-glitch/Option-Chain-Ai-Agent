@@ -45,6 +45,8 @@ def main() -> int:
             "processed_this_run": report.get("processed_this_run"),
             "verified_session_count": report.get("verified_session_count"),
             "feature_session_count": report.get("feature_session_count"),
+            "feature_current_session_count": report.get("feature_current_session_count"),
+            "feature_stale_session_count": report.get("feature_stale_session_count"),
             "all_strike_coverage": report.get("core_market_coverage", {}).get("all_strike_contracts_available"),
             "b2_cap_blocked": report.get("b2_cap_blocked"),
         }), flush=True)
@@ -52,6 +54,12 @@ def main() -> int:
         if report.get("status") == "paused_b2_class_b_cap":
             print("Audit paused safely at the B2 request cap. Preserve this checkpoint and resume in a later run.", flush=True)
             return 3
+        if report.get("status") == "feature_extraction_errors":
+            print("Archive integrity passed, but current-schema feature extraction has errors; inspect feature_errors in coverage.json.", flush=True)
+            return 4
+        if report.get("status") == "blocked_missing_or_failed_archives":
+            print("Archive integrity is blocked by missing or failed archive dates; inspect coverage.json.", flush=True)
+            return 2
         if report.get("status") == "archive_integrity_complete_calendar_reconciled":
             coverage = report.get("core_market_coverage", {})
             gates = (
