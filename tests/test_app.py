@@ -251,7 +251,8 @@ def test_phase3_schema_initialization_creates_only_schema(monkeypatch):
     }
     assert sum("CREATE TABLE IF NOT EXISTS" in sql for sql in statements) == 2
     assert sum("CREATE INDEX IF NOT EXISTS" in sql for sql in statements) == 2
-    assert not any("INSERT " in sql or "DELETE " in sql for sql in statements)
+    # Inspect the leading SQL command; DDL constraints may contain the text ON DELETE.
+    assert all(sql.lstrip().split(None, 1)[0].upper() == "CREATE" for sql in statements)
 
 
 def test_phase3_database_health_reports_unconfigured_database(monkeypatch):
