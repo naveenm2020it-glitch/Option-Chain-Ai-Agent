@@ -50,7 +50,15 @@ def test_audit_resumes_verified_dates_without_redownloading(monkeypatch, tmp_pat
     monkeypatch.setattr(audit, "extract_nifty_features",
                         lambda archive_bytes, day: {"session_date": day.isoformat(),
                                                     "feature_schema_version": audit.FEATURE_SCHEMA_VERSION,
-                                                    "features": {"spot_close": 25000.0}, "contracts": []})
+                                                    "contract_universe_version": audit.CONTRACT_UNIVERSE_VERSION,
+                                                    "features": {
+                                                        "spot_close": 25000.0,
+                                                        "future_data_available": 1.0,
+                                                        "ce_contract_count": 1.0,
+                                                        "pe_contract_count": 1.0,
+                                                        "stored_ce_contract_count": 1.0,
+                                                        "stored_pe_contract_count": 1.0,
+                                                    }, "contracts": []})
     monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
 
     first = audit.run_audit(start, end, checkpoint_path, max_archives=2)
