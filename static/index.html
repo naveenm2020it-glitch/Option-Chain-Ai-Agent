@@ -8,6 +8,34 @@
 <body>
 <main class="app-shell" id="top">
   <header class="app-header"><div class="brand"><span class="brand-mark">N</span><div><p class="eyebrow">MARKET WORKSPACE</p><h1>NIFTY <span>intelligence.</span></h1></div></div><button class="icon-button" id="refresh" aria-label="Refresh dashboard" title="Refresh">↻</button></header>
+  <section class="section-block" id="configuration">
+    <div class="section-title">
+      <div><p class="eyebrow">PHASE 02 · DATA SELECTION</p><h2>Historical data configuration</h2><small class="section-caption">Choose an archived NIFTY session and load its actual CE/PE expiry universe</small></div>
+      <span class="soft-tag">EOD archive</span>
+    </div>
+    <article class="report-panel config-panel">
+      <div class="config-grid">
+        <label class="config-field" for="analysis-date">Analysis date
+          <input id="analysis-date" type="date">
+        </label>
+        <label class="config-field" for="analysis-cutoff">Snapshot cutoff
+          <select id="analysis-cutoff">
+            <option value="after_close">After close (EOD only)</option>
+          </select>
+        </label>
+        <label class="config-field" for="analysis-expiry">Expiry
+          <select id="analysis-expiry">
+            <option value="">Automatically load expiries</option>
+          </select>
+        </label>
+      </div>
+      <div class="config-actions">
+        <button class="config-button" id="load-analysis-config" type="button">Load date and expiries</button>
+        <a class="config-download" id="download-eod-archive" href="#" hidden>Download selected EOD archive</a>
+      </div>
+      <p class="config-status" id="phase2-config-status" role="status" aria-live="polite">Select a date or load the latest available archive. Intraday cutoffs are not supported by this EOD data source.</p>
+    </article>
+  </section>
   <section class="hero-card">
     <div class="hero-top"><span class="eyebrow dark">NEXT-SESSION OUTLOOK</span><span class="live-pill"><i></i><span id="health">Checking system</span></span></div>
     <div class="hero-value" id="bias">—</div><p class="hero-caption" id="bias-note">Waiting for validated market data.</p>
