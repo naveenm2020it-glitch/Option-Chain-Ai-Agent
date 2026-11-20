@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from scripts.nse_historical_audit import run_audit
 
@@ -15,8 +20,8 @@ def main() -> int:
     parser.add_argument("--start", default="2024-11-12")
     parser.add_argument("--end", default="2026-11-12")
     parser.add_argument("--checkpoint", default="data/historical_audit/checkpoint.json")
-    parser.add_argument("--batch-size", type=int, default=25)
-    parser.add_argument("--max-batches", type=int, default=25)
+    parser.add_argument("--batch-size", type=int, default=10)
+    parser.add_argument("--max-batches", type=int, default=5)
     args = parser.parse_args()
 
     if not 1 <= args.batch_size <= 25:
