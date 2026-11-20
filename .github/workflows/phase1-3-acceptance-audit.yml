@@ -1,0 +1,89 @@
+name: Phase 1–3 acceptance — all-strike historical audit
+
+on:
+  push:
+    branches:
+      - phase1-3/acceptance-audit-notes
+    paths:
+      - "scripts/run_full_historical_audit.py"
+      - ".github/workflows/phase1-3-acceptance-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase1-3-all-strike-audit
+  cancel-in-progress: false
+
+jobs:
+  phase1-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+      B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+      B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+      B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore resumable audit checkpoint
+        id: audit_cache
+        uses: actions/cache@v4
+        with:
+          path: data/historical_audit/
+          key: phase1-3-all-strike-audit-${{ github.run_id }}
+          restore-keys: |
+            phase1-3-all-strike-audit-
+            nifty-historical-audit-v1-
+
+      - name: Recover prior verified checkpoint when cache is cold
+        if: steps.audit_cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-historical-audit-43691154808
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 43691154808
+          path: data
+
+      - name: Install audit dependencies
+        run: pip install -r requirements-audit.txt
+
+      - name: Verify B2 secrets without exposing values
+        run: |
+          python - <<'PY'
+          import os
+          required = ["B2_ENDPOINT_URL", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET_NAME"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              raise SystemExit("Missing required GitHub Actions secrets: " + ", ".join(missing))
+          print("B2 credentials are configured.")
+          PY
+
+      - name: Rebuild current all-strike checkpoint and enforce Phase 1 gates
+        run: |
+          set -euo pipefail
+          python scripts/run_full_historical_audit.py \
+            --start 2024-11-12 \
+            --end 2026-11-12 \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --batch-size 25 \
+            --max-batches 25
+
+      - name: Publish current checkpoint and coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-all-strike-historical-audit-${{ github.run_id }}
+          path: data/historical_audit/
+          if-no-files-found: error
+          retention-days: 30
