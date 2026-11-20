@@ -217,6 +217,44 @@ def test_status_reads_latest_collection_manifest_from_b2(monkeypatch, tmp_path):
 
 
 
+def test_phase3_schema_initialization_requires_paper_bearer_token(monkeypatch):
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    response = client.post("/api/phase3/initialize-schema")
+    assert response.status_code == 401
+
+
+def test_phase3_schema_initialization_creates_only_schema(monkeypatch):
+    import psycopg
+
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://not-a-real-secret")
+    statements = []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def execute(self, query, params=None):
+            statements.append(query)
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: FakeConnection())
+    response = client.post(
+        "/api/phase3/initialize-schema",
+        headers={"Authorization": "Bearer expected-secret"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_initialized": True,
+        "historical_rows_loaded": False,
+        "tables": ["nifty_historical_sessions", "nifty_option_contracts"],
+    }
+    assert sum("CREATE TABLE IF NOT EXISTS" in sql for sql in statements) == 2
+    assert sum("CREATE INDEX IF NOT EXISTS" in sql for sql in statements) == 2
+    # Inspect the leading SQL command; DDL constraints may contain the text ON DELETE.
+    assert all(sql.lstrip().split(None, 1)[0].upper() == "CREATE" for sql in statements)
+
+
 def test_phase3_database_health_reports_unconfigured_database(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     response = client.get("/api/phase3/health")
