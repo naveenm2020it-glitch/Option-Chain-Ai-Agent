@@ -11,7 +11,7 @@ This document separates code implementation, test evidence, operational executio
 | Phase | Implemented work | Evidence available | Remaining acceptance gate |
 |---|---|---|---|
 | 01 — Historical data audit | Archive integrity audit, calendar reconciliation, all-strike CE/PE feature extraction, resumable checkpoints and coverage reporting | Older artifact: 494/494 sessions, zero failed archives and zero feature errors | Re-run audit after contract-universe v1/all-strike changes; require 494/494 current-version feature rows and at least 95% all-strike CE/PE coverage |
-| 02 — User configuration and data orchestration | Historical feature/dataset preparation, chronological datasets, session alignment and NSE EOD collection/backfill tooling | PR #27 merged; 494 source sessions, 472 prepared samples, 182 features/sample, regression and artifact structural checks reported passing | Agreed roadmap's user-facing analysis-date selection, cutoff policy, automatic expiry selection and date-scoped download orchestration are not yet implemented/accepted |
+| 02 — User configuration and data orchestration | Historical datasets plus date selector, EOD-only cutoff guard, archive-derived expiry choices and signed archive download handoff | PR #27 merged; PR #38 adds the Phase 2 API/UI and regression tests; latest CI result pending | Verify against real B2 archives and complete downstream ingestion/analysis integration; intraday cutoffs remain unsupported |
 | 03 — Storage and data processing | All-strike contract normalization, PostgreSQL schema, atomic/idempotent persistence, source fingerprints, remote authenticated ingestion API and integrity verifier | PRs #28–#33 and #36–#37 merged to deployed branch; 494-session/159,036-row historical normalization report from the earlier checkpoint | Rebuild/verify all-strike checkpoint, initialize actual Render schema, ingest all sessions, and verify stored session/contract counts and fingerprints against source |
 
 ## Phase 01 — Historical data audit
@@ -69,11 +69,11 @@ The 2026-11-20 implementation introduced `contract_universe_version=1` and all-s
 
 ### Remaining roadmap work
 
-The agreed Phase 02 scope also requires a user-selectable analysis date, a truthful cutoff policy, automatic expiry discovery from the selected session's contract universe, and orchestration of the corresponding historical downloads. Those controls and their end-to-end tests are not evidenced in the deployed branch reviewed on 2026-11-20.
+PR #38 now adds a dashboard configuration panel and `GET /api/config/options`. The endpoint validates the requested date against the B2 archive catalog, reads that session's archive, derives the actual unexpired NIFTY CE/PE expiry list from the contract universe, defaults to the front expiry, validates any selected expiry, and returns a 15-minute signed download URL. The browser retains the selected date/cutoff/expiry locally and caches the options response briefly to avoid repeated B2 reads.
 
 **Required cutoff behavior:** until intraday source data is approved and available, expose only an after-close/EOD snapshot. Reject or clearly mark intraday cutoff requests as unsupported; never label EOD data as an intraday snapshot.
 
-**Phase 02 status: historical dataset preparation is merged and validated; user configuration/orchestration remains incomplete.**
+**Phase 02 status: configuration UI/API and archive download handoff are implemented in PR #38; live B2 integration and downstream ingestion/analysis wiring remain acceptance items.**
 
 ## Phase 03 — Storage and data processing
 
@@ -124,7 +124,7 @@ The Render database resource reviewed is on the Free plan and reports an expiry 
 ## Acceptance checklist
 
 - [ ] Phase 01 current-version all-strike audit: 494/494 verified; zero failures/errors; at least 95% all-strike CE/PE coverage.
-- [ ] Phase 02 date, EOD cutoff, automatic expiry discovery and historical download orchestration implemented and tested end-to-end.
+- [ ] Phase 02 date, EOD cutoff, automatic expiry discovery and signed historical download path pass live B2 end-to-end validation; selected settings are consumed by the downstream analysis pipeline.
 - [ ] Phase 03 Render schema initialized and both tables verified.
 - [ ] Phase 03 all-strike historical ingestion completed and source-to-database counts/fingerprints match.
 - [ ] User reviews the evidence and accepts each phase.
