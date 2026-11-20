@@ -76,7 +76,7 @@ jobs:
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --batch-size 10 \
+            --batch-size 5 \
             --max-batches 5
 
       - name: Publish current checkpoint and coverage evidence
