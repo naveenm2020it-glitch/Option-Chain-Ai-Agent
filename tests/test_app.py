@@ -325,6 +325,16 @@ def test_phase3_batch_ingestion_persists_and_verifies_normalized_sessions(monkey
     assert persisted[0]["contract_universe_version"] == 1
 
 
+def test_phase3_batch_ingestion_rejects_more_than_ten_sessions(monkeypatch):
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    response = client.post(
+        "/api/phase3/ingest-batch",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"sessions": [{} for _ in range(11)]},
+    )
+    assert response.status_code == 400
+
+
 def test_phase3_batch_ingestion_rejects_legacy_contract_universe(monkeypatch):
     monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
     row = {
