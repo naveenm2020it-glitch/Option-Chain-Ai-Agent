@@ -46,3 +46,29 @@ def test_historical_integrity_audit_is_manual_read_only_and_bounded():
     assert "--max-archives" in workflow
     assert "nse_historical_backfill.py" not in workflow
     assert "train_adaptive_intelligence.py" not in workflow
+
+
+def test_phase1_all_strike_acceptance_audit_is_separate_and_bounded():
+    workflow = (WORKFLOWS / "phase1-3-acceptance-audit.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow
+    assert "phase1-3/acceptance-audit-notes" in workflow
+    assert "scripts/run_full_historical_audit.py" in workflow
+    assert "--batch-size 25" in workflow
+    assert "--max-batches 1" in workflow
+    assert "actions/cache/restore@v4" in workflow
+    assert "actions/cache/save@v4" in workflow
+    assert "actions: write" in workflow
+    assert "continue-audit:" in workflow
+    assert "secrets.B2_APPLICATION_KEY" in workflow
+    assert "nifty-all-strike-historical-audit-" in workflow
+
+
+def test_phase3_remote_ingestion_is_manual_and_uses_protected_secret():
+    workflow = (WORKFLOWS / "phase3-remote-historical-ingestion.yml").read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in workflow
+    assert "secrets.PAPER_INGEST_TOKEN" in workflow
+    assert "nifty-all-strike-historical-audit-" in workflow
+    assert "scripts/ingest_phase3_remote.py" in workflow
+    assert "option-chain-ai-agent.onrender.com" in workflow
+    assert "--batch-size 10" in workflow
+    assert 'echo "$PAPER_INGEST_TOKEN"' not in workflow

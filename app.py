@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -12,7 +12,7 @@ import secrets
 
 import database
 from data_quality import assess_manifest
-from storage import history_catalog, b2_configured, read_catalog, read_collection_manifest, archive_download_url
+from storage import history_catalog, b2_configured, b2_client, read_catalog, read_collection_manifest, archive_download_url
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", ROOT / "data"))
@@ -32,6 +32,87 @@ def health():
     return {"status": "ok", "app": "nifty50-next-day-intelligence", "version": app.version,
             "utc_time": datetime.now(timezone.utc).isoformat(),
             "paper_auth_configured": bool(os.getenv("PAPER_INGEST_TOKEN"))}
+
+
+@app.get("/api/config/options")
+def phase2_config_options(
+    analysis_date: str | None = None,
+    cutoff: str = "after_close",
+    expiry: str | None = None,
+):
+    """Resolve an EOD session, its actual NIFTY expiry universe and a signed archive download."""
+    if cutoff != "after_close":
+        raise HTTPException(
+            status_code=422,
+            detail="Only after_close is supported: the approved historical archive is EOD, not intraday.",
+        )
+    if not b2_configured():
+        raise HTTPException(status_code=503, detail="Historical archive storage is not configured.")
+
+    try:
+        catalog = read_catalog()
+        collections = catalog.get("collections", [])
+        available_dates = sorted({
+            item.get("collection_date")
+            for item in collections
+            if isinstance(item, dict)
+            and item.get("collection_date")
+            and item.get("archive_key") == f"nse/daily/{item.get('collection_date')}/reports.zip"
+        })
+        if not available_dates:
+            raise HTTPException(status_code=503, detail="No dated historical archives are available.")
+
+        if analysis_date is not None:
+            try:
+                selected_day = date.fromisoformat(analysis_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="analysis_date must use YYYY-MM-DD.")
+            selected_date = selected_day.isoformat()
+            if selected_date not in available_dates:
+                raise HTTPException(status_code=404, detail="No archived NIFTY EOD session exists for that date.")
+        else:
+            selected_date = available_dates[-1]
+            selected_day = date.fromisoformat(selected_date)
+
+        response = b2_client().get_object(
+            Bucket=os.environ["B2_BUCKET_NAME"],
+            Key=f"nse/daily/{selected_date}/reports.zip",
+        )
+        archive_bytes = response["Body"].read()
+        from scripts.nse_ml_features import extract_nifty_features
+
+        feature_row = extract_nifty_features(archive_bytes, selected_day)
+        expiry_options = sorted({
+            contract["expiry"]
+            for contract in feature_row.get("contracts", [])
+            if contract.get("expiry")
+        })
+        if not expiry_options:
+            raise HTTPException(status_code=422, detail="The selected archive contains no validated NIFTY expiries.")
+        if expiry is not None and expiry not in expiry_options:
+            raise HTTPException(status_code=422, detail="The requested expiry is not present in the selected session.")
+        selected_expiry = expiry or expiry_options[0]
+        download_url = archive_download_url(selected_date)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not resolve the selected historical NIFTY archive.")
+
+    return {
+        "analysis_date": selected_date,
+        "cutoff": "after_close",
+        "cutoff_label": "After close (EOD only)",
+        "intraday_cutoff_supported": False,
+        "expiry_options": expiry_options,
+        "selected_expiry": selected_expiry,
+        "available_dates": available_dates,
+        "contract_count": len(feature_row.get("contracts", [])),
+        "download_url": download_url,
+        "download_expires_in_seconds": 900,
+        "data_source": "verified_backblaze_b2_eod_archive",
+        "analysis_engine_connected": False,
+        "message": "This is an end-of-day snapshot, not an intraday cutoff. The selection/download handoff is implemented; the disabled seller-analysis engine does not yet consume this configuration.",
+    }
 
 
 @app.get("/api/phase3/health")

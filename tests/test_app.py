@@ -407,3 +407,122 @@ def test_phase3_database_health_hides_connection_error(monkeypatch):
     response = client.get("/api/phase3/health")
     assert response.status_code == 503
     assert "sensitive connection details" not in response.text
+
+
+def test_phase2_config_returns_eod_date_expiries_and_signed_archive(monkeypatch):
+    import scripts.nse_ml_features as feature_module
+
+    monkeypatch.setattr("app.b2_configured", lambda: True)
+    monkeypatch.setattr("app.read_catalog", lambda: {
+        "collections": [
+            {
+                "collection_date": "2026-11-18",
+                "archive_key": "nse/daily/2026-11-18/reports.zip",
+            },
+            {
+                "collection_date": "2026-11-19",
+                "archive_key": "nse/daily/2026-11-19/reports.zip",
+            },
+        ]
+    })
+
+    class FakeBody:
+        def read(self):
+            return b"verified-eod-archive"
+
+    class FakeClient:
+        def get_object(self, **kwargs):
+            assert kwargs["Bucket"] == "test-bucket"
+            assert kwargs["Key"] == "nse/daily/2026-11-19/reports.zip"
+            return {"Body": FakeBody()}
+
+    monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
+    monkeypatch.setattr("app.b2_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        feature_module,
+        "extract_nifty_features",
+        lambda payload, day: {
+            "contracts": [
+                {"expiry": "2026-11-26"},
+                {"expiry": "2026-12-03"},
+                {"expiry": "2026-11-26"},
+            ]
+        },
+    )
+    monkeypatch.setattr("app.archive_download_url", lambda day: f"https://signed.invalid/{day}")
+
+    response = client.get("/api/config/options")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_date"] == "2026-11-19"
+    assert payload["cutoff"] == "after_close"
+    assert payload["intraday_cutoff_supported"] is False
+    assert payload["analysis_engine_connected"] is False
+    assert payload["expiry_options"] == ["2026-11-26", "2026-12-03"]
+    assert payload["selected_expiry"] == "2026-11-26"
+    assert payload["contract_count"] == 3
+    assert payload["download_url"] == "https://signed.invalid/2026-11-19"
+    assert payload["download_expires_in_seconds"] == 900
+
+
+def test_phase2_config_rejects_intraday_cutoff(monkeypatch):
+    monkeypatch.setattr("app.b2_configured", lambda: True)
+    response = client.get("/api/config/options?cutoff=15:00")
+    assert response.status_code == 422
+    assert "EOD" in response.json()["detail"]
+
+
+def test_phase2_config_rejects_dates_without_archives(monkeypatch):
+    monkeypatch.setattr("app.b2_configured", lambda: True)
+    monkeypatch.setattr("app.read_catalog", lambda: {
+        "collections": [{
+            "collection_date": "2026-11-19",
+            "archive_key": "nse/daily/2026-11-19/reports.zip",
+        }]
+    })
+    response = client.get("/api/config/options?analysis_date=2026-11-18")
+    assert response.status_code == 404
+
+
+def test_phase2_config_rejects_expiry_not_in_selected_archive(monkeypatch):
+    import scripts.nse_ml_features as feature_module
+
+    monkeypatch.setattr("app.b2_configured", lambda: True)
+    monkeypatch.setattr("app.read_catalog", lambda: {
+        "collections": [{
+            "collection_date": "2026-11-19",
+            "archive_key": "nse/daily/2026-11-19/reports.zip",
+        }]
+    })
+
+    class FakeBody:
+        def read(self):
+            return b"verified-eod-archive"
+
+    class FakeClient:
+        def get_object(self, **kwargs):
+            return {"Body": FakeBody()}
+
+    monkeypatch.setenv("B2_BUCKET_NAME", "test-bucket")
+    monkeypatch.setattr("app.b2_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        feature_module,
+        "extract_nifty_features",
+        lambda payload, day: {"contracts": [{"expiry": "2026-11-26"}]},
+    )
+    response = client.get("/api/config/options?expiry=2026-12-03")
+    assert response.status_code == 422
+    assert "not present" in response.json()["detail"]
+
+
+def test_dashboard_exposes_phase2_historical_configuration():
+    page = client.get("/")
+    script = client.get("/static/app.js")
+    assert page.status_code == 200
+    assert 'id="analysis-date"' in page.text
+    assert 'id="analysis-cutoff"' in page.text
+    assert 'id="analysis-expiry"' in page.text
+    assert 'id="download-eod-archive"' in page.text
+    assert script.status_code == 200
+    assert "/api/config/options?" in script.text
+    assert "after_close" in script.text

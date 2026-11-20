@@ -145,24 +145,30 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         ),
     }
     sources_ready = all(value >= 0.95 for value in core_market_coverage.values())
-    features_current = all(
-        row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
-        and row.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION
-        for row in features.values()
-    )
-    features_ready = (
-        all_verified
-        and len(features) == len(expected_text)
+    feature_stale_dates = [
+        day for day in expected_text
+        if day not in features
+        or features[day].get("feature_schema_version") != FEATURE_SCHEMA_VERSION
+        or features[day].get("contract_universe_version") != CONTRACT_UNIVERSE_VERSION
+    ]
+    features_current = (
+        len(features) == len(expected_text)
         and not feature_errors
-        and features_current
-        and sources_ready
+        and not feature_stale_dates
     )
-    if all_verified:
-        status = "archive_integrity_complete_calendar_reconciled"
-    elif run_state.get("paused_b2_class_b_cap"):
+    features_ready = all_verified and features_current and sources_ready
+    if run_state.get("paused_b2_class_b_cap"):
         status = "paused_b2_class_b_cap"
+    elif missing or failed:
+        status = "audit_in_progress" if pending else "blocked_missing_or_failed_archives"
     elif pending:
         status = "audit_in_progress"
+    elif all_verified and feature_errors:
+        status = "feature_extraction_errors"
+    elif all_verified and not features_current:
+        status = "feature_extraction_in_progress"
+    elif all_verified:
+        status = "archive_integrity_complete_calendar_reconciled"
     else:
         status = "blocked_missing_or_failed_archives"
 
@@ -174,6 +180,9 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "verified_session_count": len(verified),
         "failed_session_count": len(failed),
         "feature_session_count": len(features),
+        "feature_current_session_count": len(expected_text) - len(feature_stale_dates),
+        "feature_stale_session_count": len(feature_stale_dates),
+        "feature_stale_dates": feature_stale_dates,
         "feature_error_count": len(feature_errors),
         "feature_errors": feature_errors,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
