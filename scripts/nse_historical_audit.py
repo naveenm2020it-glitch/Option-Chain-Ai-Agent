@@ -136,6 +136,13 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
                 and float(row.get("features", {}).get("pe_contract_count", 0.0)) > 0) / len(features)
             if features else 0.0
         ),
+        "all_strike_contracts_available": (
+            sum(1 for row in features.values()
+                if row.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION
+                and float(row.get("features", {}).get("stored_ce_contract_count", 0.0)) > 0
+                and float(row.get("features", {}).get("stored_pe_contract_count", 0.0)) > 0) / len(features)
+            if features else 0.0
+        ),
     }
     sources_ready = all(value >= 0.95 for value in core_market_coverage.values())
     features_current = all(
@@ -170,6 +177,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
         "feature_error_count": len(feature_errors),
         "feature_errors": feature_errors,
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "contract_universe_version": CONTRACT_UNIVERSE_VERSION,
         "feature_coverage": feature_coverage,
         "core_market_coverage": core_market_coverage,
         "optional_context_sources": {
