@@ -229,7 +229,7 @@ async function loadPhase2Config(){
     expiry:payload.selected_expiry
    }));
   }catch(_error){}
-  status.textContent="Loaded "+payload.analysis_date+" · "+payload.selected_expiry+" · "+payload.contract_count+" eligible CE/PE contracts. Download link expires in 15 minutes. EOD only; no intraday snapshot is available.";
+  status.textContent="Loaded "+payload.analysis_date+" · "+payload.selected_expiry+" · "+payload.contract_count+" eligible CE/PE contracts. Download link expires in 15 minutes. EOD only; no intraday snapshot is available. Seller analysis remains disabled until it consumes this configuration.";
  }catch(error){
   status.textContent=error.message+" Intraday cutoffs remain unsupported by the available EOD archive.";
  }
