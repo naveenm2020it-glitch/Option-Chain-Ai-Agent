@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/historical_audit/
-          key: phase1-3-all-strike-audit-${{ github.run_id }}
+          key: phase1-3-all-strike-audit-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             phase1-3-all-strike-audit-
             nifty-historical-audit-v1-
@@ -83,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nifty-all-strike-historical-audit-${{ github.run_id }}
+          name: nifty-all-strike-historical-audit-${{ github.run_id }}-${{ github.run_attempt }}
           path: data/historical_audit/
           if-no-files-found: error
           retention-days: 30
