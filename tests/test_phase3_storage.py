@@ -55,6 +55,7 @@ def test_rejects_stored_contract_count_mismatch():
 def test_rejects_duplicate_contract_keys():
     row = sample()
     row["contracts"].append(dict(row["contracts"][0]))
+    row["features"]["stored_contract_count"] = 3
     with pytest.raises(ValueError, match="duplicate contract key"):
         normalize_session(row["session_date"], row)
 
