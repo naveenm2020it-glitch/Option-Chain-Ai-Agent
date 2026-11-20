@@ -103,6 +103,65 @@ def initialize_phase3_schema(authorization: str | None = Header(default=None)):
     }
 
 
+@app.post("/api/phase3/ingest-batch")
+def ingest_phase3_batch(payload: dict, authorization: str | None = Header(default=None)):
+    """Persist up to ten validated all-strike NIFTY sessions; safe to retry by session date."""
+    token = os.getenv("PAPER_INGEST_TOKEN")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not token or not secrets.compare_digest(supplied, token):
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+
+    sessions = payload.get("sessions")
+    if not isinstance(sessions, list) or not 1 <= len(sessions) <= 10:
+        raise HTTPException(status_code=400, detail="sessions must contain between 1 and 10 session records.")
+
+    try:
+        import psycopg
+        from phase3_storage import ensure_phase3_schema, normalize_session, persist_session
+        from scripts.process_nifty_contracts import verify_persisted_sessions
+
+        normalized = []
+        seen_dates = set()
+        for item in sessions:
+            if not isinstance(item, dict):
+                raise ValueError("Each session record must be an object.")
+            session_date = item.get("session_date")
+            row = item.get("row")
+            provenance = item.get("provenance", {})
+            if not isinstance(session_date, str) or not isinstance(row, dict) or not isinstance(provenance, dict):
+                raise ValueError("Each session requires session_date, row, and provenance objects.")
+            if session_date in seen_dates:
+                raise ValueError(f"Duplicate session_date in batch: {session_date}")
+            seen_dates.add(session_date)
+            normalized.append(normalize_session(session_date, row, provenance))
+
+        url = os.environ["DATABASE_URL"]
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        with psycopg.connect(url, connect_timeout=10, autocommit=True) as conn:
+            ensure_phase3_schema(conn)
+            for row in normalized:
+                with conn.transaction():
+                    persist_session(conn, row)
+            verification = verify_persisted_sessions(conn, normalized)
+
+        if not verification.get("passed"):
+            raise HTTPException(status_code=503, detail="Persisted Phase 3 batch failed integrity verification.")
+        return {
+            "stored": True,
+            "sessions_stored": len(normalized),
+            "contract_rows_stored": sum(row["contract_count"] for row in normalized),
+            "session_dates": [row["session_date"] for row in normalized],
+            "verification": verification,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not persist the Phase 3 batch.")
+
+
 @app.get("/api/status")
 def status():
     report_root = DATA_DIR / "nse_reports"
