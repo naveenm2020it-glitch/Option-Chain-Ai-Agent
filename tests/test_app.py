@@ -255,6 +255,97 @@ def test_phase3_schema_initialization_creates_only_schema(monkeypatch):
     assert all(sql.lstrip().split(None, 1)[0].upper() == "CREATE" for sql in statements)
 
 
+def test_phase3_batch_ingestion_requires_paper_bearer_token(monkeypatch):
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    response = client.post("/api/phase3/ingest-batch", json={"sessions": []})
+    assert response.status_code == 401
+
+
+def test_phase3_batch_ingestion_persists_and_verifies_normalized_sessions(monkeypatch):
+    from contextlib import nullcontext
+    import psycopg
+
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://not-a-real-secret")
+    persisted = []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def transaction(self):
+            return nullcontext()
+
+    monkeypatch.setattr(psycopg, "connect", lambda *args, **kwargs: FakeConnection())
+    monkeypatch.setattr("phase3_storage.ensure_phase3_schema", lambda conn: None)
+    monkeypatch.setattr("phase3_storage.persist_session", lambda conn, row: persisted.append(row))
+    monkeypatch.setattr("scripts.process_nifty_contracts.verify_persisted_sessions", lambda conn, rows: {
+        "passed": True, "expected_sessions": len(rows), "actual_sessions": len(rows),
+        "expected_contract_rows": sum(row["contract_count"] for row in rows),
+        "actual_contract_rows": sum(row["contract_count"] for row in rows),
+        "fingerprints_checked": len(rows), "mismatches": [],
+    })
+
+    row = {
+        "session_date": "2026-11-18",
+        "feature_schema_version": 3,
+        "contract_universe_version": 1,
+        "features": {"spot_close": 25000.0, "stored_contract_count": 2},
+        "contracts": [
+            {
+                "expiry": "2026-11-26", "strike": 25000, "option_type": "CE",
+                "close": 120.5, "previous_close": 110.0, "oi": 1000,
+                "change_oi": 100, "volume": 5000, "premium_return": 0.09545,
+                "moneyness": 0.0, "days_to_expiry": 8, "delta_factor": 0.52,
+            },
+            {
+                "expiry": "2026-11-26", "strike": 25000, "option_type": "PE",
+                "close": 115.0, "previous_close": 125.0, "oi": 900,
+                "change_oi": -50, "volume": 4200, "premium_return": -0.08,
+                "moneyness": 0.0, "days_to_expiry": 8, "delta_factor": -0.48,
+            },
+        ],
+    }
+    response = client.post(
+        "/api/phase3/ingest-batch",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"sessions": [{
+            "session_date": "2026-11-18",
+            "row": row,
+            "provenance": {"archive_sha256": "a" * 64},
+        }]},
+    )
+    assert response.status_code == 200
+    assert response.json()["sessions_stored"] == 1
+    assert response.json()["contract_rows_stored"] == 2
+    assert response.json()["verification"]["passed"] is True
+    assert len(persisted) == 1
+    assert persisted[0]["contract_universe_version"] == 1
+
+
+def test_phase3_batch_ingestion_rejects_legacy_contract_universe(monkeypatch):
+    monkeypatch.setenv("PAPER_INGEST_TOKEN", "expected-secret")
+    row = {
+        "session_date": "2026-11-18",
+        "feature_schema_version": 3,
+        "features": {"stored_contract_count": 1},
+        "contracts": [{
+            "expiry": "2026-11-26", "strike": 25000, "option_type": "CE",
+            "close": 120.5, "previous_close": 110.0, "oi": 1000,
+            "change_oi": 100, "volume": 5000, "premium_return": 0.09545,
+            "moneyness": 0.0, "days_to_expiry": 8, "delta_factor": 0.52,
+        }],
+    }
+    response = client.post(
+        "/api/phase3/ingest-batch",
+        headers={"Authorization": "Bearer expected-secret"},
+        json={"sessions": [{"session_date": "2026-11-18", "row": row, "provenance": {}}]},
+    )
+    assert response.status_code == 400
+    assert "contract_universe_version" in response.json()["detail"]
+
+
 def test_phase3_database_health_reports_unconfigured_database(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     response = client.get("/api/phase3/health")
