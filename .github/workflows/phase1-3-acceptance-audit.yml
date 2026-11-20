@@ -76,8 +76,8 @@ jobs:
             --start 2024-11-12 \
             --end 2026-11-12 \
             --checkpoint data/historical_audit/checkpoint.json \
-            --batch-size 5 \
-            --max-batches 5
+            --batch-size 25 \
+            --max-batches 1
 
       - name: Publish current checkpoint and coverage evidence
         if: always()
