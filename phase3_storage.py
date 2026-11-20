@@ -32,11 +32,16 @@ def normalize_session(session_date: str, row: dict[str, Any],
         raise ValueError("checkpoint session_date does not match its key")
     if row.get("feature_schema_version") != 3:
         raise ValueError("only feature_schema_version=3 is supported")
+    if row.get("contract_universe_version") != 1:
+        raise ValueError("only contract_universe_version=1 (all eligible strikes) is supported")
     features = row.get("features")
     contracts = row.get("contracts")
     if not isinstance(features, dict) or not isinstance(contracts, list) or not contracts:
         raise ValueError("features object and non-empty contracts list are required")
 
+    expected_count = features.get("stored_contract_count")
+    if expected_count is not None and _number(expected_count, "features.stored_contract_count", minimum=1) != len(contracts):
+        raise ValueError("stored_contract_count does not match contracts list")
     normalized = []
     seen = set()
     for index, contract in enumerate(contracts):
@@ -94,6 +99,7 @@ def normalize_session(session_date: str, row: dict[str, Any],
     return {
         "session_date": session_date,
         "feature_schema_version": 3,
+        "contract_universe_version": 1,
         "contract_count": len(normalized),
         "contracts": normalized,
         "archive_sha256": archive_sha256,
@@ -107,6 +113,7 @@ def ensure_phase3_schema(conn) -> None:
         CREATE TABLE IF NOT EXISTS nifty_historical_sessions (
             session_date DATE PRIMARY KEY,
             feature_schema_version SMALLINT NOT NULL CHECK (feature_schema_version = 3),
+            contract_universe_version SMALLINT NOT NULL CHECK (contract_universe_version = 1),
             contract_count INTEGER NOT NULL CHECK (contract_count > 0),
             archive_sha256 CHAR(64),
             catalog_fingerprint TEXT,
@@ -150,19 +157,20 @@ def persist_session(conn, normalized: dict[str, Any]) -> None:
     session_date = normalized["session_date"]
     conn.execute("""
         INSERT INTO nifty_historical_sessions (
-            session_date, feature_schema_version, contract_count, archive_sha256,
+            session_date, feature_schema_version, contract_universe_version, contract_count, archive_sha256,
             catalog_fingerprint, dataset_sha256, processed_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (session_date) DO UPDATE SET
             feature_schema_version = EXCLUDED.feature_schema_version,
+            contract_universe_version = EXCLUDED.contract_universe_version,
             contract_count = EXCLUDED.contract_count,
             archive_sha256 = EXCLUDED.archive_sha256,
             catalog_fingerprint = EXCLUDED.catalog_fingerprint,
             dataset_sha256 = EXCLUDED.dataset_sha256,
             processed_at = EXCLUDED.processed_at
     """, (
-        session_date, normalized["feature_schema_version"], normalized["contract_count"],
-        normalized["archive_sha256"], normalized["catalog_fingerprint"],
+        session_date, normalized["feature_schema_version"], normalized["contract_universe_version"],
+        normalized["contract_count"], normalized["archive_sha256"], normalized["catalog_fingerprint"],
         normalized["dataset_sha256"], datetime.now(timezone.utc),
     ))
     conn.execute("DELETE FROM nifty_option_contracts WHERE session_date = %s", (session_date,))
