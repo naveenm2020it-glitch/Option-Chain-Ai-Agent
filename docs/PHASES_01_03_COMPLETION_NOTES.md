@@ -11,7 +11,7 @@ This document separates code implementation, test evidence, operational executio
 | Phase | Implemented work | Evidence available | Remaining acceptance gate |
 |---|---|---|---|
 | 01 — Historical data audit | Archive integrity audit, calendar reconciliation, all-strike CE/PE feature extraction, resumable checkpoints and coverage reporting | Older artifact: 494/494 sessions, zero failed archives and zero feature errors | Re-run audit after contract-universe v1/all-strike changes; require 494/494 current-version feature rows and at least 95% all-strike CE/PE coverage |
-| 02 — User configuration and data orchestration | Historical datasets plus date selector, EOD-only cutoff guard, archive-derived expiry choices and signed archive download handoff | PR #27 merged; PR #38 adds the Phase 2 API/UI and regression tests; latest CI result pending | Verify against real B2 archives and complete downstream ingestion/analysis integration; intraday cutoffs remain unsupported |
+| 02 — User configuration and data orchestration | Historical datasets plus date selector, EOD-only cutoff guard, archive-derived expiry choices and signed archive download handoff | PR #27 merged; PR #38 adds the Phase 2 API/UI and regression tests; full CI and Phase 3 validation passed on the current branch head | Verify against real B2 archives and complete downstream ingestion/analysis integration; intraday cutoffs remain unsupported |
 | 03 — Storage and data processing | All-strike contract normalization, PostgreSQL schema, atomic/idempotent persistence, source fingerprints, remote authenticated ingestion API and integrity verifier | PRs #28–#33 and #36–#37 merged to deployed branch; 494-session/159,036-row historical normalization report from the earlier checkpoint | Rebuild/verify all-strike checkpoint, initialize actual Render schema, ingest all sessions, and verify stored session/contract counts and fingerprints against source |
 
 ## Phase 01 — Historical data audit
@@ -73,7 +73,7 @@ PR #38 now adds a dashboard configuration panel and `GET /api/config/options`. T
 
 **Required cutoff behavior:** until intraday source data is approved and available, expose only an after-close/EOD snapshot. Reject or clearly mark intraday cutoff requests as unsupported; never label EOD data as an intraday snapshot.
 
-**Phase 02 status: configuration UI/API and archive download handoff are implemented in PR #38; live B2 integration and downstream ingestion/analysis wiring remain acceptance items.**
+**Phase 02 status: configuration UI/API and archive download handoff are implemented and regression-tested in PR #38; live B2 integration and downstream ingestion/analysis wiring remain acceptance items.**
 
 ## Phase 03 — Storage and data processing
 
