@@ -14,6 +14,9 @@ def _nested_archive(day="2026-11-12", symbol="NIFTY", compact_index_headers=Fals
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25000, "PE", 120, 130, 1200, 120, 1800, 25000],
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25100, "CE", 90, 95, 900, 80, 1500, 25000],
         ["2026-11-12", "NIFTY", "IDO", "2026-11-24", 25100, "PE", 140, 150, 1300, 150, 1600, 25000],
+        # Far OTM and >45-DTE contracts must remain in the stored universe.
+        ["2026-11-12", "NIFTY", "IDO", "2026-12-31", 26000, "CE", 30, 35, 700, 50, 900, 25000],
+        ["2026-11-12", "NIFTY", "IDO", "2026-12-31", 26000, "PE", 1030, 1050, 800, -20, 950, 25000],
         ["2026-11-12", "NIFTY", "IDF", "2026-11-24", 0, "", 25050, 25000, 5000, 100, 1000, 25000],
     ]
     headers = "TradDt,TckrSymb,FinInstrmTp,XpryDt,StrkPric,OptnTp,ClsPric,PrvsClsgPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,UndrlygPric"
@@ -68,6 +71,9 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
     assert result["features"]["ce_oi"] == 1900
     assert result["features"]["pe_oi"] == 2500
     assert result["features"]["near_atm_contract_count"] == 4
+    assert result["features"]["stored_contract_count"] == 6
+    assert result["features"]["stored_ce_contract_count"] == 3
+    assert result["features"]["stored_pe_contract_count"] == 3
     assert result["features"]["future_data_available"] == 1
     assert result["features"]["future_return"] == pytest.approx(0.002)
     assert result["features"]["future_basis_pct"] == pytest.approx(0.002)
@@ -83,8 +89,13 @@ def test_extract_nifty_daily_features_and_contract_snapshots():
     assert result["features"]["pe_delta_equiv_oi"] == pytest.approx(-1291)
     assert result["features"]["net_option_delta_equiv_oi"] == pytest.approx(-366)
     assert result["contracts"][0]["delta_factor"] == pytest.approx(0.52)
-    assert len(result["contracts"]) == 4
+    assert result["contract_universe_version"] == 1
+    assert len(result["contracts"]) == 6
     assert {row["option_type"] for row in result["contracts"]} == {"CE", "PE"}
+    assert any(
+        row["strike"] == 26000 and row["expiry"] == "2026-12-31"
+        for row in result["contracts"]
+    )
 
 
 def test_extract_rejects_mixed_session_dates():
