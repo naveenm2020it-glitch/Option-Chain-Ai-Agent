@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.nse_historical_backfill import is_b2_cap_error, validate_remote_archive  # noqa: E402
 from storage import b2_client, read_catalog  # noqa: E402
-from scripts.nse_ml_features import FEATURE_SCHEMA_VERSION, extract_nifty_features  # noqa: E402
+from scripts.nse_ml_features import CONTRACT_UNIVERSE_VERSION, FEATURE_SCHEMA_VERSION, extract_nifty_features  # noqa: E402
 
 
 # NSE F&O trading holidays from the exchange's annual circulars. The window
@@ -140,6 +140,7 @@ def _save_report(path: Path, checkpoint: dict, expected: list[date], catalog_dat
     sources_ready = all(value >= 0.95 for value in core_market_coverage.values())
     features_current = all(
         row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+        and row.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION
         for row in features.values()
     )
     features_ready = (
@@ -215,6 +216,7 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
     # A fully verified checkpoint is terminal: do not make another B2 request.
     features_current = all(
         row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+        and row.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION
         for row in checkpoint.get("features", {}).values()
     )
     if (len(checkpoint["verified"]) == len(expected)
@@ -276,11 +278,14 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
         feature_row = checkpoint["features"].get(day_text)
         feature_error = checkpoint["feature_errors"].get(day_text)
         if (previous and previous.get("catalog_fingerprint") == fingerprint
-                and feature_row and feature_row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION):
+                and feature_row
+                and feature_row.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+                and feature_row.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION):
             continue
         if (previous and previous.get("catalog_fingerprint") == fingerprint
                 and feature_error and feature_error.get("catalog_fingerprint") == fingerprint
-                and feature_error.get("feature_schema_version") == FEATURE_SCHEMA_VERSION):
+                and feature_error.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+                and feature_error.get("contract_universe_version") == CONTRACT_UNIVERSE_VERSION):
             continue
         previous_failure = checkpoint["failed"].get(day_text)
         if (previous_failure and previous_failure.get("catalog_fingerprint") == fingerprint
@@ -330,6 +335,7 @@ def run_audit(start: date, end: date, checkpoint_path: Path, max_archives: int =
                 checkpoint["feature_errors"][day_text] = {
                     "catalog_fingerprint": fingerprint,
                     "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                    "contract_universe_version": CONTRACT_UNIVERSE_VERSION,
                     "reason": f"{type(exc).__name__}: {str(exc)[:500]}",
                     "checked_at_utc": datetime.now(timezone.utc).isoformat(),
                 }
