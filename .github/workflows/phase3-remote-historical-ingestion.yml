@@ -1,0 +1,59 @@
+name: Phase 3 — ingest verified all-strike checkpoint to Render PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      audit_run_id:
+        description: "GitHub Actions run ID that published a successful nifty-all-strike-historical-audit artifact"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase3-historical-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PAPER_INGEST_TOKEN: ${{ secrets.PAPER_INGEST_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Require protected Render ingestion token
+        run: |
+          if [ -z "$PAPER_INGEST_TOKEN" ]; then
+            echo "::error::Add the existing Render PAPER_INGEST_TOKEN as a GitHub Actions repository secret before running this workflow."
+            exit 1
+          fi
+
+      - name: Download the selected all-strike audit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nifty-all-strike-historical-audit-${{ inputs.audit_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.audit_run_id }}
+          path: data
+
+      - name: Install remote ingestion dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate checkpoint and ingest in protected ten-session batches
+        run: |
+          set -euo pipefail
+          python scripts/ingest_phase3_remote.py \
+            --checkpoint data/historical_audit/checkpoint.json \
+            --coverage data/historical_audit/coverage.json \
+            --api-url https://option-chain-ai-agent.onrender.com \
+            --batch-size 10
