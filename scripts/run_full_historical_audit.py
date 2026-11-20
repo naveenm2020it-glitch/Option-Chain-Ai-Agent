@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument("--start", default="2024-11-12")
     parser.add_argument("--end", default="2026-11-12")
     parser.add_argument("--checkpoint", default="data/historical_audit/checkpoint.json")
-    parser.add_argument("--batch-size", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--max-batches", type=int, default=5)
     args = parser.parse_args()
 
@@ -28,6 +28,8 @@ def main() -> int:
         parser.error("--batch-size must be between 1 and 25")
     if args.max_batches < 1:
         parser.error("--max-batches must be positive")
+    if args.batch_size * args.max_batches > 25:
+        parser.error("A single run may process at most 25 archives to protect the B2 free-tier request quota")
 
     checkpoint = Path(args.checkpoint)
     final_report = None
