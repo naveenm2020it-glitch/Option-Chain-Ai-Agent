@@ -191,6 +191,60 @@ function initMotionAndNavigation(){
   targets.forEach(target=>navObserver.observe(target));
  }
 }
+const PHASE2_CONFIG_KEY="nifty-phase2-config-v1";
+async function loadPhase2Config(){
+ const status=byId("phase2-config-status");
+ const dateInput=byId("analysis-date");
+ const cutoffInput=byId("analysis-cutoff");
+ const expiryInput=byId("analysis-expiry");
+ const download=byId("download-eod-archive");
+ if(!status||!dateInput||!cutoffInput||!expiryInput||!download)return;
+ status.textContent="Loading the selected historical archive and its expiry universe…";
+ download.hidden=true;
+ const params=new URLSearchParams({cutoff:cutoffInput.value||"after_close"});
+ if(dateInput.value)params.set("analysis_date",dateInput.value);
+ if(expiryInput.value)params.set("expiry",expiryInput.value);
+ try{
+  const response=await fetch("/api/config/options?"+params.toString(),{cache:"no-store"});
+  const payload=await response.json();
+  if(!response.ok)throw new Error(payload.detail||"Could not load historical configuration.");
+  dateInput.value=payload.analysis_date;
+  if(payload.available_dates?.length){
+   dateInput.min=payload.available_dates[0];
+   dateInput.max=payload.available_dates[payload.available_dates.length-1];
+  }
+  expiryInput.replaceChildren(new Option("Automatically choose front expiry",""));
+  for(const expiry of payload.expiry_options||[])expiryInput.add(new Option(expiry,expiry));
+  expiryInput.value=payload.selected_expiry||"";
+  download.href=payload.download_url;
+  download.hidden=false;
+  try{
+   localStorage.setItem(PHASE2_CONFIG_KEY,JSON.stringify({
+    analysis_date:payload.analysis_date,
+    cutoff:payload.cutoff,
+    expiry:payload.selected_expiry
+   }));
+  }catch(_error){}
+  status.textContent="Loaded "+payload.analysis_date+" · "+payload.selected_expiry+" · "+payload.contract_count+" eligible CE/PE contracts. Download link expires in 15 minutes. EOD only; no intraday snapshot is available.";
+ }catch(error){
+  status.textContent=error.message+" Intraday cutoffs remain unsupported by the available EOD archive.";
+ }
+}
+(function initPhase2Config(){
+ const dateInput=byId("analysis-date");
+ const cutoffInput=byId("analysis-cutoff");
+ const expiryInput=byId("analysis-expiry");
+ const button=byId("load-analysis-config");
+ if(!dateInput||!cutoffInput||!expiryInput||!button)return;
+ try{
+  const saved=JSON.parse(localStorage.getItem(PHASE2_CONFIG_KEY)||"null");
+  if(saved?.analysis_date)dateInput.value=saved.analysis_date;
+  if(saved?.cutoff)cutoffInput.value=saved.cutoff;
+ }catch(_error){}
+ dateInput.addEventListener("change",()=>{expiryInput.replaceChildren(new Option("Automatically load expiries",""));});
+ button.addEventListener("click",loadPhase2Config);
+ loadPhase2Config();
+})();
 function refresh(){loadStatus();loadHistory();loadModels();}
 byId("refresh")?.addEventListener("click",refresh);byId("quick-refresh")?.addEventListener("click",refresh);
 refresh();initHeatmap();initMotionAndNavigation();
